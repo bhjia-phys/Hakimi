@@ -2411,6 +2411,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
           stopCondition: cmd.stopCondition,
           allowedToolKinds: cmd.allowedToolKinds,
           retryOfEntryId: cmd.retryOfEntryId,
+          observedRunActionId: cmd.observedRunActionId,
           requiresHumanApproval: cmd.requiresHumanApproval,
           planningLevel: cmd.planningLevel,
           researchPlanId: cmd.researchPlanId,

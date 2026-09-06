@@ -693,6 +693,7 @@ interface ResearchAdvanceRevisionPayload {
  */
 interface ResearchBeginActionPayload {
   _name: 'research.begin_action';
+  observedRunActionId?: string;
   actionId: string;
   questionId?: string;
   questionRevision?: number;
@@ -920,6 +921,7 @@ interface ResearchObserveRunPayload {
  */
 interface ResearchPlanActionPayload {
   _name: 'research.plan_action';
+  observedRunActionId?: string;
   actionId: string;
   questionId?: string;
   questionRevision?: number;

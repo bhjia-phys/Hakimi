@@ -1,8 +1,11 @@
 /**
- * `aitpResearch` domain — validates explicit adoption of retained local evidence.
+ * `aitpResearch` domain — validates adoption of retained local evidence.
  *
  * Shares the captured-context checks between the Agent service and replayable
- * checkpoint reducer; grants no tool or canonical-write permission.
+ * checkpoint reducer. Original agent-owned context can recover after its first
+ * explicit workstream confirmation, without inventing human approval. Stable
+ * checkpoint identity preserves prepare/save idempotency across undo and replay.
+ * Grants no tool or canonical-write permission.
  */
 
 import type { ResearchWorkingState } from '../aitpResearchOps';
@@ -17,10 +20,14 @@ export function localConclusionAdoptionProblem(state: ResearchWorkingState, inpu
   readonly workstreamBinding?: ResearchLineWorkstreamBinding;
   readonly assessment?: string;
   readonly nextAction?: string;
-}): string | undefined {
+}, recoverConfirmedScope = false): string | undefined {
   const local = state.localConclusion;
   if (local === undefined) return 'No retained local conclusion matches this adoption request.';
-  if (input.localConclusionId !== local.candidate.sourceActionId || input.confirmedBy !== 'user') {
+  if (input.localConclusionId !== local.candidate.sourceActionId || (
+    input.confirmedBy !== 'user' && (!recoverConfirmedScope ||
+      local.candidate.authority !== 'agent' || local.program === undefined || local.line === undefined ||
+      input.lineSlug !== local.action.lineSlug || input.questionId !== local.action.questionId)
+  )) {
     return 'Adoption requires the exact local conclusion ID and explicit user confirmation.';
   }
   if (
@@ -71,4 +78,25 @@ export function localConclusionAdoptionProblem(state: ResearchWorkingState, inpu
     return 'Adoption must preserve the original assessment and next step, not replace the scientific conclusion.';
   }
   return undefined;
+}
+
+export function automaticLocalConclusionCheckpoint(state: ResearchWorkingState) {
+  const local = state.localConclusion;
+  if (local === undefined || state.pendingCheckpoint !== null) return undefined;
+  if ((local.action.status !== 'completed' && local.action.status !== 'abandoned') ||
+    local.candidate.sourceActionId !== local.action.actionId ||
+    local.candidate.progressRecordedAt !== local.progress.recordedAt ||
+    state.latestProgress?.recordedAt !== local.progress.recordedAt) return undefined;
+  const lineSlug = local.action.lineSlug;
+  const identity = `local-conclusion-${local.candidate.sourceActionId}-${local.candidate.progressRecordedAt}`;
+  const proposal = {
+    checkpointId: identity,
+    idempotencyKey: identity,
+    localConclusionId: local.candidate.sourceActionId,
+    lineSlug,
+    questionId: local.action.questionId,
+    workstreamBinding: lineSlug === undefined ? undefined : state.lineWorkstreamBindings?.[lineSlug],
+    createdAt: local.progress.recordedAt,
+  };
+  return localConclusionAdoptionProblem(state, proposal, true) === undefined ? proposal : undefined;
 }

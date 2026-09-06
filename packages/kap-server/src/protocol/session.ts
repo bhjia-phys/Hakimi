@@ -47,6 +47,12 @@ export const sessionSchema = z.object({
   updated_at: isoDateTimeSchema,
   /** Any agent in the session holds an active turn or background lease. */
   busy: z.boolean(),
+  /** Live-only navigation facts; absent means unknown, never Research off. */
+  research: z.object({
+    revision: z.number().int().nonnegative(),
+    mode: z.enum(['inactive', 'probing', 'ready', 'degraded']),
+    line: z.string().optional(),
+  }).optional(),
   /** Whether the main agent currently owns an active turn. */
   main_turn_active: z.boolean().optional(),
   /** Highest-priority pending human interaction. */

@@ -137,6 +137,7 @@ export function toAppSession(wire: WireSession): AppSession {
     updatedAt: wire.updated_at,
     busy: wire.busy,
     mainTurnActive: wire.main_turn_active,
+    research: wire.research,
     pendingInteraction: wire.pending_interaction,
     lastTurnReason: wire.last_turn_reason,
     archived: wire.archived ?? false,

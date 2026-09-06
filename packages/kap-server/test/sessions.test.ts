@@ -21,6 +21,7 @@ import {
   type IOAuthService as IOAuthServiceType,
   IAgentConversationUndoService,
   IAgentGoalService,
+  IAgentResearchService,
   IAgentLifecycleService,
   IAgentProfileService,
   IEventBus,
@@ -49,6 +50,7 @@ interface Envelope<T> {
 }
 
 interface SessionWire {
+  research?: { revision: number; mode: string; line?: string };
   id: string;
   workspace_id: string;
   title: string;
@@ -189,6 +191,40 @@ describe('server-v2 /api/v1/sessions', () => {
     const agent = session?.accessor.get(IAgentLifecycleService).get(MAIN_AGENT_ID);
     return agent?.accessor.get(IAgentProfileService).getModel() ?? '';
   }
+
+  it('lists independent live Research summaries without resuming cold sessions', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const created = await postJson<SessionWire>('/api/v1/sessions', {
+        metadata: { cwd: home as string }, title: `Research ${i}`,
+      });
+      expect(created.body.code).toBe(0);
+      const id = created.body.data.id;
+      ids.push(id);
+      // Explicitly open only this test session, like the user enabling Research.
+      await getJson(`/api/v1/sessions/${id}/research`);
+      const handle = getLiveSessionById(server!.core.accessor, id)!;
+      const agent = handle.accessor.get(IAgentLifecycleService).get(MAIN_AGENT_ID)!;
+      const research = agent.accessor.get(IAgentResearchService);
+      const snapshot = research.getSnapshot();
+      vi.spyOn(research, 'getSnapshot').mockReturnValue({ ...snapshot,
+        revision: i + 10, mode: i === 5 ? 'degraded' : 'ready',
+      });
+    }
+    const cold = await postJson<SessionWire>('/api/v1/sessions', {
+      metadata: { cwd: home as string }, title: 'Cold session',
+    });
+    await closeSessionById(server!.core.accessor, cold.body.data.id);
+    const listed = await getJson<PageWire>('/api/v1/sessions?page_size=100');
+    expect(listed.body.code).toBe(0);
+    for (const [i, id] of ids.entries()) {
+      expect(listed.body.data.items.find((s) => s.id === id)?.research).toEqual({
+        revision: i + 10, mode: i === 5 ? 'degraded' : 'ready',
+      });
+    }
+    expect(listed.body.data.items.find((s) => s.id === cold.body.data.id)?.research).toBeUndefined();
+    expect(getLiveSessionById(server!.core.accessor, cold.body.data.id)).toBeUndefined();
+  });
 
   it('downloads a ZIP with the supplied Web log and cleans up its temporary directory', async () => {
     const created = await postJson<SessionWire>('/api/v1/sessions', {

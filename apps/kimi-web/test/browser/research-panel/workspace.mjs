@@ -81,7 +81,6 @@ try {
   await page.screenshot({ path: join(out, 'switched-board.png') });
   await page.getByRole('button', { name: 'Hide research board', exact: true }).click();
   await switcher.click();
-  await page.getByRole('button', { name: /Other loaded sessions/ }).click();
   assert.match(await page.getByRole('button', { name: /Unread candidate/ }).innerText(), /State unread/);
   await page.keyboard.press('Escape');
   await call('locale', 'zh');

@@ -12,22 +12,25 @@ import Select from '../ui/Select.vue';
 import ResearchOrbitMark from './ResearchOrbitMark.vue';
 
 const props = defineProps<{
-  snapshot: ResearchStatusSnapshot;
+  snapshot?: ResearchStatusSnapshot | null;
   sessionId?: string;
   sessions: ResearchSessionLink[];
   policyDisabled?: boolean;
+  toggleDisabled?: boolean;
+  togglePending?: boolean;
 }>();
 const emit = defineEmits<{
   selectSession: [id: string];
   browseSessions: [];
   setPolicy: [policy: string];
+  toggleMode: [];
 }>();
 const { t } = useI18n();
 const open = ref(false);
 const query = ref('');
-const showOther = ref(false);
-const lineTitle = computed(() => props.snapshot.lines
-  .find((line) => line.slug === props.snapshot.currentLineSlug)?.title);
+const active = computed(() => !!props.snapshot && props.snapshot.mode !== 'inactive');
+const lineTitle = computed(() => props.snapshot?.lines
+  .find((line) => line.slug === props.snapshot?.currentLineSlug)?.title);
 const matches = (session: ResearchSessionLink): boolean =>
   [session.title, session.workspace, session.line, session.id].join(' ').toLocaleLowerCase()
     .includes(query.value.trim().toLocaleLowerCase());
@@ -37,7 +40,7 @@ const other = computed(() => props.sessions.filter((session) =>
   (session.mode === undefined || session.mode === 'inactive') && matches(session)));
 const visibleOther = computed(() => other.value.slice(0, 20));
 watch(() => props.sessionId, () => { open.value = false; });
-watch(open, (value) => { if (!value) { query.value = ''; showOther.value = false; } });
+watch(open, (value) => { if (!value) query.value = ''; });
 
 function select(id: string): void {
   open.value = false;
@@ -46,8 +49,8 @@ function select(id: string): void {
 </script>
 
 <template>
-  <header class="research-workspace-bar" :aria-label="t('research.workspace.title')">
-    <div class="research-workspace-identity">
+  <header class="research-workspace-bar" :class="{ 'is-inactive': !active }" :aria-label="t('research.workspace.title')">
+    <div v-if="active && snapshot" class="research-workspace-identity">
       <ResearchOrbitMark :dreaming="snapshot.planningPolicy === 'dreaming'" />
       <div class="research-workspace-heading">
         <div class="research-workspace-kicker">
@@ -60,11 +63,20 @@ function select(id: string): void {
       </div>
     </div>
     <div class="research-workspace-controls">
-      <Button variant="secondary" size="md" aria-haspopup="dialog" @click="open = true">
+      <Button :variant="active ? 'primary' : 'secondary'" size="md"
+        :aria-pressed="snapshot ? active : undefined" :aria-label="t('research.workspace.toggle')"
+        :title="toggleDisabled ? t('research.workspace.toggleBusy') : t('research.workspace.' + (active ? 'turnOff' : 'turnOn'))"
+        :disabled="toggleDisabled" :loading="togglePending" @click="emit('toggleMode')">
+        <Icon name="target" size="sm" />
+        {{ t('research.title') }}
+        <span>{{ t('research.workspace.' + (!snapshot ? 'unknown' : active ? 'enabled' : 'disabled')) }}</span>
+      </Button>
+      <Button variant="secondary" size="md" aria-haspopup="dialog" :aria-expanded="open" @click="open = true">
         <Icon name="list" size="sm" />
         {{ t('research.workspace.sessions') }}
       </Button>
       <Select
+        v-if="active && snapshot"
         :key="`${sessionId}:${snapshot.planningPolicy}:${policyDisabled}`"
         class="research-policy-select"
         size="sm"
@@ -84,7 +96,7 @@ function select(id: string): void {
     :description="t('research.workspace.navigationOnly')" size="lg" initial-focus="input">
     <template #head>
       <div class="research-switcher-heading">
-        <ResearchOrbitMark :dreaming="snapshot.planningPolicy === 'dreaming'" />
+        <ResearchOrbitMark :dreaming="snapshot?.planningPolicy === 'dreaming'" />
         <div class="research-workspace-heading">
           <span class="research-workspace-kicker">{{ t('research.workspace.navigation') }}</span>
           <h2>{{ t('research.workspace.sessions') }}</h2>
@@ -97,7 +109,7 @@ function select(id: string): void {
       <p class="research-session-hint">{{ t('research.workspace.observedOnly') }}</p>
       <nav class="research-session-list" :aria-label="t('research.workspace.observed')">
         <Button v-for="session in known" :key="session.id" variant="ghost" class="research-session-row"
-          :aria-current="session.id === sessionId ? 'page' : undefined" @click="select(session.id)">
+          :aria-current="session.id === sessionId ? 'page' : undefined" :disabled="session.id === sessionId" @click="select(session.id)">
           <Icon :name="session.id === sessionId ? 'target' : 'message'" size="md" />
           <span class="research-session-copy">
             <span>{{ session.line ?? session.title }}</span>
@@ -105,24 +117,24 @@ function select(id: string): void {
             <span class="research-session-path" :title="session.workspace + ' · ' + session.id">{{ session.workspace }} · {{ session.id }}</span>
           </span>
           <span class="research-session-badges">
+            <Badge v-if="session.id === sessionId" size="sm">{{ t('research.workspace.current') }}</Badge>
             <Badge size="sm" :variant="session.mode === 'degraded' ? 'warning' : 'info'">{{ t('research.phase.' + session.mode) }}</Badge>
             <Badge size="sm" :variant="session.busy ? 'success' : 'neutral'">{{ t('research.workspace.' + (session.busy ? 'running' : 'idle')) }}</Badge>
           </span>
         </Button>
       </nav>
       <p v-if="known.length === 0" class="research-session-hint">{{ t('research.workspace.noObserved') }}</p>
-      <Button variant="ghost" :aria-expanded="showOther" @click="showOther = !showOther">
-        <Icon :name="showOther ? 'chevron-up' : 'chevron-down'" size="sm" />
-        {{ t('research.workspace.otherSessions', { count: other.length }) }}
-      </Button>
-      <nav v-if="showOther" class="research-session-list" :aria-label="t('research.workspace.otherLabel')">
-        <Button v-for="session in visibleOther" :key="session.id" variant="ghost" class="research-session-row" @click="select(session.id)">
+      <p v-if="other.length" class="research-session-hint">{{ t('research.workspace.otherSessions', { count: other.length }) }}</p>
+      <nav v-if="other.length" class="research-session-list" :aria-label="t('research.workspace.otherLabel')">
+        <Button v-for="session in visibleOther" :key="session.id" variant="ghost" class="research-session-row"
+          :disabled="session.id === sessionId" :aria-current="session.id === sessionId ? 'page' : undefined" @click="select(session.id)">
           <Icon name="message" size="md" />
           <span class="research-session-copy">
             <span>{{ session.title }}</span>
             <span class="research-session-path" :title="session.workspace + ' · ' + session.id">{{ session.workspace }} · {{ session.id }}</span>
           </span>
           <Badge size="sm">{{ t('research.workspace.' + (session.mode === undefined ? 'unknown' : 'off')) }}</Badge>
+          <Badge v-if="session.id === sessionId" size="sm">{{ t('research.workspace.current') }}</Badge>
         </Button>
       </nav>
     </div>
@@ -145,6 +157,8 @@ function select(id: string): void {
   background: var(--color-surface-sunken);
 }
 .research-workspace-bar::after { content: ''; position: absolute; bottom: -1px; left: var(--space-6); width: 112px; border-bottom: 2px solid var(--color-accent); }
+.research-workspace-bar.is-inactive { justify-content: flex-end; }
+.research-workspace-bar.is-inactive::after { display: none; }
 .research-workspace-identity, .research-workspace-controls {
   display: flex;
   align-items: center;
@@ -165,7 +179,7 @@ function select(id: string): void {
 .research-field-tag { max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-left: var(--space-3); border-left: 1px solid var(--color-line-strong); color: var(--color-text-muted); text-transform: none; letter-spacing: normal; }
 .research-workspace-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-base); }
 .research-policy-select { width: 148px; }
-.research-workspace-controls { flex: none; }
+.research-workspace-controls { flex: none; flex-wrap: wrap; }
 .research-session-switcher { display: grid; gap: var(--space-3); }
 .research-switcher-heading { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
 .research-switcher-heading h2 { font-size: var(--text-lg); color: var(--color-text); font-weight: var(--weight-medium); }

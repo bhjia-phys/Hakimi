@@ -83,6 +83,9 @@ import {
   IAgentConversationUndoService,
   IAgentFullCompactionService,
   IAgentLoopService,
+  IAgentLifecycleService,
+  IAgentResearchService,
+  MAIN_AGENT_ID,
   IAuthSummaryService,
   IConfigService,
   ISessionActivityView,
@@ -1242,6 +1245,7 @@ export function toWireSession(
     archived_at:
       fields.archivedAt === undefined ? undefined : new Date(fields.archivedAt).toISOString(),
     busy: facts.busy,
+    research: facts.research,
     main_turn_active: facts.mainTurnActive,
     pending_interaction: facts.pendingInteraction,
     // Live facts win for warm sessions; only a cold session (no live handle)
@@ -1262,6 +1266,7 @@ export function toWireSession(
 
 /** Live activity and interaction facts projected onto the wire `Session`. */
 export interface SessionFacts {
+  readonly research?: Session['research'];
   readonly busy: boolean;
   readonly mainTurnActive: boolean;
   readonly pendingInteraction: SessionPendingInteraction;
@@ -1288,7 +1293,16 @@ export function resolveSessionFacts(core: Scope, sessionId: string): SessionFact
       live: false,
     };
   }
-  return { ...handle.accessor.get(ISessionActivityView).state(), live: true };
+  // Inspect existing agents only: listing must never hydrate a cold session or
+  // create a main agent, and must not read the AITP ledger or transcripts.
+  const agent = handle.accessor.get(IAgentLifecycleService).get(MAIN_AGENT_ID);
+  const snapshot = agent?.accessor.get(IAgentResearchService).getSnapshot();
+  const research = snapshot === undefined ? undefined : {
+    revision: snapshot.revision,
+    mode: snapshot.mode,
+    line: snapshot.lines.find((line) => line.slug === snapshot.currentLineSlug)?.title,
+  };
+  return { ...handle.accessor.get(ISessionActivityView).state(), research, live: true };
 }
 
 /**

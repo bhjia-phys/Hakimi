@@ -28,7 +28,10 @@
  * conversation undo (`context.undone`), or the admitted Research turn boundary
  * immediately before context injection. The turn-boundary pass only repairs
  * mechanically determined structure; it never infers scientific completion,
- * abandons an action, resolves a checkpoint, or writes AITP. The
+ * abandons an action, resolves a checkpoint, or writes AITP. It can propose the
+ * existing checkpoint for a retained agent conclusion after the original scoped
+ * context receives its first explicit workstream confirmation. Ambiguous scope,
+ * stale plans and possible external commits remain held for explicit recovery. The
  * scientific state layer (plan/start/complete/record/set-phase/request/resolve-gate)
  * and typed subagent evidence review performs pre-dispatch validation (throws on invalid transitions, missing
  * actions, wrong action status, or mismatched gates) while the wire ops themselves are no-ops
@@ -216,7 +219,7 @@ import {
 import { IAitpExternalFactService } from './externalFact';
 import { createExternalFactFacade, toWireCheckpointReceipt } from './externalFactService';
 import { IDurableCommitService } from './durableCommit';
-import { localConclusionAdoptionProblem } from './localConclusion';
+import { automaticLocalConclusionCheckpoint, localConclusionAdoptionProblem } from './localConclusion';
 import {
   deriveLineWorkstreamAlignment,
   isMaintenanceReceiptAligned,
@@ -242,7 +245,7 @@ import {
   type ResearchExecutionCapability,
 } from './researchExecutionPolicy';
 
-import { admitRunObservation } from './runObservation';
+import { admitRunObservation, retainedRunForAction } from './runObservation';
 
 import {
   type ClearGoalAlignmentInput,
@@ -1369,7 +1372,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         admission.reason,
       );
     }
-    if (admission.kind === 'active') this.assertMutationAllowed();
+    if (admission.kind === 'active' || state.currentAction?.status === 'in_progress') this.assertMutationAllowed();
     const retained = admission.kind === 'retained' ? admission.run : undefined;
     const observedAt = now();
     this.wire.dispatch(researchObserveRun({
@@ -2493,10 +2496,10 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Checkpoint ${state.pendingCheckpoint.checkpointId} is pending; finish its persistence or safely discard a historical proposal before beginning another action.`,
       );
     }
-    if (isLiveResearchRun(state.currentRun) || isLiveResearchRun(state.currentAction?.run)) {
+    if (input.observedRunActionId === undefined && (isLiveResearchRun(state.currentRun) || isLiveResearchRun(state.currentAction?.run))) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
-        'An unresolved run is still attached to the foreground work. Inspect the current action/run before replacement; a concluded action does not prove the run has finished.',
+        'An unresolved run is still attached to the foreground work. To inspect that same job, begin an observation action with observed_run_action_id equal to currentRun.actionId and the same Question/Line. A concluded action does not prove the run has finished.',
       );
     }
     if (!PLAN_ACTION_PHASES.includes(state.phase)) {
@@ -2543,6 +2546,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
         `Research action is bound to line ${lineSlug}, but current line is ${modeLine}. Switch lines before continuing.`,
+      );
+    }
+    if (input.observedRunActionId !== undefined && retainedRunForAction(state, { ...input, lineSlug }) === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'Observation action must explicitly retain the same Run origin, Line and Question of the closed foreground action.',
       );
     }
     return { lineSlug };
@@ -2727,6 +2736,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const bindings = this.resolveActionPlanBindings(input, actionId, ownership.lineSlug);
     this.wire.dispatch(
       researchPlanAction({
+        observedRunActionId: input.observedRunActionId,
         actionId,
         questionId: input.questionId,
         questionRevision: input.questionId === undefined
@@ -2784,6 +2794,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const bindings = this.resolveActionPlanBindings(input, actionId, ownership.lineSlug);
     this.wire.dispatch(
       researchBeginAction({
+        observedRunActionId: input.observedRunActionId,
         actionId,
         questionId: input.questionId,
         questionRevision: input.questionId === undefined
@@ -3569,8 +3580,28 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.reconcileCommittedCheckpoint();
     this.reconcileHistoricalCheckpoint();
     this.reconcileResearchStructure();
+    this.reconcileLocalConclusion();
     this.reconcilePeriodLifecycle();
     this.reconcileAlerts();
+  }
+
+  private reconcileLocalConclusion(): void {
+    if (this.scopeCtx.agentId !== MAIN_AGENT_ID || this.wire.isRestoring() ||
+      !this.mode.isActive || this.mode.phase !== 'ready' || this.mode.loopStatus !== 'active' ||
+      this.adapter.health.phase !== 'ready' || this.notePersistenceInFlight) return;
+    const state = this.wire.getModel(ResearchModel).current;
+    const proposal = automaticLocalConclusionCheckpoint(state);
+    if (proposal === undefined ||
+      this.wire.getModel(AitpModeModel).current.currentLineSlug !== proposal.lineSlug) return;
+    if (this.externalFact.getCommitHistory().some((commit) =>
+      commit.checkpointId === proposal.checkpointId || commit.committedAt >= proposal.createdAt)) return;
+    try {
+      this.assertActionPlanBindingsFresh(state.localConclusion!.action, state.localConclusion);
+    } catch (error) {
+      if (error instanceof AitpResearchError) return;
+      throw error;
+    }
+    this.wire.dispatch(researchProposeCheckpoint(proposal));
   }
 
   private reconcileHistoricalCheckpoint(): void {
@@ -4294,7 +4325,32 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     return undefined;
   }
 
+  assertCheckpointEvidenceAccess(checkpointId: string, expectedRevision: number): void {
+    this.assertStateMutationAllowed();
+    const state = this.wire.getModel(ResearchModel).current;
+    const checkpoint = state.pendingCheckpoint;
+    if (!this.mode.isActive || this.mode.phase !== 'ready' || expectedRevision !== this.currentResearchRevision() ||
+      checkpoint === null || checkpoint.checkpointId !== checkpointId ||
+      checkpoint.lineSlug !== this.wire.getModel(AitpModeModel).current.currentLineSlug ||
+      checkpoint.receipt?.save !== undefined ||
+      this.externalFact.getCommitHistory().some((entry) => entry.checkpointId === checkpointId) ||
+      isHistoricalCheckpoint(checkpoint, Object.values(state.questions))) {
+      throw new AitpResearchError(AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+        'Evidence inspection requires the current unsaved checkpoint and exact Research revision in ready mode.');
+    }
+    this.assertCheckpointWorkstreamBindingCurrent(checkpoint, state);
+  }
+
   private checkpointPersistenceBlocker(event: BeforeToolExecuteEvent): string | undefined {
+    if (event.toolCall.name === 'ReadResearchCheckpointEvidence') {
+      try {
+        const args = event.args as { checkpoint_id: string; expected_revision: number };
+        this.assertCheckpointEvidenceAccess(args.checkpoint_id, args.expected_revision);
+        return undefined;
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    }
     if (this.mode.phase !== 'ready') {
       return `Research checkpoint persistence denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}.`;
     }
@@ -4916,6 +4972,7 @@ function toRunState(r: ResearchRunStateRecord): ResearchRunState {
 
 function toActionSpec(r: ResearchActionSpecRecord): ResearchActionSpec {
   return {
+    observedRunActionId: r.observedRunActionId,
     actionId: r.actionId,
     questionId: r.questionId,
     questionRevision: r.questionRevision,
@@ -5255,8 +5312,9 @@ function currentLineRun(
   run: ResearchRunState | undefined,
 ): ResearchRunState | undefined {
   if (action === undefined) return undefined;
-  if (action.run?.actionId === action.actionId) return action.run;
-  return run?.actionId === action.actionId ? run : undefined;
+  const origin = action.observedRunActionId ?? action.actionId;
+  if (action.run?.actionId === origin) return action.run;
+  return run?.actionId === origin ? run : undefined;
 }
 
 function currentLineHumanGate(input: {

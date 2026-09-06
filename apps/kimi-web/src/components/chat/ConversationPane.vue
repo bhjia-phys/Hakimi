@@ -48,6 +48,8 @@ const props = defineProps<{
   researchExpandSignal?: number;
   researchSessions?: ResearchSessionLink[];
   researchPolicyDisabled?: boolean;
+  researchToggleDisabled?: boolean;
+  researchTogglePending?: boolean;
   activationBadges?: ActivationBadges;
   status: ConversationStatus;
   thinking?: ThinkingLevel;
@@ -156,11 +158,11 @@ const emit = defineEmits<{
   toggleGoal: [];
   createGoal: [objective: string];
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
-  startResearch: [];
   manageResearch: [];
   selectResearchSession: [id: string];
   browseResearchSessions: [];
   setResearchPolicy: [policy: string];
+  toggleResearch: [];
   alignResearch: [relation: ResearchGoalAlignmentRelation];
   clearResearchAlignment: [];
   compact: [];
@@ -1313,6 +1315,16 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
 
 <template>
   <section class="con" :class="{ mobile }">
+    <ResearchWorkspaceBar
+      v-if="researchEnabled"
+      :snapshot="research" :session-id="sessionId" :sessions="researchSessions ?? []"
+      :policy-disabled="researchPolicyDisabled" :toggle-disabled="researchToggleDisabled"
+      :toggle-pending="researchTogglePending"
+      @toggle-mode="emit('toggleResearch')"
+      @select-session="emit('selectResearchSession', $event)"
+      @browse-sessions="emit('browseResearchSessions')"
+      @set-policy="emit('setResearchPolicy', $event)"
+    />
     <!-- Chat context header: workspace/session, git status, connection status,
          open-in-editor, copy-all, PR. -->
     <ChatHeader
@@ -1363,14 +1375,6 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
       @select="scrollToTurn"
     />
 
-    <ResearchWorkspaceBar
-      v-if="research && research.mode !== 'inactive' && !sessionLoading"
-      :snapshot="research" :session-id="sessionId" :sessions="researchSessions ?? []"
-      :policy-disabled="researchPolicyDisabled"
-      @select-session="emit('selectResearchSession', $event)"
-      @browse-sessions="emit('browseResearchSessions')"
-      @set-policy="emit('setResearchPolicy', $event)"
-    />
     <div class="chat-layout">
       <ResearchStarfield v-if="research && research.mode !== 'inactive' && !sessionLoading" />
       <ResearchBoardPanel
@@ -1496,8 +1500,6 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
               @create-goal="emit('createGoal', $event)"
               @control-goal="emit('controlGoal', $event)"
               @focus-goal="focusGoal"
-              @start-research="emit('startResearch')"
-              @manage-research="emit('manageResearch')"
               @compact="emit('compact')"
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
@@ -1584,8 +1586,6 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
         @approval="handleApproval"
         @cancel-task="emit('cancelTask', $event)"
         @control-goal="emit('controlGoal', $event)"
-        @start-research="emit('startResearch')"
-        @manage-research="emit('manageResearch')"
         @submit="handleComposerSubmit"
         @steer="emit('steer', $event)"
         @command="emit('command', $event)"

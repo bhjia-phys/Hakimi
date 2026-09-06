@@ -1099,9 +1099,14 @@ describe('ResearchBoardComponent', () => {
     expect(expanded).toContain('action action-stale');
   });
 
-  it('compact shows an action-bound scheduler observation', () => {
+  it.each([false, true])('compact shows an action-bound scheduler observation (new observer=%s)', (observer) => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(makeSnapshot({
+      currentAction: observer ? {
+        actionId: 'observation-action', observedRunActionId: 'action-1', lineSlug: 'test-line',
+        kind: 'simulation', purpose: 'Observe the retained job.', expectedEvidence: [], stopCondition: 'One observation.',
+        allowedToolKinds: ['shell'], status: 'in_progress', createdAt: 100, requiresHumanApproval: false,
+      } : undefined,
       currentRun: {
         actionId: 'action-1',
         campaign: 'campaign-r2',

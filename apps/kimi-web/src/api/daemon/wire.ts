@@ -62,6 +62,7 @@ export interface WirePermissionRule {
 }
 
 export interface WireSession {
+  research?: { revision: number; mode: 'inactive' | 'probing' | 'ready' | 'degraded'; line?: string };
   id: string;
   title: string;
   created_at: string;

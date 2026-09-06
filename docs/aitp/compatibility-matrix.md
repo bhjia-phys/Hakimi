@@ -1,5 +1,27 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Automatic proposal for confirmed original conclusions (2026-09-06; uncommitted, not installed):**
+the existing Hakimi reconciliation and checkpoint reducer now recover fresh
+agent-authority local conclusions after their original Line's first explicit
+workstream confirmation. No second human adoption is required for this narrow
+case. Original Program/Line/Question/Plan freshness, stable replay identity and
+possible external-commit guards remain; unscoped and human-authority adoption
+stay explicit. The existing REST/WS/SDK/klient/TUI/Web checkpoint projections need
+no schema changes. AITP 0.9.0/contract-0.2 and its dirty handoffs remain unchanged.
+This is local checkpoint proposal, not automatic canonical save, scientific
+approval or remote monitoring. A subsequent source-only recovery extension adds
+explicit same-Run observation Actions and bounded checkpoint evidence reads;
+no scheduler query service or automatic Goal resumption is claimed.
+See the [handoff](README.md) for evidence and the remaining boundary.
+
+**Web Research entry/navigation follow-up (2026-09-06; locally installed, uncommitted):** standalone
+top-level toggle and directly visible other loaded sessions, using the existing
+command/navigation paths. Current-session rows are marked and disabled. CLI patch;
+no AITP, REST/WS/SDK/klient/TUI contract or scientific-state change. Full App/client
+browser coverage supplements the previous pane fixture. Reinstalled as `0.21.0`;
+all installed Web files and CLI bundles match, isolated Web startup and native PTY
+pass. No commit/push; see the [handoff receipt](README.md).
+
 **Web Research observatory (2026-09-06; locally installed from `d23654b61`):** presentation-only workspace,
 observed-session navigation and a shortcut to the existing revision-checked planning
 policy command. REST/WS/SDK/klient/TUI contracts, AITP 0.9.0/contract-0.2 and all ledger,

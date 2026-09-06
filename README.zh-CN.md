@@ -59,11 +59,23 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
+后续修复已本地重装（2026-09-06，源码尚未提交）：顶部始终保留独立的 **Research 开关**，
+不再藏在输入框的 Mode 菜单里。会话选择框直接展示其他已加载会话（包括
+状态未读取的会话），明确标注当前会话。开关失败会显示错误并保留真实状态；
+忙碌、连接和 Plan 冲突检查不变。新增完整 App 浏览器测试验证实际客户端跳转，
+不只验证单个面板的模拟选择。
+包版本仍为 `0.21.0`；安装后的 Web 资源、独立 Web 启动和 PTY 已验证。
+请在空闲时重启已有 Web 进程并刷新浏览器；本次未提交或推送。
+
 Web 开启 Research 后进入深空研究工作台：临时深蓝配色、静态星点、线框行星、
 轨道罗盘标识与仪器式边框；Dreaming 使用淡紫色变体，不加入持续运动的背景或
 虚构读数。普通侧栏自动收起；退出后恢复原主题和侧栏偏好。右侧看板可收起，保留课题、
-当前循环、需要注意和下一步；收起时仍显示循环阶段。顶部「研究会话」可以跨
-会话和工作区跳转，仅切换查看，不启动、暂停或恢复科研。列表只展示本浏览器
+当前循环、需要注意和下一步；收起时仍显示循环阶段。后续修复已从工作树本地安装（2026-09-06，版本仍为 0.21.0）：
+会话列表增加已运行会话的轻量 Research 模式／Line 信息，无需先打开对话即可发现
+多个已开启的研究会话；全局活动事件刷新对应会话概览，完整对话订阅仍限四个。
+未载入的旧会话保持未知，不会因发现会话而被恢复，也不会启动或暂停其他 Goal。
+顶部「研究会话」可以跨
+会话和工作区跳转，仅切换查看，不启动、暂停或恢复科研。此前已安装版本只展示本浏览器
 已经观察到的 Research 状态，其他会话明确标为「状态未读取」，旧会话可通过
 「浏览全部会话」找到；这还不是完整的全局活跃课题索引。现有 Research GET 会
 恢复 Agent，因此导航不会在后台逐个探查历史会话。Collaborative／Dreaming
@@ -90,7 +102,7 @@ Print mode 退出时会先暂停 active Goal 并刷出日志，再释放运行�
 
 上一动作已经收束后，新的显式 `BeginResearchAction` 可以直接从 `state_updated` 开始，不再要求改 phase、改 Focus 或重复写进度。pending checkpoint、live action/run、未决 human gate 和过期计划仍阻止替换。这修复的是动作衔接，不替代科学判断，也不另行调度 Goal。
 
-未绑定的结果会在 Board 显示真实结论并请求确认记录归属，不再把已结束的工作标成运行中。目标 Line/workstream 明确确认后，可以在 Research Manager 或通过 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]` 接纳原结果。这只生成 pending checkpoint，AITP 保存和验证仍是独立步骤。新科研 Action 与 Goal continuation 会等待，防止覆盖待处理结果。详见[恢复说明](docs/zh/guides/research-mode.md#保留的本地结论)。
+未绑定的结果会在 Board 显示真实结论，不再把已结束的工作标成运行中。原始归属仍 fresh 的 agent 结论，在首次明确确认 Line/workstream 后自动生成 pending checkpoint；有歧义的归属仍须显式恢复。记录阶段可用 `ReadResearchCheckpointEvidence` 读取一个指定证据文件，不必借用 Bash 校验指纹。持久化后，新观察 Action 可通过 `observed_run_action_id` 显式沿用同一 Run，保留原提交来源。AITP 保存、人类科学决策、普通工具权限和 Goal 生命周期保持独立。这些后续修复尚未安装，不新增 scheduler 或自动重提作业。详见 [恢复说明](docs/zh/guides/research-mode.md#保留的本地结论)。
 
 该恢复修复已从 commit `06b8524102df` 安装，并在真实 Heisenberg 旧会话中完成既有 Action 的收尾与冷恢复，没有重算。这尚不代表已绑定 AITP 持久化或 Goal 自动科研通过；[验收记录](docs/aitp/theory-physics-collaborator-program.md#1923-本地结论交付与原会话恢复验收)区分了这些未完成项及一处模型归因错误。
 

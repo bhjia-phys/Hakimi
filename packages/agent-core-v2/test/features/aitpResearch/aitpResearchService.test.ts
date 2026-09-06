@@ -1,4 +1,9 @@
 import { PassThrough } from 'node:stream';
+import { createHash } from 'node:crypto';
+import { FakeRuntime } from '#/runtime/fakeRuntime';
+import { IAgentRuntimeService } from '#/agent/runtimeBinding/agentRuntime';
+import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceContext';
+import { IReadResearchCheckpointEvidenceTool, ReadResearchCheckpointEvidenceTool } from '#/features/aitpResearch/tools/checkpointEvidenceTool';
 import { readFileSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -5723,7 +5728,7 @@ describe('goal completion guard and subagent veto', () => {
     expect(svc.getSnapshot()).toEqual(after);
   });
 
-  async function retainLocalCounterexample(svc: AgentResearchService, unscoped = false) {
+  async function retainLocalCounterexample(svc: AgentResearchService, unscoped = false, humanDecision = false) {
     const action = unscoped
       ? svc.planAndStartAction({
           kind: 'experiment', purpose: 'Check the primitive spin algebra.',
@@ -5740,8 +5745,10 @@ describe('goal completion guard and subagent veto', () => {
         detail: { observations: ['The square of the x-spin operator does not match one quarter of the identity.'],
           limitations: ['This does not settle the general physical conjecture.'], artifactRefs: ['/tmp/example-primitive-check/report.md'] },
       },
-      durability: { status: 'durable_delta', entryKind: 'failure', authority: 'agent',
-        provenance: 'agent_verification', rationale: 'New counterevidence changes the assessment.' },
+      durability: { status: 'durable_delta', entryKind: humanDecision ? 'decision' : 'failure',
+        authority: humanDecision ? 'human' : 'agent',
+        provenance: humanDecision ? 'human_decision' : 'agent_verification',
+        rationale: 'New counterevidence changes the assessment.' },
     });
   }
 
@@ -5769,7 +5776,257 @@ describe('goal completion guard and subagent veto', () => {
     expect(svc.getSnapshot()).toEqual(snapshot);
   });
 
-  it.each([false, true])('adopts retained evidence only through explicit human scope confirmation (unscoped=%s)', async (unscoped) => {
+  it.each(['user', 'main_agent'] as const)('automatically checkpoints an original scoped conclusion after %s confirms its binding', async (confirmedBy) => {
+    const { svc, adapter, executor } = await buildResearchSandboxHarness();
+    await adapter.probe();
+    wire.dispatch(researchSetProgram({ topicId: 't1', title: 'Test', goalText: 'Not established yet',
+      goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2 }));
+    const local = (await retainLocalCounterexample(svc)).localConclusion!;
+    const prepare = vi.spyOn(adapter, 'recordPrepare');
+    const save = vi.spyOn(adapter, 'recordSave');
+    const binding = await svc.confirmLineWorkstreamBinding({
+      expectedRevision: svc.getSnapshot().revision, lineSlug: 'main', workstream: 'aitp-main', confirmedBy,
+    });
+    const snapshot = svc.getSnapshot();
+    expect(snapshot.localConclusion).toBeUndefined();
+    expect(snapshot.pendingCheckpoint).toMatchObject({
+      commitCandidate: local.candidate, workstreamBinding: binding,
+      lineSlug: local.action.lineSlug, questionId: local.action.questionId,
+      assessment: local.progress.mainlineImpact, nextAction: local.progress.nextAction,
+    });
+    expect(snapshot.latestProgress).toEqual(local.progress);
+    expect(snapshot.currentAction).toEqual(local.action);
+    expect(snapshot.committedCheckpointHistory).toEqual([]);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(await executor.fireBeforeExecute(makeToolHookContext('aitp_record_prepare', {
+      checkpoint_id: snapshot.pendingCheckpoint!.checkpointId,
+      kind: 'failure', authority: 'agent', created_by: 'agent:main', workstreams: ['aitp-main'],
+    }))).toBeUndefined();
+    expect((await executor.fireBeforeExecute(makeToolHookContext('Bash', { command: 'submit another job' })))?.veto).toBeDefined();
+  });
+
+  it('recovers an already confirmed local conclusion at the pre-answer boundary only once', async () => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    await adapter.probe();
+    wire.dispatch(researchSetProgram({ topicId: 't1', title: 'Test', goalText: 'Not established yet',
+      goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2 }));
+    const local = (await retainLocalCounterexample(svc)).localConclusion!;
+    seedConfirmedWorkstreamBinding({ confirmedAt: Date.now() });
+    const before = svc.getSnapshot();
+    expect(before.localConclusion).toEqual(local);
+    expect(svc.getSnapshot()).toEqual(before);
+    svc.noteLoopBoundary();
+    const pending = svc.getPendingCheckpoint()!;
+    expect(pending.commitCandidate).toEqual(local.candidate);
+    svc.noteLoopBoundary();
+    expect(svc.getPendingCheckpoint()).toEqual(pending);
+    expect(svc.getSnapshot().latestProgress).toEqual(local.progress);
+  });
+
+  it('persists an automatically recovered submission without inventing an external run outcome', async () => {
+    const { svc, adapter, modeSvc, executor, registry } = await buildResearchSandboxWithProductionExecutor();
+    await adapter.probe();
+    vi.spyOn(adapter, 'show').mockImplementation(async ({ id }) => ({
+      schema: 'aitp/show-0.1', root: '/workspace', id, status: 'active',
+      source: `.aitp/topic/entries/${id}.md`, legacy_derived: false,
+      frontmatter: { topic: 't1', workstreams: ['aitp-main'], kind: 'run', authority: 'agent', created_by: 'agent:main' },
+      body: 'Fixture job was submitted; no terminal outcome is known.',
+    }));
+    wire.dispatch(researchSetProgram({ topicId: 't1', title: 'Test', goalText: 'Not established yet',
+      goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2 }));
+    const action = await beginSandboxAction(svc, ['shell']);
+    svc.observeRun({ actionId: action.actionId, expectedRevision: svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running', schedulerState: 'running' });
+    const conclusion = svc.concludeAction({
+      actionId: action.actionId, status: 'completed',
+      progress: { headline: 'Fixture submission observed', motivation: 'Track one external run.',
+        workPerformed: 'Observed submission.', result: 'Job is running; terminal outcome unknown.',
+        mainlineImpact: 'Await new evidence.', nextAction: 'Query this same job once.' },
+      durability: { status: 'durable_delta', entryKind: 'run', authority: 'agent',
+        provenance: 'agent_verification', rationale: 'New submission evidence.' },
+    });
+    const run = svc.getSnapshot().currentRun;
+    await svc.confirmLineWorkstreamBinding({ expectedRevision: svc.getSnapshot().revision,
+      lineSlug: 'main', workstream: 'aitp-main', confirmedBy: 'user' });
+    const checkpointId = svc.getPendingCheckpoint()!.checkpointId;
+    const { IAitpRecordPrepareTool, AitpRecordPrepareTool, IAitpRecordSaveTool, AitpRecordSaveTool } =
+      await import('#/features/aitpResearch/tools/aitpAdapterTools');
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(ISessionAitpAdapter, adapter);
+        reg.defineInstance(IAgentAitpModeService, modeSvc);
+        reg.defineInstance(IAgentResearchService, svc);
+        reg.definePartialInstance(IAitpDistillationHandoffService, {
+          prepare: async () => ({ status: 'unavailable', reason: 'No external Skill in fixture.' }),
+        });
+        reg.define(IAitpRecordPrepareTool, AitpRecordPrepareTool);
+        reg.define(IAitpRecordSaveTool, AitpRecordSaveTool);
+        reg.define(ICommitResearchCheckpointTool, CommitResearchCheckpointTool);
+      },
+    });
+    registry.register(ix.get(IAitpRecordPrepareTool));
+    registry.register(ix.get(IAitpRecordSaveTool));
+    registry.register(ix.get(ICommitResearchCheckpointTool));
+    const shell = vi.fn(async () => ({ output: 'Fixture query executed.' }));
+    registry.register({ name: 'Bash', description: 'Count fixture queries.', parameters: { type: 'object' },
+      resolveExecution: () => ({ approvalRule: 'Bash', accesses: ToolAccesses.all(), execute: shell }) });
+    const execute = async (name: string, args: Record<string, unknown>) => {
+      const results = [];
+      for await (const result of executor.execute([
+        { type: 'function', id: `recovery-${name}`, name, arguments: JSON.stringify(args) },
+      ], { turnId: 1, signal: new AbortController().signal })) results.push(result.result);
+      return results;
+    };
+    expect(await execute('Bash', {})).toEqual([expect.objectContaining({ isError: true })]);
+    expect(shell).not.toHaveBeenCalled();
+    for (const [name, args] of [
+      ['aitp_record_prepare', { kind: 'run', authority: 'agent', created_by: 'agent:main', workstreams: ['aitp-main'], checkpoint_id: checkpointId }],
+      ['aitp_record_save', { draft_path: '.aitp/local/drafts/entry-test.md', checkpoint_id: checkpointId }],
+      ['CommitResearchCheckpoint', { checkpoint_id: checkpointId, entry_id: 'entry-test' }],
+    ] as const) {
+      const results = await execute(name, args);
+      expect(results).toHaveLength(1);
+      expect(results[0]!.isError, JSON.stringify(results[0]!.output)).not.toBe(true);
+    }
+    expect(svc.getPendingCheckpoint()).toBeNull();
+    expect(svc.getSnapshot().latestProgress).toEqual(conclusion.progress);
+    expect(svc.getSnapshot().currentRun).toEqual(run);
+    const monitoringInput = { questionId: action.questionId, lineSlug: 'main',
+      kind: 'simulation' as const, purpose: 'Read one new status observation for fixture-job.',
+      stopCondition: 'One query returns or fails.', allowedToolKinds: ['shell'] };
+    expect(() => svc.planAndStartAction(monitoringInput)).toThrow('An unresolved run');
+    expect(await execute('Bash', {})).toEqual([expect.objectContaining({ isError: true })]);
+    expect(shell).not.toHaveBeenCalled();
+    expect(() => svc.planAndStartAction({ ...monitoringInput, observedRunActionId: 'unrelated' })).toThrow('same Run origin');
+    const monitoring = svc.planAndStartAction({ ...monitoringInput, observedRunActionId: action.actionId });
+    expect(monitoring.actionId).not.toBe(action.actionId);
+    expect(svc.getSnapshot().currentRun).toEqual(run);
+    expect(monitoring.run?.actionId).toBe(action.actionId);
+    expect(() => svc.observeRun({ actionId: monitoring.actionId, expectedRevision: svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'another-job', stage: 'running', schedulerState: 'running' })).toThrow('same retained');
+    svc.observeRun({ actionId: monitoring.actionId, expectedRevision: svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running', schedulerState: 'running' });
+    expect(svc.getSnapshot().currentRun?.actionId).toBe(action.actionId);
+    expect(await execute('Bash', {})).toEqual([expect.objectContaining({ output: 'Fixture query executed.' })]);
+    expect(shell).toHaveBeenCalledOnce();
+  });
+
+  it('cold-restores an observation action and undoes it without transferring the original Run', async () => {
+    const records: WireRecord[] = [];
+    const openWire = () => {
+      eventBus = new EventBusService();
+      const ix = disposables.add(new TestInstantiationService());
+      return registerTestAgentWire(ix, testWireScope(SCOPE, 'retained-run-observation'), {
+        log: recordingWireLog(records), eventBus,
+      });
+    };
+    wire = openWire();
+    const original = await buildResearchSandboxHarness();
+    const action = await beginSandboxAction(original.svc, ['shell']);
+    original.svc.observeRun({ actionId: action.actionId, expectedRevision: original.svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running', schedulerState: 'running', sourcePin: 'source-one' });
+    original.svc.concludeAction({ actionId: action.actionId, status: 'completed',
+      progress: { headline: 'Same recorded run', motivation: 'Observe existing work.', workPerformed: 'Checked status.',
+        result: 'Still running.', mainlineImpact: 'Wait; no new scientific conclusion.' },
+      durability: { status: 'no_durable_delta', rationale: 'Repeats recorded status.' },
+    });
+    wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
+    const input = { observedRunActionId: action.actionId, questionId: action.questionId, lineSlug: action.lineSlug,
+      kind: 'simulation' as const, purpose: 'Observe the same job once.', stopCondition: 'One status response.', allowedToolKinds: ['shell'] };
+    expect(() => original.svc.planAndStartAction({ ...input, questionId: undefined })).toThrow('same Run origin');
+    const observer = original.svc.planAndStartAction(input);
+    await wire.flush();
+    original.ix.dispose();
+    wire = openWire();
+    const restored = await buildResearchSandboxHarness();
+    await wire.restore();
+    expect(restored.svc.getSnapshot().currentAction?.observedRunActionId).toBe(action.actionId);
+    expect(restored.svc.getSnapshot().currentRun?.sourcePin).toBe('source-one');
+    restored.svc.observeRun({ actionId: observer.actionId, expectedRevision: restored.svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running', schedulerState: 'running' });
+    expect(restored.svc.getSnapshot().currentRun?.actionId).toBe(action.actionId);
+    wire.dispatch(contextUndo({ count: 1 }));
+    expect(restored.svc.getSnapshot().currentAction?.actionId).toBe(action.actionId);
+    expect(restored.svc.getSnapshot().currentAction?.status).toBe('completed');
+    expect(restored.svc.getSnapshot().currentRun?.actionId).toBe(action.actionId);
+  });
+
+  it.each(['line', 'question', 'program', 'gate', 'paused', 'degraded', 'inactive', 'adapter', 'unscoped', 'human', 'unobserved'] as const)(
+    'does not automatically adopt a local conclusion with %s context', async (change) => {
+      const { svc, adapter, modeSvc } = await buildResearchSandboxHarness();
+      await adapter.probe();
+      if (change !== 'unobserved') wire.dispatch(researchSetProgram({ topicId: 't1', title: 'Test', goalText: 'Not established yet',
+        goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2 }));
+      const local = (await retainLocalCounterexample(svc, change === 'unscoped', change === 'human')).localConclusion!;
+      if (change === 'line') svc.updateLine({ slug: 'main', title: 'Changed physical scope' });
+      if (change === 'question') svc.updateQuestion({ questionId: local.action.questionId!, assessment: 'New scientific interpretation' });
+      if (change === 'gate') svc.requestHumanDecision({ kind: 'review', prompt: 'Choose the physical interpretation.' });
+      if (change === 'paused') modeSvc.loopStatus = 'paused';
+      if (change === 'degraded') modeSvc.phase = 'degraded';
+      if (change === 'inactive') modeSvc.isActive = false;
+      if (change === 'adapter') adapter.reset();
+      seedConfirmedWorkstreamBinding({ confirmedAt: Date.now(), goalText: change === 'program' ? 'Another Program' : undefined });
+      svc.noteLoopBoundary();
+      expect(svc.getSnapshot().localConclusion).toEqual(local);
+      expect(svc.getPendingCheckpoint()).toBeNull();
+    },
+  );
+
+  it('reuses automatic local checkpoint identity after undo and refuses a possible committed replay', async () => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    await adapter.probe();
+    wire.dispatch(researchSetProgram({ topicId: 't1', title: 'Test', goalText: 'Not established yet',
+      goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2 }));
+    const local = (await retainLocalCounterexample(svc)).localConclusion!;
+    seedConfirmedWorkstreamBinding({ confirmedAt: Date.now() });
+    wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
+    svc.noteLoopBoundary();
+    const pending = svc.getPendingCheckpoint()!;
+    wire.dispatch(contextUndo({ count: 1 }));
+    wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
+    svc.noteLoopBoundary();
+    expect(svc.getPendingCheckpoint()).toEqual(pending);
+    createExternalFactFacade(wire).commitExternalFact({
+      checkpointId: pending.checkpointId, entryId: 'saved-original-entry', committedAt: Date.now(),
+    });
+    wire.dispatch(contextUndo({ count: 1 }));
+    svc.noteLoopBoundary();
+    expect(svc.getPendingCheckpoint()).toBeNull();
+    expect(svc.getSnapshot().localConclusion).toEqual(local);
+    expect(svc.getSnapshot().committedCheckpointHistory).toHaveLength(1);
+  });
+
+  it('cold-restores confirmed original evidence into an automatic checkpoint without human adoption', async () => {
+    const records: WireRecord[] = [];
+    const openWire = () => {
+      eventBus = new EventBusService();
+      const ix = disposables.add(new TestInstantiationService());
+      return registerTestAgentWire(ix, testWireScope(SCOPE, 'automatic-local-conclusion'), {
+        log: recordingWireLog(records), eventBus,
+      });
+    };
+    wire = openWire();
+    const original = await buildResearchSandboxHarness();
+    await original.adapter.probe();
+    wire.dispatch(researchSetProgram({ topicId: 't1', title: 'Test', goalText: 'Not established yet',
+      goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2 }));
+    const local = (await retainLocalCounterexample(original.svc)).localConclusion!;
+    seedConfirmedWorkstreamBinding({ confirmedAt: Date.now() });
+    await wire.flush();
+    original.ix.dispose();
+    wire = openWire();
+    const restored = await buildResearchSandboxHarness();
+    await restored.adapter.probe();
+    await wire.restore();
+    restored.svc.noteLoopBoundary();
+    expect(restored.svc.getSnapshot().localConclusion).toBeUndefined();
+    expect(restored.svc.getPendingCheckpoint()?.commitCandidate).toEqual(local.candidate);
+    expect(restored.svc.getSnapshot().latestProgress).toEqual(local.progress);
+    expect(restored.svc.getSnapshot().committedCheckpointHistory).toEqual([]);
+  });
+
+  it.each([false, true])('preserves explicit human adoption for conclusions lacking captured Program context (unscoped=%s)', async (unscoped) => {
     const { svc, adapter } = await buildResearchSandboxHarness();
     const prepare = vi.spyOn(adapter, 'recordPrepare');
     const save = vi.spyOn(adapter, 'recordSave');
@@ -5858,6 +6115,64 @@ describe('goal completion guard and subagent veto', () => {
       })).toThrow();
       expect(svc.getSnapshot()).toEqual(before);
       expect(before.localConclusion).toEqual(local);
+    },
+  );
+
+  it.each(['ok', 'wrong-id', 'stale', 'degraded', 'inactive', 'saved', 'line', 'symlink', 'large', 'changed', 'metadata', 'traversal'] as const)(
+    'inspects only checkpoint-owned evidence through the production executor: %s', async (variant) => {
+      const { svc, executor, registry, modeSvc } = await buildResearchSandboxWithProductionExecutor();
+      if (variant === 'line') {
+        seedCurrentConfirmedWorkstream();
+        const workstreamBinding = seedConfirmedWorkstreamBinding({ lineSlug: 'another-line' });
+        wire.dispatch(researchProposeCheckpoint({ checkpointId: 'checkpoint-current', idempotencyKey: 'key-current',
+          createdAt: 10, lineSlug: 'another-line', workstreamBinding }));
+        expect(svc.getPendingCheckpoint()?.lineSlug).toBe('another-line');
+        expect(svc.getSnapshot().currentLineSlug).toBe('main');
+      } else {
+        proposeBoundCheckpoint({ checkpointId: 'checkpoint-current', idempotencyKey: 'key-current', createdAt: 10 });
+      }
+      const revision = svc.getSnapshot().revision;
+      const bytes = Buffer.from('Finite-size witness only.\r\n');
+      const readBytes = vi.fn(async () => {
+        if (variant === 'changed') modeSvc.phase = 'degraded';
+        return bytes;
+      });
+      const runtime = Object.assign(new FakeRuntime(
+        { workspaceId: 'fixture', runtimeId: 'local', generation: 'one' }, { capabilities: ['fs'] },
+      ), { fs: {
+        readBytes,
+        stat: async () => ({ isFile: true, isDirectory: false, size: variant === 'large' ? 9 * 1024 * 1024 : bytes.length }),
+        realpath: async (path: string) => variant === 'symlink' && path !== '/workspace' ? '/outside/report.md' : path,
+      } });
+      const ix = createServices(disposables, { additionalServices: (reg) => {
+        reg.defineInstance(IAgentResearchService, svc);
+        reg.definePartialInstance(ISessionWorkspaceContext, { workDir: '/workspace' });
+        reg.definePartialInstance(IAgentRuntimeService, {
+          inspect: () => runtime,
+          acquire: () => ({ runtime, track: (resource) => resource, dispose: () => {} }),
+        });
+        reg.define(IReadResearchCheckpointEvidenceTool, ReadResearchCheckpointEvidenceTool);
+      } });
+      registry.register(ix.get(IReadResearchCheckpointEvidenceTool));
+      if (variant === 'degraded') modeSvc.phase = 'degraded';
+      if (variant === 'inactive') modeSvc.isActive = false;
+      if (variant === 'saved') bindCompleteCheckpointReceipt('checkpoint-current', 'entry-current');
+      const results = [];
+      for await (const item of executor.execute([{ type: 'function', id: 'inspect-evidence', name: 'ReadResearchCheckpointEvidence',
+        arguments: JSON.stringify({ checkpoint_id: variant === 'wrong-id' ? 'another' : 'checkpoint-current',
+          expected_revision: variant === 'stale' ? revision - 1 : svc.getSnapshot().revision,
+          path: variant === 'metadata' ? '.aitp/topic/TOPIC.md' : variant === 'traversal' ? '../report.md' : 'reports/witness.md' }),
+      }], { turnId: 1, signal: new AbortController().signal })) results.push(item.result);
+      expect(results).toHaveLength(1);
+      if (variant === 'ok') {
+        expect(results[0]?.isError, JSON.stringify(results)).not.toBe(true);
+        expect(JSON.parse(results[0]!.output as string)).toMatchObject({ target: 'reports/witness.md',
+          at: `sha256:${createHash('sha256').update(bytes).digest('hex')}`, excerpt: bytes.toString(), bytes: bytes.length });
+        expect(readBytes).toHaveBeenCalledOnce();
+      } else {
+        expect(results[0]?.isError, JSON.stringify(results)).toBe(true);
+        if (variant !== 'changed') expect(readBytes).not.toHaveBeenCalled();
+      }
     },
   );
 
@@ -10717,7 +11032,8 @@ describe('Research Loop tool implementations', () => {
     expect(output).toContain('Not a many-body obstruction proof.');
     expect(output).toContain(`Local conclusion ID: ${action.actionId}`);
     expect(output).toContain('not in the AITP ledger');
-    expect(output).toContain('Ask the researcher once to confirm record ownership');
+    expect(output).toContain('Confirm only missing record ownership');
+    expect(output).toContain('no second Manager acceptance is needed');
     expect(output).not.toContain('Pending checkpoint:');
     expect(output).not.toContain('call aitp_record_prepare');
     expect(output).not.toContain('Durability: no durable delta');
@@ -14398,6 +14714,7 @@ describe('ResearchPlan bridge', () => {
     const { IResearchTurnAdmission } = await import('#/features/aitpResearch/loop/researchTurnAdmission');
     const plan = planService();
     const executor = stubToolExecutorEvents();
+    const adapter = makeStubAdapter();
     const ix = createServices(disposables, {
       strict: true,
       additionalServices: (reg) => {
@@ -14405,7 +14722,7 @@ describe('ResearchPlan bridge', () => {
         reg.defineInstance(IAgentScopeContext, makeScopeCtx());
         reg.defineInstance(IEventBus, eventBus);
         reg.defineInstance(IAgentAitpModeService, makeStubModeSvc({ isActive: true }));
-        reg.defineInstance(ISessionAitpAdapter, makeStubAdapter());
+        reg.defineInstance(ISessionAitpAdapter, adapter);
         reg.defineInstance(IAgentToolExecutorService, executor.executor);
         reg.defineInstance(IAgentGoalService, makeStubGoalService(goal));
         reg.definePartialInstance(ISessionAitpLifecycleCoordinator, {
@@ -14438,7 +14755,7 @@ describe('ResearchPlan bridge', () => {
       actionPlanId: actionPlan.planId,
       actionPlanRevision: actionPlan.resolution!.planRevision,
     };
-    return { service, plan, question, actionPlan, input, executor };
+    return { service, plan, question, actionPlan, input, executor, adapter };
   }
 
   it('executes a reviewed local Action Plan without inventing a Goal or Research Plan', async () => {
@@ -14467,12 +14784,12 @@ describe('ResearchPlan bridge', () => {
     expect(service.getPendingCheckpoint()).toBeNull();
   });
 
-  it.each([false, true])('adopts a reviewed-plan result after only explicit scope establishment (hadProgram=%s)', async (hadProgram) => {
+  it.each([false, true])('recovers a reviewed-plan result automatically only with captured Program context (hadProgram=%s)', async (hadProgram) => {
     if (hadProgram) wire.dispatch(researchSetProgram({
       topicId: 't1', title: 'Test', goalText: 'Not established yet',
       goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2,
     }));
-    const { service, input } = await setupActionPlanOnly();
+    const { service, input, adapter } = await setupActionPlanOnly();
     const action = service.planAndStartAction(input);
     const result = service.concludeAction({
       actionId: action.actionId, status: 'completed',
@@ -14488,7 +14805,9 @@ describe('ResearchPlan bridge', () => {
     });
     expect(result.localConclusion).toBeDefined();
     seedConfirmedWorkstreamBinding({ confirmedBy: 'user', confirmedAt: Date.now() });
-    const checkpoint = service.proposeCheckpoint({
+    await adapter.probe();
+    service.noteLoopBoundary();
+    const checkpoint = hadProgram ? service.getPendingCheckpoint()! : service.proposeCheckpoint({
       localConclusionId: action.actionId, confirmedBy: 'user',
       lineSlug: 'main', questionId: action.questionId,
       expectedRevision: service.getSnapshot().revision,
@@ -14504,7 +14823,7 @@ describe('ResearchPlan bridge', () => {
         topicId: 't1', title: 'Test', goalText: 'Not established yet',
         goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2,
       }));
-      const { service, input, actionPlan, question } = await setupActionPlanOnly();
+      const { service, input, actionPlan, question, adapter } = await setupActionPlanOnly();
       const action = service.planAndStartAction(input);
       const result = service.concludeAction({
         actionId: action.actionId, status: 'completed',
@@ -14528,6 +14847,8 @@ describe('ResearchPlan bridge', () => {
         topicId: 't1', title: 'Test', goalText: 'A different scientific goal',
         goalSource: '.aitp/topic/TOPIC.md', establishedAt: 2,
       }));
+      await adapter.probe();
+      service.noteLoopBoundary();
       const before = service.getSnapshot();
       expect(() => service.proposeCheckpoint({
         localConclusionId: action.actionId, confirmedBy: 'user', lineSlug: 'main',

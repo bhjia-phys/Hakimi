@@ -70,7 +70,7 @@
  */
 
 import { z } from 'zod';
-import { localConclusionAdoptionProblem } from './research/localConclusion';
+import { automaticLocalConclusionCheckpoint, localConclusionAdoptionProblem } from './research/localConclusion';
 
 import {
   defineCheckpointedModel,
@@ -116,7 +116,7 @@ import {
   AitpEntryKindSchema,
   ResearchCommitProvenanceSchema,
 } from './types';
-import { admitRunObservation } from './research/runObservation';
+import { admitRunObservation, retainedRunForAction } from './research/runObservation';
 import {
   PLAN_ACTION_PHASES,
   RESEARCH_ACTION_RECOVERY_PREFIX,
@@ -330,6 +330,7 @@ export interface ResearchCheckpointRecord {
 export interface ResearchRunStateRecord extends ResearchRunState {}
 
 export interface ResearchActionSpecRecord {
+  readonly observedRunActionId?: string;
   readonly actionId: string;
   readonly questionId?: string;
   readonly questionRevision?: number;
@@ -835,7 +836,10 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
     if (s.current.pendingCheckpoint !== null) return s;
     const local = s.current.localConclusion;
     if (local !== undefined || p.localConclusionId !== undefined || p.confirmedBy !== undefined) {
-      if (localConclusionAdoptionProblem(s.current, p) !== undefined || p.committedEntryId !== undefined) return s;
+      const recovery = automaticLocalConclusionCheckpoint(s.current);
+      const recoverConfirmedScope = recovery !== undefined &&
+        p.checkpointId === recovery.checkpointId && p.idempotencyKey === recovery.idempotencyKey;
+      if (localConclusionAdoptionProblem(s.current, p, recoverConfirmedScope) !== undefined || p.committedEntryId !== undefined) return s;
     }
     const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];
     const line = p.lineSlug === undefined ? undefined : s.current.lines[p.lineSlug];
@@ -1205,6 +1209,7 @@ export const researchAcknowledgeAlert = ResearchModel.defineOp('research.ack_ale
 
 export const researchPlanAction = ResearchModel.defineOp('research.plan_action', {
   schema: z.object({
+    observedRunActionId: z.string().min(1).optional(),
     actionId: z.string(),
     questionId: z.string().optional(),
     questionRevision: z.number().int().positive().optional(),
@@ -1225,7 +1230,9 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
     if (s.current.localConclusion !== undefined) return s;
     if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
     if (s.current.pendingCheckpoint !== null) return s;
-    if (isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) return s;
+    const retainedRun = retainedRunForAction(s.current, p);
+    if (p.observedRunActionId !== undefined && retainedRun === undefined) return s;
+    if ((isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) && retainedRun === undefined) return s;
     if (isLiveForegroundAction(s.current.currentAction)) return s;
     if (isUnresolvedHumanGate(s.current.humanGate)) return s;
     const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];
@@ -1233,6 +1240,8 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
     if (p.lineSlug !== undefined && s.current.lines[p.lineSlug] === undefined) return s;
     if (question !== undefined && p.lineSlug !== undefined && question.lineSlug !== p.lineSlug) return s;
     const action: ResearchActionSpecRecord = {
+      observedRunActionId: p.observedRunActionId,
+      run: retainedRun,
       actionId: p.actionId,
       questionId: p.questionId,
       questionRevision: p.questionRevision,
@@ -1256,7 +1265,7 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
         ...s.current,
         phase: 'action_planned',
         currentAction: action,
-        currentRun: null,
+        currentRun: retainedRun ?? null,
         revision: s.current.revision + 1,
       },
     };
@@ -1271,6 +1280,7 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
  */
 export const researchBeginAction = ResearchModel.defineOp('research.begin_action', {
   schema: z.object({
+    observedRunActionId: z.string().min(1).optional(),
     actionId: z.string(),
     questionId: z.string().optional(),
     questionRevision: z.number().int().positive().optional(),
@@ -1291,7 +1301,9 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
     if (s.current.localConclusion !== undefined) return s;
     if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
     if (s.current.pendingCheckpoint !== null) return s;
-    if (isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) return s;
+    const retainedRun = retainedRunForAction(s.current, p);
+    if (p.observedRunActionId !== undefined && retainedRun === undefined) return s;
+    if ((isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) && retainedRun === undefined) return s;
     if (isLiveForegroundAction(s.current.currentAction)) return s;
     if (isUnresolvedHumanGate(s.current.humanGate)) return s;
     const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];
@@ -1299,6 +1311,8 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
     if (p.lineSlug !== undefined && s.current.lines[p.lineSlug] === undefined) return s;
     if (question !== undefined && p.lineSlug !== undefined && question.lineSlug !== p.lineSlug) return s;
     const action: ResearchActionSpecRecord = {
+      observedRunActionId: p.observedRunActionId,
+      run: retainedRun,
       actionId: p.actionId,
       questionId: p.questionId,
       questionRevision: p.questionRevision,
@@ -1322,7 +1336,7 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
         ...s.current,
         phase: 'action_executing',
         currentAction: action,
-        currentRun: null,
+        currentRun: retainedRun ?? null,
         revision: s.current.revision + 1,
       },
     };
@@ -1399,7 +1413,7 @@ export const researchObserveRun = ResearchModel.defineOp('research.observe_run',
     if (admission.kind === 'denied') return s;
     const retained = admission.kind === 'retained' ? admission.run : undefined;
     const currentRun: ResearchRunStateRecord = {
-      actionId: p.actionId,
+      actionId: retained?.actionId ?? p.actionId,
       campaign: p.campaign,
       jobId: p.jobId,
       sourcePin: p.sourcePin ?? retained?.sourcePin,

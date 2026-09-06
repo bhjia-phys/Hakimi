@@ -53,6 +53,8 @@ export interface AppSessionUsage {
 }
 
 export interface AppSession {
+  /** Live-only list projection, not a full Research snapshot. */
+  research?: { revision: number; mode: ResearchStatusSnapshot['mode']; line?: string };
   id: string;
   title: string;
   createdAt: string;

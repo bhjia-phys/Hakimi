@@ -108,8 +108,6 @@ const emit = defineEmits<{
   createGoal: [objective: string];
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   focusGoal: [];
-  startResearch: [];
-  manageResearch: [];
   focusSwarm: [];
   compact: [];
   pickModel: [];
@@ -701,20 +699,11 @@ const goalCanResume = computed(() => goalStatus.value === 'paused' || goalStatus
 const researchEntryAction = computed(() =>
   researchComposerEntryState(props.researchEnabled, props.research?.mode),
 );
-const researchVisible = computed(() => researchEntryAction.value !== 'hidden');
 const researchActive = computed(() => researchEntryAction.value === 'manage');
 const planBlockedByResearch = computed(() => researchActive.value && !planOn.value);
-function activateResearchEntry(): void {
-  const action = researchEntryAction.value;
-  if (action === 'hidden') return;
-  closeModesAndFocus();
-  if (action === 'start') emit('startResearch');
-  else emit('manageResearch');
-}
 
-// Modes selector (plan / goal / swarm / research) — the popover that replaces
-// the bare "plan" pill. Plan/Swarm are real client toggles; Goal and Research
-// reflect server state and focus their lifecycle surfaces when active.
+// Plan / Goal / Swarm controls. Research has its own top-level toolbar;
+// its composer tag remains informational and preserves the Plan conflict guard.
 const modesOpen = ref(false);
 const modesRef = ref<HTMLElement | null>(null);
 const modesTriggerRef = ref<HTMLButtonElement | null>(null);
@@ -1141,36 +1130,6 @@ function selectModel(modelId: string): void {
                   >
                     <Icon name="close" size="sm" />
                     <span>{{ t('status.goalCancel') }}</span>
-                  </Button>
-                </div>
-              </div>
-              <!-- Research — inactive starts the capability; active opens Manager. -->
-              <div
-                v-if="researchVisible"
-                class="mode-row mode-row-lifecycle"
-                :class="{ on: researchActive }"
-              >
-                <button
-                  type="button"
-                  class="mode-row-main"
-                  @click="activateResearchEntry"
-                >
-                  <span class="mode-row-icon"><Icon name="search" size="sm" /></span>
-                  <span class="mode-row-info">
-                    <span class="mode-row-name">{{ t('status.researchLabel') }}</span>
-                    <span class="mode-row-desc">{{ t('status.researchDesc') }}</span>
-                  </span>
-                  <span v-if="!researchActive" class="mode-switch"><span class="mode-knob" /></span>
-                </button>
-                <div v-if="researchActive" class="mode-row-actions">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    class="mode-row-action"
-                    @click="activateResearchEntry"
-                  >
-                    <Icon name="search" size="sm" />
-                    <span>{{ t('status.researchManage') }}</span>
                   </Button>
                 </div>
               </div>

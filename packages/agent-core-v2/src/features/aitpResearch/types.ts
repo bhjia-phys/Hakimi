@@ -289,6 +289,7 @@ export interface ResearchRunState {
 
 export interface ResearchActionSpec {
   readonly actionId: string;
+  readonly observedRunActionId?: string;
   readonly questionId?: string;
   readonly questionRevision?: number;
   readonly lineSlug?: string;

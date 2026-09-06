@@ -536,6 +536,7 @@ export const researchActionPlanBindingSchema = z.object({
 
 export const researchActionSpecSchema = z.object({
   actionId: z.string(),
+  observedRunActionId: z.string().min(1).optional(),
   questionId: z.string().optional(),
   questionRevision: z.number().int().positive().optional(),
   lineSlug: z.string().optional(),
@@ -558,6 +559,7 @@ export type ResearchActionSpec = z.infer<typeof researchActionSpecSchema>;
 
 export const planActionInputSchema = z.object({
   actionId: z.string().optional(),
+  observedRunActionId: z.string().min(1).optional(),
   questionId: z.string().optional(),
   lineSlug: z.string().optional(),
   kind: researchActionKindSchema,

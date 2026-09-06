@@ -392,6 +392,7 @@ const researchStartInFlight = new Set<string>();
 const managerSessionId = ref<string | null>(null);
 const researchManagerCommandAck = ref<ResearchManagerCommandAck | null>(null);
 const researchPolicyPending = ref<string | null>(null);
+const researchTogglePending = ref(false);
 const researchIdleOnlyBusy = computed(() =>
   isResearchIdleOnlyBusy(
     client.working.value,
@@ -818,21 +819,15 @@ async function openResearchManager(): Promise<boolean> {
   return true;
 }
 
-async function handleStartResearch(): Promise<void> {
-  const sessionId = client.activeSessionId.value;
-  const result = await enterResearchMode(sessionId);
-  reportResearchEnterResult(result);
-
-  if (
-    result.kind === 'entered'
-    && researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)
-  ) {
-    researchExpandSignal.value++;
-  } else if (
-    result.kind === 'already-active'
-    && researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)
-  ) {
-    await openResearchManager();
+async function handleResearchToggle(): Promise<void> {
+  if (researchTogglePending.value) return;
+  researchTogglePending.value = true;
+  try {
+    // Reuse the command path: busy checks, pinned session and error feedback.
+    // A header click neither submits a prompt nor consumes the composer draft.
+    await handleResearchSlash('', createComposerCommandSubmission('/research', client.activeSessionId.value));
+  } finally {
+    researchTogglePending.value = false;
   }
 }
 
@@ -869,7 +864,7 @@ async function handleResearchSlash(
     return 'rejected';
   }
 
-  // The menu is hidden on unsupported backends, but a hand-typed command still
+  // The toolbar is hidden on unsupported backends, but a hand-typed command still
   // arrives here so it cannot leak into the model as an ordinary prompt.
   if (!client.researchEnabled.value) {
     reportResearchIssue('disabled');
@@ -1336,7 +1331,9 @@ function openPr(url: string): void {
       :research-enabled="client.researchEnabled.value"
       :research-expand-signal="researchExpandSignal"
       :research-sessions="client.researchSessions.value"
-      :research-policy-disabled="researchIdleOnlyBusy || researchPolicyPending !== null || client.research.value?.mode !== 'ready' || client.connection.value !== 'connected'"
+      :research-policy-disabled="researchIdleOnlyBusy || researchTogglePending || researchPolicyPending !== null || client.research.value?.mode !== 'ready' || client.connection.value !== 'connected'"
+      :research-toggle-disabled="client.sessionLoading.value || researchPolicyPending !== null || researchIdleOnlyBusy || client.connection.value !== 'connected' || !client.activeSessionId.value"
+      :research-toggle-pending="researchTogglePending"
       :activation-badges="client.activationBadges.value"
       :status="client.status.value"
       :thinking="client.thinking.value"
@@ -1406,11 +1403,11 @@ function openPr(url: string): void {
       @toggle-goal="client.toggleGoalMode()"
       @create-goal="client.createGoal($event)"
       @control-goal="client.controlGoal($event)"
-      @start-research="handleStartResearch"
       @manage-research="openResearchManager"
       @select-research-session="client.selectSession($event)"
       @browse-research-sessions="browseResearchSessions"
       @set-research-policy="handleResearchPolicy"
+      @toggle-research="handleResearchToggle"
       @align-research="(relation) => handleResearchAlignment(relation)"
       @clear-research-alignment="() => handleResearchAlignment()"
       @refresh-git-status="client.activeSessionId.value && client.loadGitStatus(client.activeSessionId.value)"
@@ -1990,6 +1987,9 @@ function openPr(url: string): void {
 .app.sidebar-collapsed .chat-header {
   padding-left: 52px;
 }
+
+.app.sidebar-collapsed .research-workspace-bar { padding-left: 64px; }
+.app.macos-desktop .research-workspace-bar { padding-left: 112px; }
 .app.sidebar-collapsed.macos-desktop .chat-header {
   padding-left: 108px;
 }

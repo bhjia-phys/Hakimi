@@ -15,6 +15,28 @@ type RunObservationAdmission =
   | { readonly kind: 'retained'; readonly run: ResearchRunState }
   | { readonly kind: 'denied'; readonly reason: string };
 
+export function retainedRunForAction(
+  state: { readonly currentAction: ResearchActionSpec | null; readonly currentRun: ResearchRunState | null },
+  input: { readonly observedRunActionId?: string; readonly questionId?: string; readonly lineSlug?: string },
+): ResearchRunState | undefined {
+  const action = state.currentAction;
+  const run = state.currentRun ?? action?.run;
+  if (input.observedRunActionId === undefined || run === undefined || action === null) return undefined;
+  if (action.status !== 'completed' && action.status !== 'abandoned') return undefined;
+  if (input.observedRunActionId !== run.actionId || input.questionId !== action.questionId || input.lineSlug !== action.lineSlug) return undefined;
+  if ((action.observedRunActionId ?? action.actionId) !== run.actionId) return undefined;
+  if (state.currentRun != null && action.run !== undefined && !sameRunObservation(state.currentRun, action.run)) return undefined;
+  return run;
+}
+
+function sameRunObservation(a: ResearchRunState, b: ResearchRunState): boolean {
+  return a.actionId === b.actionId && a.campaign === b.campaign && a.jobId === b.jobId &&
+    a.sourcePin === b.sourcePin && a.binaryPin === b.binaryPin && a.stage === b.stage &&
+    a.schedulerState === b.schedulerState && a.terminalState === b.terminalState &&
+    a.lastObservedAt === b.lastObservedAt && a.nextCheckAt === b.nextCheckAt &&
+    a.artifactRefs.length === b.artifactRefs.length && a.artifactRefs.every((ref, i) => ref === b.artifactRefs[i]);
+}
+
 export function admitRunObservation(
   state: {
     readonly phase: ResearchPhase;
@@ -30,10 +52,10 @@ export function admitRunObservation(
   if (observation.terminalState === undefined && ['completed', 'failed', 'cancelled'].includes(observation.schedulerState)) {
     return { kind: 'denied', reason: `Terminal scheduler state ${observation.schedulerState} requires an explicit terminal state.` };
   }
-  if (action.status === 'in_progress' && state.phase === 'action_executing') {
+  if (action.status === 'in_progress' && state.phase === 'action_executing' && action.observedRunActionId === undefined) {
     return { kind: 'active' };
   }
-  if (action.status !== 'completed' && action.status !== 'abandoned') {
+  if (action.status !== 'completed' && action.status !== 'abandoned' && !(action.observedRunActionId !== undefined && action.status === 'in_progress' && state.phase === 'action_executing')) {
     return { kind: 'denied', reason: 'Run observation requires an executing action or an existing run retained by a closed action.' };
   }
   const run = state.currentRun ?? action.run;
@@ -42,7 +64,7 @@ export function admitRunObservation(
   }
   const copies = [state.currentRun, action.run].filter((value) => value !== null && value !== undefined);
   if (copies.some((copy) =>
-    copy.actionId !== action.actionId || copy.jobId !== run.jobId || copy.campaign !== run.campaign ||
+    copy.actionId !== (action.observedRunActionId ?? action.actionId) || copy.jobId !== run.jobId || copy.campaign !== run.campaign ||
     copy.sourcePin !== run.sourcePin || copy.binaryPin !== run.binaryPin ||
     copy.schedulerState !== run.schedulerState || copy.stage !== run.stage ||
     copy.terminalState !== run.terminalState,

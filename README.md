@@ -59,14 +59,29 @@ Human review and reproducible verification are part of the research loop, not a 
 
 ## Research Mode and AITP
 
+Locally reinstalled follow-up (2026-09-06, uncommitted source): a standalone **Research On/Off** button is
+always available in the top toolbar, replacing the Composer Mode-menu entry.
+The session picker directly lists other loaded sessions (including unread ones),
+marks the current session, and keeps command errors visible without changing the
+authoritative mode. Full-App browser coverage exercises real client navigation,
+not just a mocked pane selection. Existing busy/connection and Plan guards remain.
+Package version remains `0.21.0`; installed Web assets and isolated Web/PTY startup
+match the verified build. Restart existing Web processes when idle and refresh the
+browser. No commit or push was performed for this follow-up.
+
 Web Research Mode now opens a deep-space observatory with a temporary navy palette,
 static stars, a wireframe planet, orbit-compass marks and instrument-style frames.
 Dreaming adds a pale-violet accent variant; the decoration has no moving background
 or fictional telemetry. The ordinary sidebar collapses automatically. Leaving Research
 restores the saved theme and sidebar preference. The floating, collapsible Board keeps
 Project, Current cycle, Attention and Next; its closed launcher still shows the cycle
-stage. **Research sessions** switches between sessions/workspaces without starting,
-pausing or resuming scientific work. It shows only Research snapshots already observed
+stage. Locally installed follow-up (2026-09-06, working tree, version 0.21.0): session lists now include compact,
+live-only Research mode/Line facts, so several enabled sessions are discoverable
+without opening their transcripts. Global activity events refresh each affected
+session's overview; full transcript subscriptions remain capped at four. Cold
+sessions stay unknown and are never resumed for discovery. Navigation does not
+start or pause another session's Goal. **Research sessions** switches between sessions/workspaces without starting,
+pausing or resuming scientific work. The previously installed build shows only Research snapshots already observed
 by this browser, labels unread sessions explicitly, and offers the ordinary session
 browser for older sessions; it is not a complete global active-project index. The existing
 Research GET cold-resumes an agent, so the navigator deliberately does not probe every
@@ -95,7 +110,7 @@ Delegated operators do not own the shared AITP lifecycle: restoring or undoing a
 
 After a settled conclusion, the next explicit `BeginResearchAction` can start directly from `state_updated`; no extra phase-setting, Focus edit, or duplicate progress report is required. A pending checkpoint, live action/run, unresolved human gate, or stale plan still prevents replacement. This repairs action continuation, not scientific judgment or automatic Goal scheduling.
 
-For a retained unbound result, the Board shows the actual outcome and asks for record ownership instead of leaving the completed work labelled running. The Research Manager or `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]` can explicitly adopt it after the target Line/workstream is confirmed. This creates only a pending checkpoint; AITP save and verification remain separate. New scientific work and Goal continuation wait so they cannot overwrite the retained result. See [recovery details](docs/en/guides/research-mode.md#retained-local-conclusions).
+For a retained unbound result, the Board shows the actual outcome instead of leaving completed work labelled running. Fresh agent conclusions recover automatically after the original Line's first explicit workstream confirmation; ambiguous ownership still needs explicit recovery. The pending checkpoint can inspect one existing evidence file through `ReadResearchCheckpointEvidence`, without Bash hashing. After persistence, a new observation Action can explicitly retain the same external Run with `observed_run_action_id`, preserving its submission identity. AITP save, scientific decisions, normal tool permissions and Goal lifecycle remain separate. These follow-ups are not yet installed and add no scheduler or automatic job submission. See [recovery details](docs/en/guides/research-mode.md#retained-local-conclusions).
 
 The retained-result fix was installed from commit `06b8524102df` and verified by closing an existing real Heisenberg Action without repeating its calculation, followed by cold restore. This does not yet establish bound AITP persistence or automatic Goal research; [the acceptance record](docs/aitp/theory-physics-collaborator-program.md#1923-本地结论交付与原会话恢复验收) distinguishes those remaining checks and a model attribution error.
 

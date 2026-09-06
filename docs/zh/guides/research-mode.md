@@ -1,5 +1,13 @@
 # 研究模式
 
+## 记录与作业观察恢复（源码已实现，尚未安装）
+
+记录阶段可用 `ReadResearchCheckpointEvidence`，传入当前 `checkpoint_id`、`expected_revision` 和一个明确的 workspace 相对 `path`。工具只读该文件，返回原始字节的 `sha256:` pin 和最多 16000 字符；可用 `offset` 分页。文件上限 8 MiB，拒绝越界路径、`.aitp`/`.git` 及指向这些位置的符号链接。canonical Entry 仍用 `aitp_show`。读取前后都核验 checkpoint、研究线归属和 revision；已保存、过时或模式退出后不保留权限。不会开放通用 Bash/Read/Edit，也不会把文件存在当成科学验证。AITP save 仍负责最终校验 pin 和写账本；这不是 OS sandbox。
+
+提交结论完成持久化后，新 `BeginResearchAction` 可显式设置 `observed_run_action_id = currentRun.actionId`，沿用原 Question/Line。新观察 Action 保留原 Run；`ObserveResearchRun` 使用新 Action ID 登记观察，但 Run 的提交来源、作业和 source/binary 身份不变。普通新 Action 仍不能覆盖 live Run。具体查询使用该 Action 已获授权的现有工具，shell 权限不等于操作系统级只读查询。没有新增 scheduler/cron、自动重提作业或自动恢复 blocked Goal。
+
+两项修复仍需发布安装及真实会话验收；不改变 AITP CLI/schema 或知识卡人工决策规则。
+
 研究模式（Research Mode）让 Hakimi 成为以 [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) 证据账本为支撑的联合研究伙伴。Agent 不再是回答一个问题就忘记，而是维护一个实时的研究问题看板，通过有界行动自主推进，并将持久检查点写入 AITP——同时你始终可以通过 `/research`、TUI 与 Web 中的 Research Board 和 Research Manager 掌控方向。
 
 ::: warning 注意
@@ -303,9 +311,13 @@ Web Manager 的 Checkpoint 表单保留这一边界。**Propose** 只创建 pend
 
 一次已完成的检验可能先得到证据，之后才能明确记录归属。如果 Action 本身仍 fresh，但没有 Line 或该 Line 尚未绑定，`ConcludeResearchAction` 会关闭 Action，并在本地 Research working state 保留完整结果、证据细节、限制与 durability assessment。Board 显示真实结果并请求确认归属。这不是 AITP Entry，也不是 pending checkpoint，不能改称 no durable delta，更不能再用 `RecordResearchProgress` 重复记录。
 
-要保存该结果，先在 Research Manager 选择已有目标 Line，明确确认其 AITP workstream；再到 Web 的 Checkpoint 区检查原结论，选择确认归属并准备 checkpoint。终端中可在 Manager 用 `W` 确认绑定后，执行 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]`。该操作保留原结果，只生成现有 scoped checkpoint；它不会保存 Entry、批准科学结论，也不会确认 Goal–Program alignment。
+如果 agent-authority 结论已捕获原 Program 和 Line，只需明确确认该 Line 的首次 AITP workstream 绑定：原 Question（如有）、Program 和 reviewed Plan 仍 fresh 时，本地 reconciliation 会自动提出既有 checkpoint。下次获准的 Research 回答前、恢复后 mode 与 adapter 就绪时也会执行。不再要求第二次 Manager 接纳，不推断归属、不改写结论，也不增加 AITP check。证据仍通过原 scoped prepare/save/verify/commit 流程保存；自动提出 checkpoint 不代表批准科学结论或确认 Goal–Program alignment。
+
+如果没有捕获原始归属，先确认目标 Line 的 workstream，再到 Web 的 Checkpoint 区检查原结论并显式接纳，或执行 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]`。手动接纳保留为显式恢复入口，不是已确认原归属后的默认步骤。human-authority 结论、过期上下文、暂停或降级，以及可能存在外部提交时，不会自动提出 checkpoint。undo 后复用稳定的 checkpoint 和幂等 key；提交历史中只要存在时间不早于该结论的记录，自动恢复就会保守保留原状态，等待显式证据审查。
 
 请求必须携带精确的当前 snapshot revision。已经属于某条 Line 的结果不能转移到其他 Line；Question、Program 或 reviewed Plan 的上下文真正变化时，请求会被拒绝，原证据仍保留。首次确认 Line 绑定本身不算科研内容变化。本地结论可从冷启动恢复，也跟随 conversation undo，但不会恢复工具或 draft 权限。归属确认前，新 Action 不能覆盖它，Goal continuation/completion 保持 held；普通讨论和状态查看仍可继续。
+
+`ObserveResearchRun` 只记录已取得的 observation，不查询 scheduler。提交记录保存后，可按本页的“记录与作业观察恢复”说明建立显式关联同一 Run 的新观察 Action，不必编造终态来解锁；其他替换 Action 仍被 live Run 阻止。通用 Shell 不借用已关闭 Action 的权限，新 Action 须声明自己的工具范围。已经标为 blocked 的 Goal 不会因此自动恢复。
 
 ## 降级模式
 

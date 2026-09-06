@@ -1,8 +1,7 @@
 import type { AppSession, ResearchCommand, ResearchStatusSnapshot } from '../api/types';
 
-/** A navigation projection, never a second Research store. Unknown means the
- * browser has not observed a snapshot; GET /research would cold-resume an agent,
- * so listing sessions must not issue those requests in the background. */
+/** A navigation projection, never a second Research store. Live list facts
+ * discover sessions without transcript subscriptions or cold agent resumes. */
 export interface ResearchSessionLink {
   id: string;
   title: string;
@@ -20,12 +19,16 @@ export function researchSessionLinks(
     .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .map((session) => {
       const snapshot = snapshots[session.id];
+      const summary = session.research;
+      const useSummary = summary !== undefined
+        && (snapshot === undefined || summary.revision > snapshot.revision);
       return {
         id: session.id,
         title: session.title,
         workspace: session.cwd,
-        line: snapshot?.lines.find((line) => line.slug === snapshot.currentLineSlug)?.title,
-        mode: snapshot?.mode,
+        line: useSummary ? summary.line
+          : snapshot?.lines.find((line) => line.slug === snapshot.currentLineSlug)?.title,
+        mode: useSummary ? summary.mode : snapshot?.mode,
         busy: session.busy,
       };
     });

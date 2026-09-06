@@ -756,6 +756,25 @@ async function refreshSessionResearch(
   }
 }
 
+// Global activity messages arrive even for sessions outside the transcript
+// subscription budget. Re-read only their lightweight list facts, never
+// /research (which would cold-resume an agent). Coalesce bursts per session.
+const researchOverviewRefresh = createCoalescedAsyncRunner(async (sessionId) => {
+  if (rawState.backend !== 'v2' || !rawState.sessions.some((s) => s.id === sessionId)) return;
+  try {
+    const session = await getKimiWebApi().getSession(sessionId);
+    if (rawState.backend !== 'v2') return;
+    const current = rawState.sessions.find((s) => s.id === sessionId);
+    if (current && (session.research === undefined || current.research === undefined
+      || session.research.revision >= current.research.revision)) {
+      // Do not overwrite newer activity, usage, or transcript state with REST.
+      current.research = session.research;
+    }
+  } catch {
+    // Preserve the last observation when disconnected; no retries or resumes.
+  }
+});
+
 /** Persist runtime controls to a session via POST /profile, then re-read
  *  /status. `sessionId` overrides the active session — used when creating a
  *  session and immediately persisting its draft modes, so a concurrent session
@@ -1049,6 +1068,10 @@ function processEvent(appEvent: AppEvent, meta: KimiEventMeta): void {
     meta.seq > prevSeq
   ) {
     clearWorkingFlags(appEvent.sessionId);
+  }
+
+  if (appEvent.type === 'sessionWorkChanged' && meta.seq > prevSeq) {
+    researchOverviewRefresh.request(appEvent.sessionId);
   }
 
   // A prompt that never produced a turn gets no turn.ended and no session

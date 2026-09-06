@@ -451,8 +451,9 @@ function currentLineRun(snap: ResearchStatusSnapshot) {
   if (action === undefined) {
     return snap.currentAction === undefined && snap.lines.length <= 1 ? snap.currentRun : undefined;
   }
-  if (action.run?.actionId === action.actionId) return action.run;
-  return snap.currentRun?.actionId === action.actionId ? snap.currentRun : undefined;
+  const origin = action.observedRunActionId ?? action.actionId;
+  if (action.run?.actionId === origin) return action.run;
+  return snap.currentRun?.actionId === origin ? snap.currentRun : undefined;
 }
 
 function currentLineHumanGate(snap: ResearchStatusSnapshot) {

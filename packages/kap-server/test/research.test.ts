@@ -55,7 +55,7 @@ interface ResearchSnapshot {
   alerts: ResearchAlert[];
   aitpHealth: { phase: string };
   phase: string;
-  currentAction?: { actionId: string; status: string };
+  currentAction?: { actionId: string; status: string; observedRunActionId?: string };
   latestProgress?: { result: string; mainlineImpact: string };
   researchPlan?: {
     status: string;
@@ -1155,18 +1155,30 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
       payload: { token, client_id: 'cli', subscriptions: [sessionId] } }));
     await expect.poll(() => frames.find((frame) => frame.type === 'ack' && frame.id === 'run-recovery-subscription'))
       .toMatchObject({ payload: { accepted_subscriptions: [sessionId] } });
+    const observing = await send({
+      kind: 'begin_action', actionKind: 'simulation', purpose: 'Observe the retained fixture job once.',
+      observedRunActionId: actionId, stopCondition: 'One status observation; no submission.',
+    });
+    expect(observing.currentAction?.observedRunActionId).toBe(actionId);
+    expect(observing.currentRun).toEqual(concluded.currentRun);
     const terminal = await send({
-      ...observation, expectedRevision: restored.body.data.revision,
+      ...observation, actionId: observing.currentAction!.actionId, expectedRevision: observing.revision,
       stage: 'completed', schedulerState: 'completed', terminalState: 'completed',
     });
     expect(terminal.currentRun).toMatchObject({ actionId, jobId: 'fixture-job', terminalState: 'completed' });
-    expect(terminal.currentAction?.status).toBe('completed');
+    expect(terminal.currentAction?.status).toBe('in_progress');
     expect(terminal.latestProgress).toEqual(concluded.latestProgress);
     await expect.poll(() => frames.find((frame) => frame.type === 'research.updated'
       && frame.payload?.snapshot?.currentRun?.terminalState === 'completed'))
       .toMatchObject({ payload: { snapshot: {
         revision: terminal.revision, currentRun: terminal.currentRun, currentAction: terminal.currentAction,
       } } });
+    await send({
+      kind: 'conclude_action', actionId: observing.currentAction!.actionId, status: 'completed',
+      headline: 'Fixture observation ended', motivation: 'Re-read terminal evidence.', workPerformed: 'Observed fixture only.',
+      result: 'Fixture is terminal.', mainlineImpact: 'No physical conclusion.',
+      durability: { status: 'no_durable_delta', rationale: 'Test fixture only.' },
+    });
     const next = await send({
       kind: 'begin_action', actionKind: 'data_analysis', purpose: 'Evaluate the observed result.',
       stopCondition: 'One bounded analysis.',

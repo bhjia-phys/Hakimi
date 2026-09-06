@@ -117,6 +117,7 @@ export interface CommitCheckpointResult {
 }
 
 export interface PlanActionInput {
+  observedRunActionId?: string;
   readonly actionId?: string;
   readonly questionId?: string;
   readonly lineSlug?: string;
@@ -276,6 +277,7 @@ export interface IAgentResearchService {
   getQuestions(): readonly ResearchQuestion[];
   getLines(): readonly ResearchLine[];
   getPendingCheckpoint(): ResearchCheckpoint | null;
+  assertCheckpointEvidenceAccess(checkpointId: string, expectedRevision: number): void;
   getCommittedCursor(): ResearchCommittedCursor | null;
   getProgram(): ResearchProgram | null;
   getGoalAlignment(): ResearchGoalAlignment;

@@ -91,6 +91,7 @@ const RESEARCH_MODE_TOOL_NAMES = [
   'RecordResearchProgress',
   'ReviewResearchEvidence',
   'ObserveResearchRun',
+  'ReadResearchCheckpointEvidence',
   'RequestResearchDecision',
   'ResolveResearchDecision',
   'aitp_enter',

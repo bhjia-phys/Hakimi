@@ -1,5 +1,109 @@
 # AITP integration handoff
 
+Local installation receipt (2026-09-06): the working tree, including the
+multi-session overview and earlier retained-conclusion/checkpoint-evidence/Run
+observation follow-ups below, was rebuilt, packed and installed as 0.21.0 under
+`/home/bhjia/.local`. Installed main/worker bytes and all 521 Web files matched
+the build; CLI help/version and a native PTY smoke passed. npm initially blocked
+node-pty scripts; a one-time global rebuild completed them (also rebuilding the
+node-pty copy under devspace). No permission configuration, user session or AITP
+ledger was changed. Existing processes were not restarted and retain old code.
+No commit, push or npm release was performed; older source-only notes below are
+historical, not the latest installation status.
+
+Web multi-session discovery follow-up (source only, not installed): the existing
+Session read surface adds optional live Research revision/mode/Line facts from
+already-created main agents. No cold resume, AITP I/O, Goal control or transcript
+subscription is performed by discovery. The Web navigator combines these facts
+with newer observed snapshots; global session activity refreshes affected rows.
+This is not a persisted cross-process Research catalog, nor parallel Actions
+within one session. AITP contracts and dirty counterpart files are unchanged.
+
+Checkpoint evidence / retained Run follow-up (2026-09-06; uncommitted, not installed):
+`ReadResearchCheckpointEvidence` selects one exact workspace file for a fresh
+unsaved checkpoint, validates scope/revision before and after I/O, and returns a
+bounded excerpt and byte-exact pin. No generic-tool lease or canonical writes.
+`observedRunActionId` is an optional additive Action/input field (model tool:
+`observed_run_action_id`); REST, WS snapshot, protocol, SDK forwarding and klient
+schemas preserve it. The new foreground Action retains the original Run owner,
+campaign/job/source/binary. Current-Line projection recognizes this relationship.
+Unknown/mismatched references still fail; waiting does not imply terminal success.
+Normal permissions remain, and a shell grant is not OS-level read-only isolation.
+No AITP CLI/schema/contract change; the dirty counterpart handoffs remain untouched.
+Tests cover the production executor, cold restore/undo and real local REST/WS
+transport with synthetic jobs. Real research sessions and remote jobs were not
+resumed or modified. Neither this nor earlier uninstalled changes are live yet.
+Follow-up validation: protocol 46, kap-server REST/WS 32, TUI Board 93 and
+counterpart adapter-contract 6 tests passed; core evidence tests include exact
+pin bytes, wrong checkpoint/revision, cross-Line context, save revocation,
+mode exit/degradation, changing files/context, traversal, symlinks and size caps.
+Core, kap-server, klient (including examples) and Node SDK typechecks passed;
+core import checks passed. Web production source/assets were not changed by
+this follow-up; no full build, installation or real research acceptance is claimed.
+
+Retained-conclusion automatic proposal (2026-09-06; uncommitted, not installed):
+Hakimi's existing reconciliation can propose a checkpoint for an agent-owned
+conclusion with captured, unchanged Program/Line/Question/Plan context after the
+Line's first explicit workstream confirmation. No second Manager adoption is
+required. The shared wire reducer validates the same recovery shape; stable
+checkpoint/key identity survives undo, and possible committed history prevents
+automatic replay. No new public fields, operations, services or AITP writes are
+introduced. Human decisions, unscoped adoption and semantic alignment stay explicit.
+AITP working-tree metadata remains 0.9.0/contract-0.2 on counterpart HEAD
+`eae1bce5`; its 20 dirty paths are untouched. Hakimi base is `ab2be6356`;
+the preceding Web changes are preserved.
+The executor integration verifies automatic proposal through the existing
+prepare/save/commit tools with fixture adapter I/O. Its originally reproduced
+live-Run replacement limitation is addressed by the source follow-up above;
+`ObserveResearchRun` still cannot itself query a scheduler. No generic Bash bypass,
+remote poller, resumed blocked Goal or real scientific acceptance is claimed.
+Verification (single worker, no real scientific session or remote job opened):
+core service/ops/presenter 756 passed; execution policy and wire manifest 40;
+protocol 46; kap-server REST/WS 32; klient Research contract 3; TUI Board/Manager
+116; Web Manager command 31; counterpart adapter contract 6. Core typecheck,
+`lint:imports` and `git diff --check` pass. The contract tests use the existing
+AITP `.venv/bin/python`; the standalone Python 3.12 has no pytest installed.
+No SDK public types changed; SDK tests and full build/install were not rerun.
+Reproduce core coverage from `packages/agent-core-v2` with
+`pnpm exec vitest run test/features/aitpResearch/aitpResearchService.test.ts test/features/aitpResearch/aitpResearchOps.test.ts test/features/aitpResearch/researchInjectionPresenter.test.ts test/features/aitpResearch/researchExecutionPolicy.test.ts test/wire/wireManifest.test.ts --maxWorkers=1`.
+Edits are limited to local-conclusion validation, the existing checkpoint reducer,
+Research reconciliation, existing tool/context guidance, their service tests,
+the paired README/guides, Hakimi handoffs and one CLI patch changeset. AITP owns
+canonical validation/save; Hakimi owns local recovery; actual remote querying
+still belongs to an execution tool. No AITP schema, Skill, ledger or approval
+semantics were changed. The original job's query path remains unverified; adding
+a new query capability requires a separate minimal design and user authorization.
+
+Web Research entry/navigation follow-up (2026-09-06; locally reinstalled, uncommitted):
+the top toolbar exposes the existing Research toggle even while inactive; the
+Composer Mode-menu Research entry is removed. Other loaded/unread sessions are
+visible without a second disclosure; the current session is marked and disabled.
+No new session discovery, daemon, Research lifecycle or AITP behavior is added.
+`research-panel/app.mjs` mounts the production App and client with fixture daemon
+I/O, covering session URL/conversation/state switching and authoritative toggle
+success/failure. This corrects the former pane-only navigation coverage gap; it
+does not claim a live backend reproduction of the user's ambiguous click failure.
+Release mapping: CLI patch only; installed from the current uncommitted Web fix
+on base `ab2be6356`, with no commit, push, changeset consumption or registry release.
+Package `/tmp/hakimi-research-header-install.supSPN/bhjia-phys-hakimi-0.21.0.tgz`
+was installed under `/home/bhjia/.local/lib/node_modules/@bhjia-phys/hakimi`.
+All 521 installed Web files/provenance and main/search-worker bundles match the
+source build. An isolated-home Web process served matching HTML/JS/CSS without
+opening a user session or issuing a model request. npm blocked node-pty scripts;
+its inspected install/postinstall path was run only in Hakimi's installed dependency
+with two build workers, then a real PTY spawn passed. No global script policy was
+changed or existing research process restarted. Restart Web when idle and refresh
+the browser to load the fix; the older observatory delivery below is historical.
+Verification: 222 targeted single-worker tests and Web typecheck pass. All three
+isolated browser scripts (`app.mjs`, `workspace.mjs`, `check.mjs`) pass: real App
+URL/conversation/Research switching in both directions, desktop/mobile controls,
+unsent draft preservation, rejected toggle retaining its mode, light/dark and
+focus/hover coverage, no speculative per-session Research reads. The style scan
+has the same 28 baseline findings. Canonical Web assets are regenerated and
+`pnpm run build:web-assets -- --check` reproduces all 521 files (source
+`7d07a74ad6b36a41eb68361761ff6559e6d3a7d52fa29e6885cdb93285e28be8`).
+This is fixture-backed UI acceptance, not a live-model or original-session replay.
+
 Web Research observatory (2026-09-06; delivered and locally installed): a temporary
 deep-space palette, static wireframe planet/orbit marks and instrument-style frames,
 an authoritative Dreaming violet variant, non-persistent automatic sidebar collapse,

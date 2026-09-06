@@ -275,6 +275,7 @@ export const PlanResearchActionInputSchema = z
         'Executor-authoritative capabilities in active Research Mode: workspace_read, workspace_write, web_search, web_fetch, shell, task, subagent, or scheduler. Use tool:<exact-tool-name> for one otherwise unclassified plugin or MCP tool. Descriptive labels such as simulation do not grant tool execution.',
       ),
     retry_of_entry_id: z.string().optional(),
+    observed_run_action_id: z.string().min(1).optional().describe('For a new observation action only: original actionId of the retained Run. Use the same explicit Question and Line; this does not submit a new job or change its origin.'),
     planning_level: z.enum(['simple', 'planned']).optional().describe(
       'Simple actions use a minimal bounded plan and may explicitly bind the current active Research Plan milestone without a local Action Plan. Planned actions require a finalized local Action Plan; also bind the current Research Plan and milestone when a non-terminal Research Plan exists. A Goal is not required for local exploration.',
     ),

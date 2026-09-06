@@ -43,6 +43,7 @@ import { IAitpSkillVisibilityInjection } from './injection/aitpSkillVisibilityIn
 import { IResearchLoopCoordinator, ResearchLoopCoordinator } from './loop/researchLoopCoordinator';
 import { IResearchTurnAdmission, ResearchTurnAdmission } from './loop/researchTurnAdmission';
 
+import { IReadResearchCheckpointEvidenceTool, ReadResearchCheckpointEvidenceTool } from './tools/checkpointEvidenceTool';
 import {
   IEnterAITPModeTool,
   IExitAITPModeTool,
@@ -255,6 +256,11 @@ export class AitpResearchFeature extends Feature {
     );
     this.contributeTool(ICommitResearchCheckpointTool, CommitResearchCheckpointTool, {
       name: 'CommitResearchCheckpoint',
+      domain: 'aitpResearch',
+      when: isAitpModeActive,
+    });
+    this.contributeTool(IReadResearchCheckpointEvidenceTool, ReadResearchCheckpointEvidenceTool, {
+      name: 'ReadResearchCheckpointEvidence',
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });

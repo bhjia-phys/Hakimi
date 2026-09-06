@@ -23,6 +23,25 @@ function session(id: string, overrides: Partial<AppSession> = {}): AppSession {
 }
 
 describe('Research workspace navigation projection', () => {
+  it('discovers more than four live Research sessions after a browser reload without snapshots', () => {
+    const sessions = Array.from({ length: 6 }, (_, i) => session(`research-${i}`, {
+      research: { revision: i, mode: 'ready', line: `Project ${i}` },
+      busy: i % 2 === 0,
+    }));
+    const links = researchSessionLinks([...sessions, session('cold')], {});
+    expect(links.filter((link) => link.mode === 'ready')).toHaveLength(6);
+    expect(links.filter((link) => link.busy)).toHaveLength(3);
+    expect(links.at(-1)?.mode).toBeUndefined();
+    expect(links.slice(0, 6).map((link) => link.line)).toEqual(
+      sessions.map((s) => s.research?.line),
+    );
+  });
+  it('uses newer list facts but never rolls back a newer session snapshot', () => {
+    const sessions = [session('a', { research: { revision: 9, mode: 'inactive' } }),
+      session('b', { research: { revision: 7, mode: 'inactive' } })];
+    const links = researchSessionLinks(sessions, { a: snapshot(), b: snapshot() });
+    expect(links.map((link) => link.mode)).toEqual(['inactive', 'ready']);
+  });
   it('keeps unread, inactive, enabled and busy distinct without mutating state', () => {
     const sessions = [session('unread'), session('off'), session('enabled'), session('busy', { busy: true })];
     const snapshots = { off: snapshot({ mode: 'inactive' }), enabled: snapshot(), busy: snapshot() };

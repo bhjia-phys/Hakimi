@@ -308,6 +308,7 @@ async function dispatchResearchCommand(
         stopCondition: cmd.stopCondition,
         allowedToolKinds: cmd.allowedToolKinds,
         retryOfEntryId: cmd.retryOfEntryId,
+        observedRunActionId: cmd.observedRunActionId,
         requiresHumanApproval: cmd.requiresHumanApproval,
         planningLevel: cmd.planningLevel,
         researchPlanId: cmd.researchPlanId,

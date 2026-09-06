@@ -149,8 +149,9 @@ function currentLineRun(
   action: ResearchActionSpec | undefined,
 ): ResearchRunState | undefined {
   if (action === undefined) return snapshot.lines.length <= 1 ? snapshot.currentRun : undefined;
-  if (action.run?.actionId === action.actionId) return action.run;
-  return snapshot.currentRun?.actionId === action.actionId ? snapshot.currentRun : undefined;
+  const origin = action.observedRunActionId ?? action.actionId;
+  if (action.run?.actionId === origin) return action.run;
+  return snapshot.currentRun?.actionId === origin ? snapshot.currentRun : undefined;
 }
 
 function currentLineHumanGate(
@@ -290,7 +291,7 @@ function renderDelta(snapshot: ResearchStatusSnapshot): string {
 
 function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): void {
   if (snapshot.localConclusion !== undefined) {
-    lines.push(`Local durable conclusion ${snapshot.localConclusion.candidate.sourceActionId}: ${snapshot.localConclusion.progress.headline}. The Action is closed and its full result is retained in local Research state, not recorded in AITP. Ask once for explicit record ownership; do not repeat work, downgrade durability, or call RecordResearchProgress. Adoption uses the human Research command, then the existing scoped checkpoint path.`);
+    lines.push(`Local durable conclusion ${snapshot.localConclusion.candidate.sourceActionId}: ${snapshot.localConclusion.progress.headline}. The Action is closed; its full result is local, not recorded in AITP. Confirm only missing ownership: fresh agent conclusions with original captured scope recover automatically after explicit Line/workstream binding. Do not request a second Manager acceptance, repeat work, downgrade durability, or call RecordResearchProgress. Unscoped, stale or possibly committed evidence needs explicit recovery; ordinary checkpoint persistence still uses AITP.`);
   }
   const alerts = activeAlerts(snapshot.alerts, snapshot.currentLineSlug);
   if (alerts.length > 0) {
@@ -313,7 +314,7 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
       `Durable commit candidate: ${candidate.entryKind} / ${candidate.authority} / ${candidate.provenance}. ` +
       (snapshot.mode === 'degraded'
         ? 'Retained locally, not yet committed to AITP. Resume this candidate after AITP is ready; do not repeat the conclusion or relabel it no_durable_delta.'
-        : 'Continue the existing prepare, fill, save, show/check, and checkpoint barrier; do not record the conclusion again.'),
+        : 'Continue the existing prepare, fill, save, show/check, and checkpoint barrier; do not record the conclusion again. For existing evidence files use ReadResearchCheckpointEvidence with this checkpoint_id and current expected_revision, not Bash hashing or a new Action.'),
     );
   }
 

@@ -75,6 +75,7 @@ const CONTROL_TOOLS = new Set([
 ]);
 
 const CHECKPOINT_PERSISTENCE_TOOLS = new Set([
+  'ReadResearchCheckpointEvidence',
   'CommitResearchCheckpoint',
   'aitp_record_prepare',
   'aitp_record_save',

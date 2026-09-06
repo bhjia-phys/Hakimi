@@ -89,6 +89,12 @@ export const sessionSchema = z.object({
    *  states ride the approval/question channels, and turn outcomes ride
    *  turn.ended — clients compose their own presentation from the facts. */
   busy: z.boolean(),
+  /** Live-only navigation facts; absent means unknown, never Research off. */
+  research: z.object({
+    revision: z.number().int().nonnegative(),
+    mode: z.enum(['inactive', 'probing', 'ready', 'degraded']),
+    line: z.string().optional(),
+  }).optional(),
   /** Whether the MAIN agent currently owns an active turn. Unlike `busy`,
    *  this excludes background tasks and sub-agent turns. Optional for wire
    *  compatibility with older servers. */

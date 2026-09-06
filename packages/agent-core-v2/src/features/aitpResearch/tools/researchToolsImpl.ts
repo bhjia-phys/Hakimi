@@ -660,6 +660,7 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
             stopCondition: args.stop_condition,
             allowedToolKinds: args.allowed_tool_kinds,
             retryOfEntryId: args.retry_of_entry_id,
+            observedRunActionId: args.observed_run_action_id,
             planningLevel: args.planning_level ?? 'simple',
             researchPlanId: args.research_plan_id,
             researchPlanRevision: args.research_plan_revision,
@@ -724,6 +725,7 @@ export class BeginResearchActionTool implements IBeginResearchActionTool {
             stopCondition: args.stop_condition,
             allowedToolKinds: args.allowed_tool_kinds,
             retryOfEntryId: args.retry_of_entry_id,
+            observedRunActionId: args.observed_run_action_id,
             planningLevel: args.planning_level ?? 'simple',
             researchPlanId: args.research_plan_id,
             researchPlanRevision: args.research_plan_revision,
@@ -928,7 +930,7 @@ export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
           if (conclusion.localConclusion !== undefined) {
             lines.push(`Durability: local durable conclusion (${conclusion.localConclusion.candidate.rationale}).`);
             lines.push(`Local conclusion ID: ${conclusion.localConclusion.candidate.sourceActionId}. The full result is retained in Research working state, not in the AITP ledger. No checkpoint was proposed and no AITP write permission was granted.`);
-            lines.push('Ask the researcher once to confirm record ownership through the Research Manager before adopting this conclusion into a scoped checkpoint. Do not invent a Line/workstream binding, repeat the experiment, call RecordResearchProgress, or label this result no_durable_delta.');
+            lines.push('Confirm only missing record ownership. Fresh agent conclusions with captured Program/Line/Question context recover automatically after the original Line/workstream is explicitly confirmed; no second Manager acceptance is needed. If scope was not captured or recovery is ambiguous, use explicit human adoption. Do not invent a binding, repeat the experiment, call RecordResearchProgress, or label this result no_durable_delta.');
           } else if (candidate === undefined) {
             lines.push(`Durability: no durable delta (${args.durability.rationale}).`);
             lines.push('AITP action: none. Do not call AITP persistence or method-card review for this conclusion.');

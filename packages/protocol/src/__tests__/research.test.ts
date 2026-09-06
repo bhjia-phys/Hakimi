@@ -1039,6 +1039,7 @@ describe('researchCommandRequestSchema', () => {
       kind: 'begin_action' as const,
       actionKind: 'experiment' as const,
       purpose: 'Run the bounded experiment.',
+      observedRunActionId: 'original-submission',
       expectedEvidence: ['The measured output'],
       stopCondition: 'Stop at convergence.',
       allowedToolKinds: ['shell'],
