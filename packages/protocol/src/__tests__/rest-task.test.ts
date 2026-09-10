@@ -47,10 +47,14 @@ describe('getTaskResponseSchema', () => {
       session_id: 'sess_01',
       kind: 'subagent' as const,
       description: 'spin up x',
+      task_scope: 'direction-a',
+      parent_agent_id: 'coordinator-a',
       status: 'running' as const,
       created_at: '2026-06-04T10:00:00.000Z',
     };
     expect(getTaskResponseSchema.parse(t).kind).toBe('subagent');
+    expect(getTaskResponseSchema.parse(t).task_scope).toBe('direction-a');
+    expect(getTaskResponseSchema.parse(t).parent_agent_id).toBe('coordinator-a');
   });
 });
 

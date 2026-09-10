@@ -5,6 +5,8 @@
  * checkpoint reducer. Original agent-owned context can recover after its first
  * explicit workstream confirmation, without inventing human approval. Stable
  * checkpoint identity preserves prepare/save idempotency across undo and replay.
+ * A resolved decision's non-executing return phase does not revoke ownership
+ * of the concluded evidence or require another scientific conclusion.
  * Grants no tool or canonical-write permission.
  */
 
@@ -31,7 +33,8 @@ export function localConclusionAdoptionProblem(state: ResearchWorkingState, inpu
     return 'Adoption requires the exact local conclusion ID and explicit user confirmation.';
   }
   if (
-    state.phase !== 'state_updated' ||
+    !['state_updated', 'idle', 'gap_analysis', 'evaluating'].includes(state.phase) ||
+    (local.action.status !== 'completed' && local.action.status !== 'abandoned') ||
     state.currentAction?.actionId !== local.action.actionId ||
     state.currentAction.status !== local.action.status ||
     (state.humanGate !== null && state.humanGate.resolvedAt === undefined)

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
 
-import { createKimiHarness, type KimiError } from '#/index';
+import { createKimiHarness, type BackgroundTaskInfo, type AgentBackgroundTaskInfo, type KimiError } from '#/index';
 
 import { makeTempDir, removeTempDirs } from './session-runtime-helpers';
 import { TEST_IDENTITY } from './test-identity';
@@ -12,6 +12,19 @@ afterEach(async () => {
 });
 
 describe('Session.listBackgroundTasks / getBackgroundTaskOutput', () => {
+  it('exposes optional agent ownership without requiring it on legacy tasks', () => {
+    const legacy: AgentBackgroundTaskInfo = {
+      kind: 'agent', taskId: 'task-a', description: 'Review',
+      status: 'completed', startedAt: 1, endedAt: 2,
+    };
+    const owned: BackgroundTaskInfo = {
+      ...legacy, parentAgentId: 'coordinator', taskScope: 'research-line:algebra',
+    };
+    expectTypeOf(owned.taskScope).toEqualTypeOf<string | undefined>();
+    expectTypeOf(owned.parentAgentId).toEqualTypeOf<string | undefined>();
+    expect(legacy.taskScope).toBeUndefined();
+    expect(owned.taskScope).toBe('research-line:algebra');
+  });
   it('lists an empty task set for a fresh session', async () => {
     const homeDir = await makeTempDir(tempDirs, 'kimi-sdk-bgtask-home-');
     const workDir = await makeTempDir(tempDirs, 'kimi-sdk-bgtask-work-');

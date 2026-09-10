@@ -9,7 +9,7 @@
  * Run: `pnpm --filter @moonshot-ai/kap-server exec vitest run test/research.test.ts`.
  */
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -396,6 +396,7 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'kimi-server-v2-research-'));
     workDir = await mkdtemp(join(tmpdir(), 'kimi-server-v2-research-work-'));
+    await mkdir(join(workDir, '.git'));
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
@@ -434,7 +435,7 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     const res = await fetch(`${base}/api/v1/sessions`, {
       method: 'POST',
       headers: authHeaders(server as RunningServer, { 'content-type': 'application/json' }),
-      body: JSON.stringify({ metadata: { cwd: home as string } }),
+      body: JSON.stringify({ metadata: { cwd: workDir as string } }),
     } as never);
     const body = (await res.json()) as Envelope<{ id: string }>;
     if (body.code !== 0) {

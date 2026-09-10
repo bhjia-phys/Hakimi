@@ -11,6 +11,7 @@ import {
   isResearchCheckpointHistorical,
   presentResearchAlertClassification,
   presentResearchAitpAdapterCapabilities,
+  presentResearchDecisionDependency,
   presentResearchWorkstreamBinding,
   selectResearchBoardExpandedRecord,
 } from '../src/lib/researchBoardPresentation';
@@ -59,6 +60,38 @@ import {
   traceToJsonl,
   traceWsIn,
 } from '../src/debug/trace';
+
+describe('Research decision dependency presentation', () => {
+  const gate = { gateId: 'gate_old', kind: 'decision' as const, prompt: 'Choose a route', createdAt: 1 };
+
+  it('keeps missing and empty historical dependencies unknown without modifying the gate', () => {
+    for (const input of [gate, { ...gate, dependentGoalIds: [] }]) {
+      const before = structuredClone(input);
+      expect(presentResearchDecisionDependency(input, 'goal_current')).toMatchObject({
+        status: 'pending', scope: 'unknown', currentGoalDependency: 'unknown',
+      });
+      expect(input).toEqual(before);
+    }
+    expect(presentResearchDecisionDependency(undefined)).toBeUndefined();
+  });
+
+  it('distinguishes an explicitly dependent Goal from an independent Goal', () => {
+    const input = { ...gate, dependentGoalIds: ['goal_a', 'goal_b'] };
+    expect(presentResearchDecisionDependency(input, 'goal_a')).toMatchObject({
+      scope: 'explicit', goalIds: ['goal_a', 'goal_b'], currentGoalDependency: 'dependent',
+    });
+    expect(presentResearchDecisionDependency(input, 'goal_c')?.currentGoalDependency).toBe('independent');
+    expect(presentResearchDecisionDependency(input)?.currentGoalDependency).toBe('unknown');
+  });
+
+  it('preserves resolved decisions as history rather than claiming a current hold', () => {
+    const input = { ...gate, dependentGoalIds: ['goal_a'], resolvedAt: 2, resolution: 'Explicit choice' };
+    const view = presentResearchDecisionDependency(input, 'goal_a');
+    expect(view?.status).toBe('resolved');
+    view?.goalIds.push('not_a_recorded_dependency');
+    expect(input.dependentGoalIds).toEqual(['goal_a']);
+  });
+});
 
 describe('remote session route', () => {
   it('requires remote=1; root yields the empty all-sessions id, exact paths yield the id', () => {
@@ -827,6 +860,40 @@ describe('keepLiveSubagents', () => {
   it('returns the REST list untouched when no live-only subagent exists', () => {
     const rest = [subagent('a1')];
     expect(keepLiveSubagents(rest, [subagent('a1')])).toBe(rest);
+  });
+
+  it('retains explicit ownership when merging REST into a live row and then a legacy snapshot', () => {
+    const live = subagent('child-a', { backgroundTaskId: 'task-a' });
+    const rest = subagent('task-a', { agentId: 'child-a', taskScope: 'direction-a', parentAgentId: 'coordinator-a' });
+    const merged = keepLiveSubagents([rest], [live]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.taskScope).toBe('direction-a');
+    expect(merged[0]?.parentAgentId).toBe('coordinator-a');
+    expect(mergeSnapshotSubagents([live], merged)[0]?.taskScope).toBe('direction-a');
+    expect(mergeSnapshotSubagents([live], merged)[0]?.parentAgentId).toBe('coordinator-a');
+  });
+
+  it('does not fold conflicting direction ownership into one task', () => {
+    const live = subagent('child-a', { backgroundTaskId: 'task-a', taskScope: 'direction-a' });
+    const rest = subagent('task-a', { agentId: 'child-a', taskScope: 'direction-b' });
+    expect(keepLiveSubagents([rest], [live])).toEqual([rest, live]);
+  });
+
+  it('does not fold conflicting parent ownership into one task', () => {
+    const live = subagent('child-a', { backgroundTaskId: 'task-a', parentAgentId: 'parent-a' });
+    const rest = subagent('task-a', { agentId: 'child-a', parentAgentId: 'parent-b' });
+    expect(keepLiveSubagents([rest], [live])).toEqual([rest, live]);
+  });
+
+  it.each([
+    { parentAgentId: 'parent-b' },
+    { taskScope: 'direction-b' },
+    { sessionId: 'another-session' },
+  ])('does not copy live output across snapshot identity conflicts: %j', (changed) => {
+    const live = subagent('child-a', { parentAgentId: 'parent-a', taskScope: 'direction-a',
+      text: 'Private result from original task', outputLines: ['original evidence'] });
+    const snapshot = subagent('child-a', { parentAgentId: 'parent-a', taskScope: 'direction-a', ...changed });
+    expect(mergeSnapshotSubagents([snapshot], [live])).toEqual([snapshot]);
   });
 
   it('keeps WS-only swarm subagents that REST omits', () => {
@@ -1679,6 +1746,11 @@ describe('research board compact presentation', () => {
   });
 
   it('separates AITP read readiness from atomic checkpoint-write capability', () => {
+    for (const contractVersion of ['0.3', '0.4', 'unknown']) {
+      expect(presentResearchAitpAdapterCapabilities(snapshot({
+        aitpHealth: { phase: 'ready', contractVersion },
+      }))).toEqual({ read: 'ready', checkpointWrite: contractVersion === '0.3' ? 'ready' : 'unavailable' });
+    }
     expect(presentResearchAitpAdapterCapabilities(snapshot({
       aitpHealth: { phase: 'ready', contractVersion: '0.1' },
     }))).toEqual({ read: 'ready', checkpointWrite: 'unavailable' });
@@ -1688,6 +1760,23 @@ describe('research board compact presentation', () => {
     expect(presentResearchAitpAdapterCapabilities(snapshot({
       aitpHealth: { phase: 'degraded', contractVersion: '0.2' },
     }))).toEqual({ read: 'degraded_available', checkpointWrite: 'unavailable' });
+  });
+
+  it('does not add an unsupported-contract warning for a pending checkpoint on contract 0.3', () => {
+    const attention = (contractVersion: string) => buildResearchBoardCompactSlots(snapshot({
+      aitpHealth: { phase: 'ready', contractVersion },
+      pendingCheckpoint: {
+        checkpointId: 'checkpoint_contract',
+        idempotencyKey: 'checkpoint_contract_key',
+        persistence: 'pending_commit',
+        createdAt: 2,
+      },
+    })).find((slot) => slot.kind === 'attention');
+
+    const supported = attention('0.2');
+    expect(supported).toBeDefined();
+    expect(attention('0.3')).toEqual(supported);
+    expect(attention('0.4')?.additionalCount).toBe((supported?.additionalCount ?? 0) + 1);
   });
 
   it('prioritizes an unresolved human gate over Goal alignment and alerts', () => {
@@ -1969,18 +2058,7 @@ describe('research board compact presentation', () => {
     expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
       current: { source: 'progress', text: 'The newer reciprocal-space cause is localized' },
     });
-    expect(slots.find((slot) => slot.kind === 'next')).toEqual({
-      kind: 'next',
-      source: 'research_action',
-      text: 'Recover action action_stale: it is in_progress while the Research phase is gap_analysis; conclude or abandon it before starting another action.',
-      freshness: 'blocked',
-      observedAt: 10,
-      derivedFrom: {
-        actionId: 'action_stale',
-        questionId: undefined,
-        lineSlug: undefined,
-      },
-    });
+    expect(slots.find((slot) => slot.kind === 'next')).toBeUndefined();
   });
 
   it('uses the focused question for the cycle when higher-priority state is absent', () => {
@@ -2002,7 +2080,8 @@ describe('research board compact presentation', () => {
     });
   });
 
-  it('uses the recent state change before the current line for the cycle', () => {
+  it.each(['turn.started auto-advance', 'The evidence changed the research state'])(
+    'does not substitute a bookkeeping transition for scientific progress: %s', (summary) => {
     const slots = buildResearchBoardCompactSlots(snapshot({
       currentLineSlug: 'main',
       lines: [{
@@ -2015,13 +2094,13 @@ describe('research board compact presentation', () => {
       recentStateChange: {
         beforePhase: 'evaluating',
         afterPhase: 'state_updated',
-        summary: 'The evidence changed the research state',
+        summary,
         changedAt: 2,
       },
     }));
 
     expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
-      current: { source: 'state_change', text: 'The evidence changed the research state' },
+      current: { source: 'line', text: 'Main research line' },
     });
   });
 
@@ -2214,5 +2293,57 @@ describe('research board compact presentation', () => {
     expect(record.researchPlanV2?.milestones).toHaveLength(1);
     expect(record.planningPolicy).toBe('collaborative');
     expect(record.status?.attention).toHaveLength(2);
+  });
+});
+import { buildResearchAgentTree } from '../src/lib/researchAgentTree';
+
+describe('research collaborator tree', () => {
+  it('does not assign an unregistered agent to the first of conflicting task scopes', () => {
+    const tasks = ['a', 'b'].map((line) => ({
+      id: line, agentId: 'worker', parentAgentId: 'main', sessionId: 'session',
+      kind: 'subagent' as const, description: `Result ${line}`, status: 'running' as const,
+      createdAt: '2026-01-01', taskScope: `research-line:${line}`,
+    }));
+    const first = buildResearchAgentTree([], tasks);
+    expect(first).toEqual(buildResearchAgentTree([], [...tasks].reverse()));
+    expect(first[0]).toMatchObject({ agentId: 'worker', taskScope: undefined, status: 'unknown', uncertain: true });
+  });
+
+  it('marks multiple running tasks on one agent as uncertain without choosing a result', () => {
+    const tasks = ['one', 'two'].map((id) => ({
+      id, agentId: 'worker', parentAgentId: 'main', sessionId: 'session',
+      kind: 'subagent' as const, description: id, status: 'running' as const,
+      createdAt: '2026-01-01', taskScope: 'research-line:a',
+    }));
+    expect(buildResearchAgentTree([], tasks)[0]).toMatchObject({ status: 'unknown', uncertain: true });
+  });
+
+  it('keeps nested saved identities without inventing active work', () => {
+    const relationships = [
+      { agentId: 'parent', parentAgentId: 'main', taskScope: 'research-line:a' },
+      { agentId: 'child', parentAgentId: 'parent', taskScope: 'research-line:a' },
+      { agentId: 'other', parentAgentId: 'main', taskScope: 'research-line:b' },
+    ];
+    const rows = buildResearchAgentTree(relationships, []);
+    expect(rows.find((row) => row.agentId === 'child')).toMatchObject({ depth: 1, taskScope: 'research-line:a', status: 'unknown' });
+    expect(rows.every((row) => row.status === 'unknown')).toBe(true);
+    expect(relationships[1]?.parentAgentId).toBe('parent');
+  });
+
+  it('terminates on cycles and preserves unknown legacy parentage', () => {
+    const rows = buildResearchAgentTree([
+      { agentId: 'a', parentAgentId: 'b' }, { agentId: 'b', parentAgentId: 'a' },
+      { agentId: 'legacy' },
+    ], []);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.uncertain && row.depth === 0)).toBe(true);
+  });
+
+  it('does not attach a task result to a different saved direction', () => {
+    const rows = buildResearchAgentTree([{ agentId: 'a', parentAgentId: 'main', taskScope: 'research-line:a' }], [{
+      id: 'task', agentId: 'a', sessionId: 'session', kind: 'subagent', description: 'Foreign result',
+      status: 'completed', createdAt: '2026-01-01', taskScope: 'research-line:b',
+    }]);
+    expect(rows[0]).toMatchObject({ description: 'a', taskScope: 'research-line:a', status: 'unknown', uncertain: true });
   });
 });

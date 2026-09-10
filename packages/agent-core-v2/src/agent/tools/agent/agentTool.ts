@@ -83,7 +83,7 @@ import { IConfigService } from '#/app/config/config';
 import { IFlagService } from '#/app/flag/flag';
 import { IModelCatalog } from '#/kosong/model/catalog';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
-import { isSubagentMeta, subagentLabels, subagentParentAgentId } from '#/session/agentLifecycle/subagentMetadata';
+import { isSubagentMeta, labelsFromAgentMeta, subagentLabels, subagentParentAgentId, subagentTaskScope, subagentGoalDependencies } from '#/session/agentLifecycle/subagentMetadata';
 import { IAgentRuntimeService } from '#/agent/runtimeBinding/agentRuntime';
 import type { Runtime } from '#/runtime/runtime';
 import { ISessionMetadata } from '#/session/sessionMetadata/sessionMetadata';
@@ -112,6 +112,8 @@ import {
   type SubagentToolInput,
 } from './agent';
 import { SubagentTask, type SubagentHandle } from './subagent-task';
+import { IDelegationAdmission, type DelegationInput } from './delegationContribution';
+import './delegationAdmissionService';
 
 import AGENT_BACKGROUND_DISABLED_DESCRIPTION from './agent-background-disabled.md?raw';
 import AGENT_BACKGROUND_DESCRIPTION from './agent-background-enabled.md?raw';
@@ -147,6 +149,7 @@ export class SubagentTool implements ISubagentTool {
     @IModelCatalog private readonly modelCatalog: IModelCatalog,
     @IAutoSubagentPresetService private readonly autoPreset: IAutoSubagentPresetService,
     @AgentToolContribution private readonly contributions: CollectionView<AgentToolContribution>,
+    @IDelegationAdmission private readonly delegationAdmission: IDelegationAdmission,
   ) {
     this.callerAgentId = scopeContext.agentId;
     this.canRunInBackground = () =>
@@ -247,7 +250,9 @@ export class SubagentTool implements ISubagentTool {
     toolCallId: string,
     controller: AbortController,
     runtime: Runtime,
+    delegation: DelegationInput,
   ): Promise<SubagentHandle> {
+    this.assertDelegation(delegation);
     const requester = this.lifecycle.get(this.callerAgentId);
     if (requester === undefined) {
       throw new Error2(
@@ -263,15 +268,26 @@ export class SubagentTool implements ISubagentTool {
     let agentId: string;
     let profileName: string;
     let displayModel: string | undefined;
+    let taskScope: string | undefined;
     let promptText = args.prompt;
     if (isResume) {
-      const target = this.lifecycle.get(resumeAgentId);
+      let target = this.lifecycle.get(resumeAgentId);
       if (target === undefined) {
-        throw new Error2(ErrorCodes.AGENT_NOT_FOUND, `Agent instance "${resumeAgentId}" does not exist`, {
-          details: { agentId: resumeAgentId },
+        const meta = (await this.sessionMetadata.read()).agents?.[resumeAgentId];
+        if (meta === undefined) {
+          throw new Error2(ErrorCodes.AGENT_NOT_FOUND, `Agent instance "${resumeAgentId}" does not exist`, {
+            details: { agentId: resumeAgentId },
+          });
+        }
+        await this.ensureOwnedIdleSubagent(resumeAgentId);
+        target = await this.lifecycle.create({
+          agentId: resumeAgentId,
+          labels: labelsFromAgentMeta(meta),
+          forkedFrom: meta.forkedFrom,
         });
       }
       await this.ensureOwnedIdleSubagent(resumeAgentId, target);
+      taskScope = subagentTaskScope((await this.sessionMetadata.read()).agents?.[resumeAgentId]);
       agentId = target.id;
       const targetProfileService = target.accessor.get(IAgentProfileService);
       const targetProfileName = targetProfileService.data().profileName;
@@ -305,6 +321,9 @@ export class SubagentTool implements ISubagentTool {
       profileName = resumed.profileName ?? RESUMED_LABEL;
       displayModel = resumed.modelAlias;
     } else {
+      taskScope = args.task_scope ?? subagentTaskScope(
+        (await this.sessionMetadata.read()).agents?.[this.callerAgentId],
+      );
       const requestedProfileName = args.subagent_type?.length
         ? args.subagent_type
         : DEFAULT_PROFILE_NAME;
@@ -359,7 +378,7 @@ export class SubagentTool implements ISubagentTool {
             model: binding.model,
             thinking: binding.thinking,
           },
-          labels: subagentLabels(this.callerAgentId),
+          labels: subagentLabels(this.callerAgentId, { taskScope, goalDependencies: delegation.goalDependencies }),
           runtimeId: runtime.identity.runtimeId,
         });
       } catch (error) {
@@ -380,6 +399,8 @@ export class SubagentTool implements ISubagentTool {
     }
 
     const runInBackground = args.run_in_background === true;
+    this.assertDelegation(delegation);
+    controller.signal.throwIfAborted();
     emitAgentRunSpawned(requester, agentId, {
       profileName,
       parentToolCallId: toolCallId,
@@ -405,6 +426,8 @@ export class SubagentTool implements ISubagentTool {
       agentId,
       profileName,
       parentToolCallId: toolCallId,
+      taskScope,
+      parentAgentId: this.callerAgentId,
       model: displayModel,
       thinkingEffort: this.lifecycle
         .get(agentId)
@@ -416,7 +439,7 @@ export class SubagentTool implements ISubagentTool {
 
   private async ensureOwnedIdleSubagent(
     agentId: string,
-    target: IAgentScopeHandle,
+    target?: IAgentScopeHandle,
   ): Promise<void> {
     const meta = (await this.sessionMetadata.read()).agents?.[agentId];
     if (!isSubagentMeta(meta)) {
@@ -431,12 +454,19 @@ export class SubagentTool implements ISubagentTool {
         { details: { agentId, callerAgentId: this.callerAgentId } },
       );
     }
-    if (target.accessor.get(IAgentLoopService).status().state === 'running') {
+    if (target?.accessor.get(IAgentLoopService).status().state === 'running') {
       throw new Error2(
         ErrorCodes.AGENT_ALREADY_RUNNING,
         `Agent instance "${agentId}" is already running and cannot run concurrently`,
         { details: { agentId } },
       );
+    }
+  }
+
+  private assertDelegation(input: DelegationInput): void {
+    const blocker = this.delegationAdmission.blocker(input);
+    if (blocker !== undefined) {
+      throw new Error2(ErrorCodes.AGENT_DELEGATION_BLOCKED, blocker);
     }
   }
 
@@ -454,12 +484,42 @@ export class SubagentTool implements ISubagentTool {
       if (isResume && requestedProfileName !== undefined) {
         return { output: RESUME_WITH_TYPE_UNAVAILABLE, isError: true };
       }
+      if (isResume && args.task_scope !== undefined) {
+        const capturedScope = subagentTaskScope(
+          (await this.sessionMetadata.read()).agents?.[resumeAgentId],
+        );
+        if (capturedScope !== args.task_scope) {
+          return {
+            output: 'Cannot change task_scope on resume. Create a new agent for a different scope.',
+            isError: true,
+          };
+        }
+      }
 
       const allowBackground = this.canRunInBackground();
       if (runInBackground && !allowBackground) {
         return { output: BACKGROUND_AGENT_UNAVAILABLE, isError: true };
       }
       const timeoutMs = resolveSubagentTimeoutMs(this.config);
+      const agents = (await this.sessionMetadata.read()).agents;
+      const taskScope = isResume
+        ? subagentTaskScope(agents?.[resumeAgentId])
+        : args.task_scope ?? subagentTaskScope(agents?.[this.callerAgentId]);
+      const capturedGoals = subagentGoalDependencies(agents?.[isResume ? resumeAgentId : this.callerAgentId]);
+      if (isResume && args.goal_dependencies !== undefined &&
+        JSON.stringify([...args.goal_dependencies].sort()) !==
+        (capturedGoals === undefined ? undefined : JSON.stringify([...capturedGoals].sort()))) {
+        return { output: 'Cannot change goal_dependencies on resume. Create a new agent for independent work.', isError: true };
+      }
+      const delegation: DelegationInput = {
+        callerAgentId: this.callerAgentId,
+        resumeAgentId: isResume ? resumeAgentId : undefined,
+        taskScope,
+        goalDependencies: isResume ? capturedGoals : args.goal_dependencies ?? capturedGoals,
+      };
+      const blocker = this.delegationAdmission.blocker(delegation);
+      if (blocker !== undefined) return { output: blocker, isError: true };
+      signal.throwIfAborted();
       const runtimeLease = this.runtime.acquire(['process']);
 
       const controller = new AbortController();
@@ -472,7 +532,7 @@ export class SubagentTool implements ISubagentTool {
 
       let handle: SubagentHandle;
       try {
-        handle = await this.launch(args, toolCallId, controller, runtimeLease.runtime);
+        handle = await this.launch(args, toolCallId, controller, runtimeLease.runtime, delegation);
       } catch (error) {
         signal.removeEventListener('abort', abortBeforeRegister);
         this.log.warn('subagent launch failed', {
@@ -622,6 +682,7 @@ function formatBackgroundAgentResult(
     'status: running',
     `agent_id: ${handle.agentId}`,
     `actual_subagent_type: ${handle.profileName}`,
+    ...(handle.taskScope === undefined ? [] : [`task_scope: ${handle.taskScope}`]),
     'automatic_notification: true',
     '',
     `description: ${description}`,
@@ -629,7 +690,7 @@ function formatBackgroundAgentResult(
     allowBackground
       ? `next_step: The completion arrives automatically in a later turn — do NOT wait, poll, or call TaskOutput on it; continue with other work or hand back to the user. (If you have nothing to do until it finishes, run such tasks in the foreground next time.)`
       : 'next_step: The completion arrives automatically in a later turn.',
-    `resume_hint: To continue or recover this same subagent later, call Agent(resume="${handle.agentId}", prompt="..."). The parameter is agent_id ("${handle.agentId}"), NOT task_id ("${taskId}") or source_id from a later <notification>. Recovery cases: a later <notification type="task.lost" | "task.failed" | "task.killed"> for this subagent — its conversation history is preserved across session restarts and resume will pick it up.`,
+    `resume_hint: To continue or recover this same subagent later, call Agent(description="Continue existing task", resume="${handle.agentId}", prompt="..."). The parameter is agent_id ("${handle.agentId}"), NOT task_id ("${taskId}") or source_id from a later <notification>. Recovery cases: a later <notification type="task.lost" | "task.failed" | "task.killed"> for this subagent — its conversation history is preserved across session restarts and resume will pick it up.`,
   ].join('\n');
 }
 
@@ -637,6 +698,7 @@ function formatForegroundAgentSuccess(handle: SubagentHandle, result: string): s
   return [
     `agent_id: ${handle.agentId}`,
     `actual_subagent_type: ${handle.profileName}`,
+    ...(handle.taskScope === undefined ? [] : [`task_scope: ${handle.taskScope}`]),
     'status: completed',
     '',
     '[summary]',
@@ -652,13 +714,14 @@ function formatForegroundAgentFailure(
   const lines = [
     `agent_id: ${handle.agentId}`,
     `actual_subagent_type: ${handle.profileName}`,
+    ...(handle.taskScope === undefined ? [] : [`task_scope: ${handle.taskScope}`]),
     'status: failed',
     '',
     `subagent error: ${message}`,
   ];
   if (timedOut) {
     lines.push(
-      `resume_hint: Continue with Agent(resume="${handle.agentId}", prompt="continue"). Use agent_id only; do not set subagent_type. The subagent retains its prior context; redo any unfinished tool call if its result was lost.`,
+      `resume_hint: Continue with Agent(description="Continue existing task", resume="${handle.agentId}", prompt="continue"). Use agent_id only; do not set subagent_type. The subagent retains its prior context; redo any unfinished tool call if its result was lost.`,
     );
   }
   return lines.join('\n');

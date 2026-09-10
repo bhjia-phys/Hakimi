@@ -298,10 +298,9 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
       // `[null]`, which the ID-scoped reducer treats as a mismatch.
       call(scope, 'agentPlanService', 'cancel', input?.id === undefined ? [] : [input.id]) as Promise<void>,
     getTasks: (input) =>
-      call(scope, 'agentTaskService', 'list', [
-        input?.activeOnly ?? false,
-        input?.limit,
-      ]) as Promise<readonly AgentTaskInfo[]>,
+      call(scope, 'agentTaskService', 'list', input?.limit === undefined
+        ? [input?.activeOnly ?? false]
+        : [input?.activeOnly ?? false, input.limit]) as Promise<readonly AgentTaskInfo[]>,
     stopTask: async (input) => {
       if (input.reason === undefined) {
         await call(scope, 'agentTaskService', 'stopByUser', [input.taskId]);

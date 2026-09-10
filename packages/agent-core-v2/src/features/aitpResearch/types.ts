@@ -348,6 +348,7 @@ export interface ResearchStateChange {
 export type ResearchHumanGateKind = HumanGateKind;
 
 export interface ResearchHumanGate {
+  readonly dependentGoalIds?: readonly string[];
   readonly gateId: string;
   readonly kind: ResearchHumanGateKind;
   readonly actionId?: string;

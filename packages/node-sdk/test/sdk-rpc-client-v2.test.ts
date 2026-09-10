@@ -44,6 +44,7 @@ import {
   drainSessionIndexMirror,
   HostProcessError,
   IAgentResearchService,
+  IAgentTaskService,
   IAppendLogStore,
   ensureMainAgent,
   getLiveSessionById,
@@ -198,6 +199,48 @@ async function sessionDirExists(homeDir: string, sessionId: string): Promise<boo
 }
 
 describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
+  it('preserves two research-line task owners through the real memory transport', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'sdk-line-owner-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'sdk-line-owner-work-'));
+    await mkdir(join(workDir, '.git'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_line_owners', workDir });
+    const session = new Session({ id: summary.id, workDir, summary, rpc: client });
+    try {
+      const live = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(live!);
+      const tasks = agent.accessor.get(IAgentTaskService);
+      const ids = ['algebra', 'numerics'].map((line, index) => tasks.registerTask({
+        idPrefix: 'agent', kind: 'agent', description: `Fixture ${line}`,
+        start: async (sink) => {
+          sink.appendOutput(`Recorded ${line} fixture output`);
+          await sink.settle({ status: 'completed' });
+        },
+        toInfo: (base) => ({
+          ...base, kind: 'agent', agentId: `child-${line}`,
+          parentAgentId: index === 0 ? 'main' : 'child-algebra',
+          taskScope: `research-line:${line}`,
+        }),
+      }));
+      await Promise.all(ids.map((id) => tasks.wait(id, 1000)));
+      const received = await session.listBackgroundTasks();
+      for (const [index, line] of ['algebra', 'numerics'].entries()) {
+        expect(received.find((task) => task.taskId === ids[index])).toMatchObject({
+          kind: 'agent', status: 'completed', agentId: `child-${line}`,
+          parentAgentId: index === 0 ? 'main' : 'child-algebra',
+          taskScope: `research-line:${line}`,
+        });
+        await expect(session.getBackgroundTaskOutput(ids[index]!)).resolves.toContain(`Recorded ${line} fixture output`);
+      }
+      expect(await session.listBackgroundTasks({ activeOnly: true })).toEqual([]);
+      expect(await session.listBackgroundTasks({ limit: 1 })).toHaveLength(1);
+    } finally {
+      await session.close();
+      await client.close();
+    }
+  }, 15_000);
+
   it('exposes the validated runtime binding through Session', async () => {
     const { harness } = await makeHarness();
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-work-'));

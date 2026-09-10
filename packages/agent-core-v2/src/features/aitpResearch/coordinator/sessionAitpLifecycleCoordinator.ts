@@ -17,6 +17,12 @@ export interface AitpMaintenanceRefreshOptions {
   readonly force?: boolean;
 }
 
+export function isMaintenanceReceiptRecent(receipt: AitpMaintenanceReceipt | undefined, at = Date.now()): boolean {
+  if (receipt?.status !== 'ready') return false;
+  const age = at - receipt.refreshedAt;
+  return age >= 0 && age < 30_000;
+}
+
 export interface ISessionAitpLifecycleCoordinator {
   readonly _serviceBrand: undefined;
 

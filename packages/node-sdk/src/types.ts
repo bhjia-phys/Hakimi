@@ -1,4 +1,6 @@
 import type {
+  AgentBackgroundTaskInfo as LegacyAgentBackgroundTaskInfo,
+  BackgroundTaskInfo as LegacyBackgroundTaskInfo,
   ExportSessionManifest,
   ResumeSessionResult,
   ShellEnvironment,
@@ -23,11 +25,19 @@ export interface AgentRuntimeBinding {
 
 export type { CapabilityStatus } from '@moonshot-ai/agent-core-v2/app/capability/types';
 
+/** Optional v2 ownership provenance; legacy tasks remain valid without labels. */
+export interface AgentBackgroundTaskInfo extends LegacyAgentBackgroundTaskInfo {
+  readonly parentAgentId?: string;
+  readonly taskScope?: string;
+}
+
+export type BackgroundTaskInfo =
+  | Exclude<LegacyBackgroundTaskInfo, { kind: 'agent' }>
+  | AgentBackgroundTaskInfo;
+
 export type {
   AgentReplayRecord,
-  AgentBackgroundTaskInfo,
   BackgroundConfig,
-  BackgroundTaskInfo,
   BackgroundTaskStatus,
   ConfigDiagnostics,
   ContextMessage,

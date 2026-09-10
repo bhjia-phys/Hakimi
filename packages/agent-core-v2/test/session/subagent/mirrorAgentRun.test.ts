@@ -4,8 +4,9 @@
  * `AgentRunFinishedEvent` (completed / failed / cancelled) through the Session
  * service's notify surface, and finishes even when abort or rate-limit
  * suppression hides the UI failure signal. The internal events never touch the
- * per-agent `IEventBus` — the bus only carries the unchanged UI
- * `subagent.started` / `subagent.completed` / `subagent.failed` signals.
+ * per-agent `IEventBus` — the bus carries the UI
+ * `subagent.started` / `subagent.completed` / `subagent.failed` signals with
+ * the same opaque runId for execution attribution (not the internal metrics).
  * Finished events carry only a sanitized error code — never the error message,
  * summary, or user content — plus the incremental `runUsage` delta, while the
  * UI completed event and the mirror's return value keep the cumulative `usage`
@@ -231,7 +232,7 @@ describe('mirrorAgentRun run lifecycle', () => {
     expect(completedEvent?.usage).toEqual(cumulative);
 
     expect(bus.published.map((event) => event.type)).toEqual(['subagent.started', 'subagent.completed']);
-    expect(bus.published.some((event) => 'runId' in event)).toBe(false);
+    expect(bus.published.every((event) => 'runId' in event && event.runId === started.runId)).toBe(true);
     expect(outcome.usage).toEqual(cumulative);
     expect('runUsage' in outcome).toBe(false);
   });
@@ -376,7 +377,7 @@ describe('mirrorAgentRun run lifecycle', () => {
     expect(serialized).not.toContain('message');
     expect(serialized).not.toContain('summary');
     expect(bus.published.some((event) => event.type === 'subagent.failed')).toBe(true);
-    expect(bus.published.some((event) => 'runId' in event)).toBe(false);
+    expect(bus.published.every((event) => 'runId' in event && event.runId === finished.runId)).toBe(true);
   });
 
   it('finishes cancelled when the run is aborted before completion', async () => {
@@ -445,6 +446,6 @@ describe('mirrorAgentRun run lifecycle', () => {
     expect(finished.status).toBe('failed');
     expect(cancel).toHaveBeenCalled();
     expect(singleStarted(startedEvents).runId).toBe(finished.runId);
-    expect(bus.published.some((event) => 'runId' in event)).toBe(false);
+    expect(bus.published.every((event) => 'runId' in event && event.runId === finished.runId)).toBe(true);
   });
 });

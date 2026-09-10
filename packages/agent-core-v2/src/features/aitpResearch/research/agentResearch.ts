@@ -185,6 +185,7 @@ export interface ResearchActionConclusion {
 }
 
 export interface RequestHumanDecisionInput {
+  readonly dependentGoalIds?: readonly string[];
   readonly gateId?: string;
   readonly kind: ResearchHumanGateKind;
   readonly actionId?: string;
@@ -285,6 +286,9 @@ export interface IAgentResearchService {
   clearGoalAlignment(input: ClearGoalAlignmentInput): void;
   getLineWorkstreamAlignment(lineSlug: string): ResearchLineWorkstreamAlignment;
   getCurrentWorkstreamAlignment(): ResearchLineWorkstreamAlignment | undefined;
+  captureDirectRecordScope(): ResearchLineWorkstreamBinding;
+  rememberDirectRecordDraft(path: string, binding: ResearchLineWorkstreamBinding): void;
+  getDirectRecordDraftScope(path: string): ResearchLineWorkstreamBinding;
   confirmLineWorkstreamBinding(
     input: ConfirmLineWorkstreamBindingInput,
   ): Promise<ResearchLineWorkstreamBinding>;

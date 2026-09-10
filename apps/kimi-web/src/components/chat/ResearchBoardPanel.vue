@@ -3,6 +3,7 @@ import { computed, nextTick, ref, useId, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ResearchGoalAlignmentRelation, ResearchStatusSnapshot } from '../../api/types';
 import ResearchBoard from './ResearchBoard.vue';
+import type { ResearchAgentRow } from '../../lib/researchAgentTree';
 import Button from '../ui/Button.vue';
 import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
@@ -11,6 +12,7 @@ import ResearchOrbitMark from './ResearchOrbitMark.vue';
 
 const props = defineProps<{
   snapshot: ResearchStatusSnapshot;
+  agents?: ResearchAgentRow[];
   forceExpanded?: number;
 }>();
 const emit = defineEmits<{
@@ -65,6 +67,7 @@ watch(() => props.forceExpanded, () => { void expand(); });
       :id="panelId"
       class="research-floating-board"
       :snapshot="snapshot"
+      :agents="agents"
       :force-expanded="forceExpanded"
       @manage="emit('manage')"
       @align="emit('align', $event)"

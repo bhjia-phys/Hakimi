@@ -59,6 +59,21 @@ describe('SubagentTask — timeoutMs', () => {
     expect(info?.stopReason).toBeUndefined();
   });
 
+  it('retains captured ownership in task records after completion and replay', async () => {
+    const taskId = background.registerTask(new SubagentTask(
+      { agentId: 'child-a', profileName: 'coder', taskScope: 'direction-a',
+        parentAgentId: 'coordinator-a',
+        completion: Promise.resolve({ result: 'bounded result' }) },
+      'Inspect evidence', new AbortController(),
+    ));
+    expect(background.getTask(taskId)).toMatchObject({ taskScope: 'direction-a', parentAgentId: 'coordinator-a' });
+    expect(await background.wait(taskId)).toMatchObject({
+      status: 'completed', taskScope: 'direction-a', agentId: 'child-a',
+      parentAgentId: 'coordinator-a',
+    });
+    await ctx.expectResumeMatches();
+  });
+
   it('omitting timeoutMs lets the task run to completion without a manager deadline', async () => {
     let resolveFn!: (r: { result: string }) => void;
     const completion = new Promise<{ result: string }>((res) => {

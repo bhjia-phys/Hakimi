@@ -386,6 +386,7 @@ export interface ResearchStateChangeRecord {
 }
 
 export interface ResearchHumanGateRecord {
+  readonly dependentGoalIds?: readonly string[];
   readonly gateId: string;
   readonly kind: ResearchHumanGateKind;
   readonly actionId?: string;
@@ -405,7 +406,9 @@ export interface ResearchGoalProgramBindingRecord extends ResearchGoalProgramBin
 
 export interface ResearchLineWorkstreamBindingRecord extends ResearchLineWorkstreamBinding {}
 
-export interface ResearchPeriodRecord extends ResearchPeriod {}
+export interface ResearchPeriodRecord extends ResearchPeriod {
+  readonly programIdentity?: Pick<ResearchProgram, 'topicId' | 'observedRevision'>;
+}
 
 export type ResearchModelState = Checkpointed<ResearchWorkingState>;
 
@@ -718,20 +721,21 @@ export const researchSwitchLine = ResearchModel.defineOp('research.switch_line',
     expectedRevision: z.number(),
   }),
   apply: (s, p) => {
-    if (s.current.localConclusion !== undefined) return s;
     if (s.current.lines[p.lineSlug] === undefined) return s;
     if (p.expectedRevision !== 0 && s.current.revision !== p.expectedRevision) return s;
+    const retained = s.current.localConclusion !== undefined || isLiveForegroundAction(s.current.currentAction) ||
+      s.current.currentRun !== null || s.current.currentAction?.run !== undefined;
     return {
       ...s,
       current: {
         ...s.current,
         focus: null,
-        phase: 'idle',
-        currentAction: null,
-        currentRun: null,
-        latestProgress: null,
-        recentStateChange: null,
-        humanGate: null,
+        phase: retained ? s.current.phase : 'idle',
+        currentAction: retained ? s.current.currentAction : null,
+        currentRun: retained ? s.current.currentRun : null,
+        latestProgress: retained ? s.current.latestProgress : null,
+        recentStateChange: retained ? s.current.recentStateChange : null,
+        humanGate: s.current.humanGate,
         revision: s.current.revision + 1,
       },
     };
@@ -1563,6 +1567,7 @@ export const researchSetPhase = ResearchModel.defineOp('research.set_phase', {
 
 export const researchRequestHumanDecision = ResearchModel.defineOp('research.request_human_decision', {
   schema: z.object({
+    dependentGoalIds: z.array(z.string().min(1).max(200)).min(1).max(32).optional(),
     gateId: z.string(),
     kind: ResearchHumanGateKindSchema,
     actionId: z.string().optional(),
@@ -1575,6 +1580,7 @@ export const researchRequestHumanDecision = ResearchModel.defineOp('research.req
     if (p.questionId !== undefined && s.current.questions[p.questionId] === undefined) return s;
     if (isUnresolvedHumanGate(s.current.humanGate)) return s;
     const gate: ResearchHumanGateRecord = {
+      dependentGoalIds: p.dependentGoalIds,
       gateId: p.gateId,
       kind: p.kind,
       actionId: p.actionId,
@@ -1817,6 +1823,11 @@ export const researchStartPeriod = ResearchModel.defineOp('research.start_period
   }),
   apply: (s, p) => {
     const open = s.current.period;
+    const program = s.current.program;
+    const programIdentity = program === null ? undefined : {
+      topicId: program.topicId,
+      observedRevision: program.observedRevision ?? 1,
+    };
     if (open !== null && open.endedAt === undefined) {
       if (open.lineSlug === p.lineSlug) return s;
       const closed: ResearchPeriodRecord = { ...open, endedAt: p.startedAt };
@@ -1825,6 +1836,7 @@ export const researchStartPeriod = ResearchModel.defineOp('research.start_period
         lineSlug: p.lineSlug,
         startedAt: p.startedAt,
         loopCount: 0,
+        programIdentity,
       };
       return {
         ...s,
@@ -1841,6 +1853,7 @@ export const researchStartPeriod = ResearchModel.defineOp('research.start_period
       lineSlug: p.lineSlug,
       startedAt: p.startedAt,
       loopCount: 0,
+      programIdentity,
     };
     return {
       ...s,

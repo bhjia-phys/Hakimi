@@ -1,5 +1,24 @@
 # Research Mode
 
+Line-return focus (2026-09-07; locally installed and replayed): a settled
+Line switch restores its last open/active/blocked Question only when the archived
+period captured the same Topic observation. It uses the Question's current next
+step, not old action state. Unknown/changed scope, closed/deferred/cancelled
+Questions and a latest unfocused period stay unfocused. No AITP writes, binding
+confirmation or Goal resumption; public snapshot shapes are unchanged.
+
+Locally installed follow-up: after a record, the existing Skill
+handoff first assesses whether the touched evidence warrants candidate harvesting.
+No eligible evidence means no extra scans/checks or new Action for that review;
+actual harvesting retains the external AITP Skill's checks. This is guidance,
+not automatic scientific classification or a guarantee of model behavior.
+
+Locally installed guidance: Theory Physics 0.2.4 treats a progress query as a
+small owned inspection, not a new build campaign. A receipt-only legacy job
+can be queried without inventing a structured Run. Prefer the first substantive
+error and iteration summary; retain full raw logs outside the normal report.
+Managed plugin files match source; real behavioral acceptance remains open.
+
 Research Mode turns Hakimi into a joint research partner backed by the [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) evidence ledger. Instead of answering a single question and forgetting, the agent maintains a live portfolio of research questions, steers itself through bounded actions, and persists durable checkpoints to AITP — all while you retain full control through `/research`, the Research Board, and the Research Manager in TUI and Web.
 
 ::: warning
@@ -77,6 +96,16 @@ At any time, check the current research snapshot:
 
 In TUI, this displays the mode phase, loop status, current research line, focus question, AITP adapter health, and—when available—the current-state maintenance summary. In Web, it refreshes the authoritative session snapshot and expands the live Board.
 
+For the model, `GetResearchStatus` defaults to `detail="summary"`: scientific
+state, ownership, guards and recovery IDs/paths are retained, while repeated
+check fingerprints become counts and historical checkpoint receipts are omitted.
+Omission is explicitly disclosed, not represented as an empty/clean receipt.
+Use `detail="full"` for the unchanged full snapshot when diagnosing a receipt.
+Session-wide commit history is not automatically evidence for the focused Line
+or Question. Status reading neither refreshes external calculation evidence nor
+performs scientific synthesis; an outdated Question still needs a grounded
+`UpdateResearchQuestion`. REST/WS/SDK/klient/TUI/Web snapshot contracts are unchanged.
+
 ## Current-state maintenance
 
 After the adapter probe reports `ready`, Hakimi first calls unscoped `enter` and observes only the current Topic identity and revision. It does not adopt an unscoped handoff or evidence set. If the current Research Line has an exact confirmed binding for that observed Topic revision, Hakimi then runs the read-only scoped `enter` → `check` maintenance cycle for the bound workstream. Without that binding, it clears the old maintenance scope and makes no scoped maintenance claim.
@@ -118,6 +147,11 @@ user turn even when no Goal exists. A Goal is required only for autonomous
 cross-turn continuation. When one exists, Research Goal projects it rather
 than replacing it, and Goal–Program alignment guards automatic continuation
 and completion without suppressing the current bounded action's recovery.
+
+A paused Goal does not prohibit a bounded user request on the same subject.
+Keep it paused for a question, status check, recovery or one-step task; resume
+autonomous continuation only when explicitly requested. The corrected existing
+Goal reminder is model guidance, not runtime natural-language authorization.
 
 When Research Mode is active, the TUI **Research Board** appears above the input area. In Web, click **Research board** at the right edge of the conversation to open a floating panel. It starts collapsed, scrolls independently, and never resizes the conversation or composer. Use **Hide research board** (or Escape while focused inside it) to collapse it; this does not pause Research or the Goal. Live updates do not reopen it, and switching sessions resets it to collapsed. Inside the panel, **Expand** opens the detailed audit view. The compact Board is deliberately limited to the decisions needed at a glance:
 
@@ -289,6 +323,8 @@ Example:
 
 ### Action-scoped tool enforcement
 
+Resource cleanup is not new research work: `TaskStop` may target an exact process-task ID already recorded by the current Agent, without a `task` capability or live Action. This remains available when the loop is paused or research state is stale or gated. It does not grant `TaskOutput`, `TaskList`, shell execution, access to another Agent's tasks, or remote scheduler cancellation. Existing tool permissions and the task service's lookup/stop semantics still apply; a restored record is not proof that its process is still alive. Cleanup neither concludes an Action nor resolves a scientific decision.
+
 Research Action ownership is an executor-enforced policy for admitted Research turns whenever Research Mode is active. It is part of the mode's normal behavior and needs no experimental flag.
 
 Status/control and narrowly defined recovery tools may run without an active Action. New research work requires an `in_progress` Action in `action_executing`, fresh Line, Question, and Plan bindings, no unresolved human gate, and a matching `allowed_tool_kinds` capability. Known capabilities are `workspace_read`, `workspace_write`, `web_search`, `web_fetch`, `shell`, `task`, `subagent`, and `scheduler`; an otherwise unknown plugin or MCP tool requires the exact `tool:<lowercase-tool-name>` grant and is denied by default. `BeginResearchAction` and a work tool in the same tool-call batch are rejected so a failed Begin cannot race with unowned work.
@@ -312,6 +348,8 @@ The Web Manager's Checkpoint form preserves this boundary. **Propose** creates o
 
 ### Retained local conclusions
 
+Resolving the ownership question may return to planning, evaluation or idle. That valid return phase does not invalidate an already concluded result: once its original scope is explicitly confirmed and still fresh, the same checkpoint recovery can proceed without repeating the conclusion or accepting it again. An unresolved decision or live replacement Action still prevents adoption.
+
 A completed check can produce useful evidence before its record ownership is settled. If the Action is still fresh but has no Line or its Line is unbound, `ConcludeResearchAction` closes it and retains the full result, evidence detail, limitations, and durability assessment in local Research working state. The Board shows the result and asks for ownership. It is not an AITP Entry or pending checkpoint, and the result must not be relabelled as no durable delta or recorded again with `RecordResearchProgress`.
 
 For an agent-authority conclusion that captured its original Program and Line, confirming that Line's first AITP workstream binding is enough: local reconciliation automatically proposes the existing checkpoint when the original Question (if any), Program and reviewed Plan remain fresh. It also runs before the next admitted Research answer and after restore when the mode and adapter are ready. There is no second Manager acceptance, inferred ownership, rewritten conclusion or additional AITP check. The normal scoped prepare/save/verify/commit flow still records the evidence; automatic proposal does not approve a scientific claim or confirm Goal–Program alignment.
@@ -326,7 +364,7 @@ After submission persistence, `BeginResearchAction` can set `observed_run_action
 
 `ReadResearchCheckpointEvidence` reads one explicitly selected workspace-relative evidence file for the current unsaved checkpoint. Supply `checkpoint_id`, the current `expected_revision`, and `path`; optional `offset` paginates the text excerpt. It returns the exact bytes' `sha256:` pin and at most 16000 characters. Files over 8 MiB, paths outside the workspace, and `.aitp`/`.git` paths are refused. Read canonical Entries through `aitp_show`. Scope and revision are checked both before and after reading; saved, stale, changed, or inactive contexts do not retain permission. The call grants no subsequent generic Read, Edit, Bash, search, or scientific approval. Normal user permission checks remain active. This is executor-enforced bounded I/O with symlink checks, not OS-level isolation. AITP save remains the final pin validator; it writes the ledger, not this tool.
 
-These two recovery extensions are source changes, not yet installed or accepted on a real research session. They do not add a new AITP schema, scheduler, or Method-card rule.
+These recovery extensions are locally installed as CLI 0.21.0. A real Si session used checkpoint evidence reads and saved its original-scope submission record, then queried the existing job through a fresh bounded Action. It has no retained structured Run, so that separate recovery path remains regression-tested rather than real-session accepted. Scientific closure and behavioral validation of the installed Theory Physics 0.2.4 guidance remain separate acceptance steps. No new AITP schema, scheduler, or Method-card rule is added.
 
 ## Degraded mode
 

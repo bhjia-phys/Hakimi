@@ -222,6 +222,7 @@ export class AgentSwarmTool implements IAgentSwarmTool {
         ...common,
         kind: 'spawn' as const,
         binding,
+        goalDependencies: args.goal_dependencies,
       };
     });
     const results = await this.swarmService.run({

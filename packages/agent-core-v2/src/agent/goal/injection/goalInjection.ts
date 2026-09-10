@@ -1,3 +1,8 @@
+/**
+ * Goal-owned context reminders. Full task instructions are disclosed when
+ * absent from retained context or changed; subsequent turn usage updates are
+ * compact. Disclosure metadata follows context undo, compaction and restore.
+ */
 import type { GoalSnapshot } from '#/agent/goal/types';
 import { Service } from "#/_base/di/service";
 import { renderPrompt } from "#/_base/utils/render-prompt";
@@ -10,6 +15,11 @@ export interface GoalInjectionOptions {
   readonly getGoal: () => GoalSnapshot | null;
 }
 
+interface GoalDisclosure {
+  readonly task: string;
+  readonly usage: string;
+}
+
 export class GoalInjection extends Service {
   constructor(
     private readonly options: GoalInjectionOptions,
@@ -17,7 +27,19 @@ export class GoalInjection extends Service {
   ) {
     super();
     this._register(
-      injector.register('goal', ({ isNewTurn }) => (isNewTurn ? this.reminder() : undefined)),
+      injector.register<GoalDisclosure>('goal', ({ isNewTurn, lastDisclosure }) => {
+        const goal = this.options.getGoal();
+        if (goal === null || goal.status === 'complete') return undefined;
+        const task = JSON.stringify([goal.goalId, goal.objective, goal.completionCriterion,
+          goal.status, goal.terminalReason, goal.budget.tokenBudget, goal.budget.turnBudget,
+          goal.budget.wallClockBudgetMs]);
+        const usage = JSON.stringify([goal.turnsUsed, goal.tokensUsed,
+          formatElapsed(goal.wallClockMs), isNearingBudget(goal)]);
+        const disclosure = { task, usage };
+        if (lastDisclosure?.task !== task) return { content: this.reminder()!, disclosure };
+        if (!isNewTurn || goal.status !== 'active' || lastDisclosure.usage === usage) return undefined;
+        return { content: `Goal usage update: ${goal.turnsUsed} continuation turns, ${goal.tokensUsed} tokens, ${formatElapsed(goal.wallClockMs)} elapsed.\n${formatBudgets(goal)}\n${isNearingBudget(goal) ? BUDGET_GUIDANCE_NEARING : BUDGET_GUIDANCE_WITHIN}`, disclosure };
+      }),
     );
   }
 

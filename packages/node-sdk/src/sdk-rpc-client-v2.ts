@@ -2564,9 +2564,9 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
 
   /**
    * Facade (`agentTaskService.list`). The v2 `AgentTaskInfo` union is the
-   * same wire shape as v1's `BackgroundTaskInfo` — the process / agent /
-   * question kinds are field-identical ports — so the cast only bridges the
-   * two packages' type declarations. One content gap, pinned in the parity
+   * legacy-compatible wire shape, with optional agent ownership fields exposed
+   * by the SDK. Klient preserves those fields; this cast bridges declarations
+   * rather than projecting or dropping provenance. One content gap, pinned in the parity
    * KNOWN_DIFFS: after a detach, v2 rewrites the reported `timeoutMs` to the
    * detach deadline where v1 keeps the foreground one.
    */

@@ -492,6 +492,26 @@ function cycleStage(snap: ResearchStatusSnapshot): string {
   }
 }
 
+function currentLineConclusion(snap: ResearchStatusSnapshot) {
+  const local = snap.localConclusion;
+  if (local === undefined) return undefined;
+  const question = snap.questions.find((item) => item.id === local.action.questionId);
+  if (local.action.lineSlug !== undefined && question !== undefined
+    && local.action.lineSlug !== question.lineSlug) return undefined;
+  const line = local.action.lineSlug ?? question?.lineSlug;
+  return line === undefined
+    ? snap.lines.length <= 1 ? local : undefined
+    : line === snap.currentLineSlug ? local : undefined;
+}
+
+function currentLineProgress(snap: ResearchStatusSnapshot) {
+  // Legacy progress has no independent Line identity; never infer one from UI focus.
+  if (snap.currentAction !== undefined) {
+    return currentLineAction(snap) === undefined ? undefined : snap.latestProgress;
+  }
+  return snap.lines.length <= 1 ? snap.latestProgress : undefined;
+}
+
 function compactCurrentWork(snap: ResearchStatusSnapshot, width: number): string {
   const actionRecoveryRequired = actionNeedsRecovery(snap);
   const action = currentLineAction(snap);
@@ -515,7 +535,7 @@ function compactCurrentWork(snap: ResearchStatusSnapshot, width: number): string
   ) {
     return `${normalizeSummary(action.purpose)} · ${action.status.replaceAll('_', ' ')}`;
   }
-  return normalizeSummary(snap.latestProgress?.headline)
+  return normalizeSummary(currentLineProgress(snap)?.headline)
     || normalizeSummary(snap.currentQuestion?.wording)
     || normalizeSummary(snap.recentStateChange?.summary)
     || 'no current work recorded';
@@ -550,10 +570,10 @@ function renderCompactCurrentCycle(
   colors: ColorPalette,
   width: number,
 ): string {
-  const local = snap.localConclusion;
+  const local = currentLineConclusion(snap);
   const action = currentLineAction(snap);
   const actionState = actionNeedsRecovery(snap)
-    ? 'action recovery required'
+    ? 'legacy action state'
     : action?.status === 'planned' || action?.status === 'in_progress'
       ? `action ${action.status.replaceAll('_', ' ')}`
       : 'no live action';
@@ -579,7 +599,7 @@ function renderCompactAttention(
   colors: ColorPalette,
 ): string | undefined {
   const localGate = currentLineHumanGate(snap);
-  if (snap.localConclusion !== undefined && (localGate === undefined || localGate.resolvedAt !== undefined)) {
+  if (currentLineConclusion(snap) !== undefined && (localGate === undefined || localGate.resolvedAt !== undefined)) {
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)('Record ownership needs confirmation; the scientific result is retained.')}`;
   }
   const alerts = currentLineAlerts(snap);
@@ -630,11 +650,8 @@ function renderCompactAttention(
   if (hasActionRecovery) {
     const action = currentLineAction(snap)!;
     const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasPendingCheckpoint) + Number(hasBlockingAlignment);
-    const projected = currentLineEffectiveNextStep(snap);
-    const message = projected?.source === 'research_action' && projected.freshness === 'blocked'
-      ? projected.text
-      : `Action ${normalizeSummary(action.actionId)} is ${action.status} while phase is ${snap.phase}; conclude or abandon it before starting another action.`;
-    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Action/phase recovery required')}${chalk.hex(colors.textMuted)(moreSuffix(additional))} · ${chalk.hex(colors.text)(message)}`;
+    const message = `Action ${normalizeSummary(action.actionId)} has legacy state (${action.status} / ${snap.phase}); review its record separately from current work.`;
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Recorded action state')}${chalk.hex(colors.textMuted)(moreSuffix(additional))} · ${chalk.hex(colors.text)(message)}`;
   }
 
   if (hasPendingCheckpoint) {
@@ -706,37 +723,16 @@ function currentLineEffectiveNextStep(
 function selectEffectiveNextStep(
   snap: ResearchStatusSnapshot,
 ): ResearchEffectiveNextStep | undefined {
-  if (actionNeedsRecovery(snap)) {
-    const action = currentLineAction(snap)!;
-    const projected = currentLineEffectiveNextStep(snap);
-    if (
-      projected?.source === 'research_action' &&
-      projected.freshness === 'blocked' &&
-      projected.derivedFrom.actionId === action.actionId
-    ) return projected;
-    return {
-      text: `Recover action ${action.actionId}: it is ${action.status} while the Research phase is ${snap.phase}; conclude or abandon it before starting another action.`,
-      source: 'research_action',
-      freshness: 'blocked',
-      observedAt: action.createdAt,
-      derivedFrom: {
-        actionId: action.actionId,
-        questionId: action.questionId,
-        lineSlug: action.lineSlug,
-      },
-    };
-  }
-  return currentLineEffectiveNextStep(snap);
+  const projected = currentLineEffectiveNextStep(snap);
+  // Legacy lifecycle recovery is record maintenance, not a scientific next step.
+  return projected?.source === 'research_action' && actionNeedsRecovery(snap)
+    ? undefined
+    : projected;
 }
 
 function selectNextAction(snap: ResearchStatusSnapshot): string | undefined {
-  const gate = currentLineHumanGate(snap);
-  if (snap.localConclusion !== undefined && (gate === undefined || gate.resolvedAt !== undefined)) {
-    const local = snap.localConclusion;
-    return `Confirm ownership: /research adopt-conclusion ${local.candidate.sourceActionId} ${local.action.lineSlug ?? '<lineSlug>'}${local.action.questionId === undefined ? '' : ` ${local.action.questionId}`} (requires a confirmed workstream binding).`;
-  }
   return normalizeSummary(selectEffectiveNextStep(snap)?.text)
-    || normalizeSummary(snap.latestProgress?.nextAction)
+    || normalizeSummary(currentLineProgress(snap)?.nextAction)
     || normalizeSummary(snap.currentQuestion?.nextBoundedAction)
     || normalizeSummary(snap.currentFocus?.boundedAction)
     || undefined;
@@ -748,8 +744,7 @@ function renderCompactNext(
 ): string {
   const next = selectNextAction(snap);
   const effective = selectEffectiveNextStep(snap);
-  const warning = actionNeedsRecovery(snap)
-    || effective?.freshness === 'blocked'
+  const warning = effective?.freshness === 'blocked'
     || effective?.freshness === 'stale';
   return `  ${chalk.hex(warning ? colors.warning : colors.primary)('→')} ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(warning ? colors.warning : next === undefined ? colors.textMuted : colors.text)(next ?? 'not recorded')}`;
 }
@@ -910,8 +905,8 @@ function renderExpandedNext(
   currentLine: ResearchLine | undefined,
   colors: ColorPalette,
 ): string[] {
-  const next = selectNextAction(snap) ?? (normalizeSummary(currentLine?.objective) || 'not recorded');
-  const effective = selectEffectiveNextStep(snap);
+  const effective = currentLineEffectiveNextStep(snap);
+  const next = normalizeSummary(effective?.text) || selectNextAction(snap) || normalizeSummary(currentLine?.objective) || 'not recorded';
   const source = effective === undefined
     ? ''
     : ` · ${effective.source.replaceAll('_', ' ')} / ${effective.freshness}`;
@@ -1026,7 +1021,7 @@ function renderExpandedEvidenceRows(
     rows.push(...renderNamedList('Falsifier refs', current.falsifierRefs, colors, true));
   }
 
-  const progress = snap.latestProgress;
+  const progress = currentLineProgress(snap);
   if (progress === undefined) {
     rows.push(`  ${chalk.hex(colors.textDim)('Progress evidence:')} ${chalk.hex(colors.textMuted)('No progress recorded for this cycle.')}`);
     return rows;
@@ -1418,7 +1413,7 @@ function renderExpandedScientificRows(
     }
   }
 
-  const progress = snap.latestProgress;
+  const progress = currentLineProgress(snap);
   if (progress !== undefined) {
     rows.push(`  ${chalk.hex(colors.textStrong).bold('Latest progress')}`);
     const fields: Array<[string, string]> = [

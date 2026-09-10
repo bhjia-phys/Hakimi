@@ -1,5 +1,314 @@
 # AITP 状态跟踪与交接清单
 
+Current delivery, 2026-09-10 06:38 UTC (supersedes older source-only/pending
+installation paragraphs below): AITP 0.10.0 / adapter-contract-0.3 is installed
+in Codex and Hakimi. Latest Hakimi CLI 0.21.0 core/worker/Web match the verified
+package; restart followed a complete 225-session idle check. New synthetic
+session fb8775d0… reports ready, Python 3.12, no Goal. Agent/nested/Swarm explicit
+decision-dependency cases and compaction recovery have finite model evidence;
+this is not production-science acceptance or an OS sandbox. Atomic Note save
+and Entry/Note failure/retry/concurrency evidence are recorded in the atomic-save
+tests and lean-harness-live-acceptance document. Codex needs a new thread to
+load cache 0.10.0+codex.20260910054835. The finite G1–G7 coverage audit is complete;
+explicit old/new Note history recall passed and final REST/WS tests passed 32/32.
+Scientific task completion, universal recall and OS isolation are not claimed.
+Earlier dated notes retain their observed failures and former authorization
+boundaries; they do not override this installed-version statement.
+
+L3 source-only: optional GetResearchStatus line_slug projects an existing Line without changing execution focus, tasks or checkpoint ownership. No AITP/schema migration; Board and client browsing integration remains unfinished.
+
+2026-09-09: a finite Hakimi Research Mode simplification/context-deduplication
+Goal is active. The detailed L0–L7 plan is in Hakimi
+`docs/aitp/research-mode-lean-harness-plan.zh-CN.md`. This is authorized work in
+progress, not completed behavior; no AITP runtime/schema or human-authority
+change is authorized by the plan. Existing Skill refinements remain source-only.
+
+L1 source-only update: unchanged Research disclosures are deduplicated across
+turns; Goal task reminders are separated from compact usage updates, and Research
+does not repeat the Goal objective/criterion. Request-chain and recovery coverage
+passes in 745 related Hakimi tests. This does not establish L2–L7 completion,
+installation, or an AITP CLI/schema change.
+
+L2 source-only slice: ordinary file/web observations and existing task status/output
+queries no longer require a Research action/phase; the guard abstains, leaving
+normal tool permissions intact. Canonical writes, Bash and unknown MCP tools do
+not gain blanket observation privileges. A finite literal shell-query shortcut
+now covers explicit job queries and log reads, optionally over SSH; composition
+and submission are excluded, normal permissions still apply, and this is not OS
+isolation. Live acceptance remains unfinished; no AITP CLI/schema change or
+reinstall is claimed.
+
+Distillation loading refinement (2026-09-09; source only, not reinstalled):
+Follow-up pin guidance: ordinary recall adds no standalone per-file hash audit;
+new pins may reuse verified same-target unchanged digests. Existence is not
+version identity. Save/check, exact-card pins and historical verification remain
+unchanged; no host permission or runtime change.
+ordinary read-only recall no longer instructs loading full candidate review just
+because historical markers exist. Current-task/touched-evidence relevance comes
+first; explicit requests, relevant recurrence and new card trial/revision evidence
+retain full review. Drafting/trial/human-decision rules, version 0.9.0, contract
+schema 0.2 and CLI/runtime are unchanged; contract sync text reflects the routing.
+No Hakimi runtime/permission change or behavioral speedup claim. Evidence and
+limits: AITP feedback/2026-09-09-distillation-loading-natural-use.md.
+
+Check-call deduplication (2026-09-09, reinstalled in Codex and Hakimi):
+using-aitp now discovers and verifies a Python 3.11+ path before CLI use,
+reuses current pre-write/closeout views only over a known-unchanged interval,
+and uses one global check plus scoped enter for multi-line read-only recovery.
+Evidence/ledger/policy changes, concurrent writers or uncertain freshness
+require refresh; every save still gets check/enter verification. Scoped check
+itself still scans globally under M1d; no new runtime/cache/schema/CLI or host
+permission behavior. The added fixture verifies zero-write multi-line reads and
+stale-report invalidation after evidence changes. This is Skill guidance, not
+a scheduling hook or a measured model speedup.
+Validation:193 ledger tests pass/44.74s, Skill validator and diff checks pass.
+Single local GW call-pattern comparison:3checks+3enters5.440s versus
+1globalcheck+3enters2.965s; equal enter views, no real-record writes. This is
+not a controlled timing study or a new model-conformance claim.
+Installation:2026-09-08 19:08UTC,65files match on both hosts. Hakimi enabled/ok,
+no diagnostics,227sessions idle before install. Codex cache version
+0.9.0+codex.20260908190759; use a new Codex thread for new Skill pickup.
+No system-Python replacement, Goal resumption or scientific-record write.
+
+Read/write efficiency slice (2026-09-09 Asia/Shanghai; locally installed):
+using-aitp entrypoint684->182lines; on-demand recording and CLI-contract
+references preserve detailed rules. Existing enter/check/note-save descriptions
+are synchronized, contract0.2/version0.9.0 unchanged. No runtime/schema/CLI/
+Skill-visibility change. Final ledger191passed; final plugin reload16:14:48UTC
+on Sep8 verified65files after all217sessions were idle. Independent reads can
+batch; dependent writes and complete check reports/exit status remain protected.
+Two fresh mode-off read tests reduced model requests12->8 and13->9, but Chain
+needed an assisted2-request correction separating standing direction from paused
+Goal execution; not an unassisted correctness or causal speedup claim.
+Isolated synthetic save/retry/working-Note/scoped-query acceptance passed with
+exactly1Entry/1Note, no duplicates or scope leakage. All974 real-store Markdown
+files unchanged. Approval wait remains a major host/supervision cost; no write-
+speedup claim. Detailed results: AITP docs/research-memory.zh-CN.md, efficiency
+acceptance section; private Hakimi .tmp/aitp-lean-read-write-20260909 reports.
+
+Authorized navigation application (2026-09-08): user confirmed the narrow
+ordinary-file exception; GW Topic navigation now separates four explicit
+directions with dated Note entrances. Original identity/Research Goal and all
+other 973 canonical Markdown files across the three stores remain unchanged;
+no records added. Whole-store check is byte-identical before/after (exit1,
+73 errors/201 warnings), and scoped enter preserves each line's own Note.
+This is not a new CLI command or human scientific/Goal-alignment decision.
+Mode-off public-file/CLI recovery and no-op maintenance were tested; automatic
+host Skill discovery remains unavailable. No runtime/schema/harness change,
+new-template positive save, full-recall or efficiency claim. Earlier pending
+permission/installation statements below are historical observations.
+
+Topic-map/writing follow-up (2026-09-08; locally installed/reloaded at 14:46 UTC,
+new real-session acceptance pending): on-demand guidance separates a stable Topic
+map from scoped current records and pinned long-form derivations. Existing
+theory-template/enter descriptions are synchronized; no runtime, CLI, schema,
+authority or Hakimi harness change. A scoped regression covers old Topic links
+and rejects prose-inferred membership. Topic-update and Note-show remain
+unavailable; real GW Topic editing awaits resolution of canonical-write authority.
+Earlier installation/test reports below describe earlier slices only.
+This slice: 190 ledger tests passed (36.38s), Skill validation and scoped diff
+checks passed. All 210 sessions were idle before installation; 63 installed
+files match source. A fresh mode-off navigation test failed automatic entry
+discovery: host Skill visibility requires active Research Mode, and bare aitp
+is absent from PATH. With installed file/CLI locations supplied, the same
+read-only session recovered distinct QSGW lines and evidence limits with one
+check and no writes. This assisted result does not prove automatic discovery;
+changing host Skill visibility is outside this docs-only Hakimi slice.
+A second fresh mode-off test recovered the recorded phase-bound derivation and
+its scientific limits. Given permission for justified synthesis, it chose no
+write because the existing Note covers the evidence. Both sessions ended idle;
+this does not exercise a new-template save. Real Topic update still needs the
+explicit canonical-edit exception; its private navigation proposal preserves
+the original identity and Research Goal. No completion or speedup claim.
+
+科研记忆读写指导（2026-09-08；已本地安装/reload）：外部 using-aitp 新增
+按需 reference，既有 Note 模板与 enter/note-save 描述同步；contract schema 0.2、
+版本元数据 0.9.0、runtime/CLI/read schema、蒸馏和人类决定语义不变。Hakimi
+仅同步文档，不复制规则或新增检查。review 后经已有插件 API 交付，62 文件
+匹配；原 Si 会话恢复同线证据、更新 Question 并保存一个 Note。969 个旧文件及
+其他会话科研字段、所有 Goal/归属/决定/history 不变。完整 ledger 187 项通过。
+验收仍有说明读取门禁、revision 混淆及 Note 缺少 canonical Entry 精确引用；
+relay 连续四次服务错误后，已取消本次两个请求，引用补正未执行。无 pending
+checkpoint/live action/排队请求遗留，不声称自主遵循或效率提升，详见
+[handoff](README.md#research-memory-guidance)。
+
+多方向隔离补证（2026-09-07；仅测试）：新增跨独立 journal 延迟结果/冷回放
+测试，以及 AITP 两组同 Topic 交错 CLI 保存、相似名称、待存草稿、错归属零写入、
+handoff 和幂等测试。Hakimi 713 项、typecheck/import、AITP 全 ledger 183 项通过。
+与此前真实 A→B→A 互补，不等于同时调度或五课题科研验收。无 runtime/contract
+变化、不新增 changeset、不重装、不向真实课题写测试记录。详见 [handoff](README.md)。
+
+定向 Note 读取（2026-09-07；已本地安装，冷读通过）：真实 Si 审阅错把 Glob
+首项 NiO Note 当作当前笔记；AITP scoped enter 本身正确。现有维护提示新增条件性
+定位指引，使用已确认 workstream，而非 Line slug 或文件排序。不增加健康检查、
+写入 trigger 或状态。2 项先红后绿，714 项相关测试、typecheck/import 通过；
+受监督纠正已读取正确 Si Note，不能视为安装后自主行为验收。公共边界与 AITP
+协议不变；读取纠正本身没有写科研 Note/卡片。详见 [handoff](README.md#scoped-note-retrieval)。
+交付后 CLI/worker/provenance/521 Web 字节一致，重复 Web 构建和原生 PTY 通过；
+完整列表 196 会话空闲，仅重启自有服务。五会话冷读保持科研字段、绑定、Goal、
+提交历史和核对的三条 canonical Entry 不变；真实 Si 上下文已包含新指引。
+这是交付验证，不是自主 Note 选择的行为保证。
+随后单独明确请求的 Si 阶段综合已通过现有 prepare/save 保存 Working Note，
+精确归属已确认的 Si workstream，复用已有证据；真实记录 ID 留在私有验收回执中。
+native post-turn maintenance 已看到新 Note，当前 scope check clean；failure 未解决。
+三处工作区的全部旧 Entry/Note 原文不变，五会话只有 Si Action/progress 更新。
+没有新实验、Entry、卡片/trial、Goal 恢复或归属变更；不是自主蒸馏或科研完成。
+
+后续受监督源码/代数反驳复核另存一条精确归属的 result 并更新 Si Question；
+其他四会话科研字段和全部旧 canonical 原文不变。它补上相位误差项，撤回不必要
+的诊断文件接口。独立合成检验通过，但没有复现实际 Si failure。checkpoint
+前后检查已 clean，模型仍重复 enter/check，之后 native turn-end 又刷新；
+后续最小改动已在成功 CommitResearchCheckpoint 回包说明原有 show 与 scoped
+前后核验完成，提示复用回执，而非把提交成功当作重复 enter/check 的理由。
+仍保留证据读取、外部变化/过期 scope、Note 和候选复核所需检查；不声称科研正确
+或全 Topic 健康。失败与幂等重试不冒充新核验。7 项扩展断言先红后绿，show/check
+次数不增加，重复 commit 不重查；相关 714 项及 typecheck/import 通过。
+只改现有回包文字，无新状态/hook、AITP Skill/协议或 canonical 写入。CLI patch
+已登记；本地 CLI/worker/provenance/521 Web 与构建一致，Web 重复构建和原生 PTY
+通过。仅重启自有空闲服务，五会话冷读保留科研字段、归属、Goal 和提交记录；
+仅快照 revision 随刷新推进。原 NiO 新查询约 102 秒正常完成，仅 Begin→一次
+shell 查询→Read→Conclude；没有额外模型 enter/check 或 canonical 写入，
+仅该会话 Action/progress 改变。这次无增量查询没有触发新提交回包，不能证明
+提交后不再重复检查，也不代表数值推进或可信 U 已产生。
+
+Focus 意图展示（2026-09-07；已本地安装并通过只读模型回访）：真实 Si Question 已更新，
+默认模型状态却仍返回旧 allowlist 行动文字。摘要现保留所选 Question 与 Focus
+revision，省略 captured boundedAction 并明确指向 effectiveNextStep；full/public
+快照及所有科研状态保持不变，不推断过期、不改写 Focus。4 项新回归先红后绿，
+相关三文件 815 项及 typecheck/import 通过；五个真实快照只读源码投影通过。
+AITP、公共 transport 和详细 UI 未改。CLI/worker/provenance/521 Web 字节一致，
+Web 重复构建及原生 PTY 通过。完整列表 196 会话空闲，仅重启自有服务；五会话
+冷读及真实 Si 状态问答后，科研字段、Focus、绑定、Goal、提交历史及核对的三条
+最新 canonical Entry 不变。原 relay 模型仅调用一次默认 GetResearchStatus，
+收到 29,552 字符的新摘要，回答当前 AO 诊断而非旧任务；没有 Action/Question
+修改、远程工具、Goal 恢复或 AITP 保存。这是明确请求的单次只读验收，不是自主
+科研、因果效果、速度优越性或五课题全部完成的证明。
+
+已保存 checkpoint 幂等键核验（2026-09-07；已本地安装并核验冷读）：Hakimi
+复用既有 canonical show，将已保存键与 captured 非空 checkpoint key 对照，
+不一致则保留 pending、实际 Entry 与 receipt，不推进 committed cursor、不重存
+或准备替代记录。有效重复提交仍幂等，不增加 CLI 调用或人类步骤。
+16 项新回归覆盖 canonical 不匹配、损坏的本地键及有效重试；相关 Hakimi 778 项
+及未修改的 AITP contract 6 项通过。此项是保存后保护，不是保存前原子键保证。
+触发发现的 Si draft 在监督下已于保存前纠正；没有观察到错误键写入 canonical。
+AITP 0.9.0/contract-0.2、公共 transport 与 human decision 不变；五课题与自主
+科研验收仍未全部完成。
+交付：CLI 0.21.0 入口/worker/provenance 及全部 521 Web 文件与测试构建一致；
+Web 重复构建与安装后的 PTY 通过。仅重启自有空闲服务。五个真实会话的研究线、
+问题、绑定、Goal 状态和提交历史保持一致；用 AITP show 核对的三条最新 canonical
+Entry 不变。没有模型 prompt 或 ledger save。冷读不等于在真实课题中制造错误键
+进行测试，更不代表科学目标完成；拒绝错误键的证据仍是定向回归。
+
+切线焦点恢复（2026-09-07；已本地安装并真实回访）：返回已结束的研究线时，
+仅在历史 period 保存的 Topic observation 与当前完全相同时，恢复该线最后的
+open/active/blocked Question，使用问题当前的下一步，不复活旧 action。
+未知/变化归属、已关闭/取消/延期的问题或最近一次无焦点时不恢复。
+不写 AITP、不确认绑定、不恢复 Goal，公共快照格式不变。
+10 项新回归，相关两文件 762 项通过；typecheck/import 通过。
+旧 switch op 的 replay 不变，恢复用既有 set-focus op；不从时间推断 Topic。
+真实 NiO 03:58 查询仍为 RUNNING、无最终 U，正确 no_durable_delta，未写新记录。
+安装后真实自旋链 A→B→A 通过：A 焦点恢复、B 不混入 A 问题；canonical Entry/Note
+字节、Questions、Lines、cursor/history、原绑定与 paused Goal 均不变，没有模型
+prompt 或旧 Action 复活。CLI/worker/provenance/521 Web、重复构建、PTY 通过。
+这不是并行 Loop 验收，也不代表五课题全部完成。
+
+2026-09-07 模型状态读取（已本地安装并回放）：GetResearchStatus 增加可选
+summary/full detail，默认只精简重复 check fingerprints/历史回执，保留科研字段、
+真实阻塞和精确恢复身份；full 原样返回旧输出。纯工具 presenter，无新状态、
+服务、hook 或 AITP 读取，公共 Research transport 与 AITP contract 不改。
+7 项先红后绿；18 项定向 status/synthesis/handoff、typecheck/import 通过。
+真实 revision1604 快照 234,426→45,577 字符；没有速度/科研质量优越性结论。
+真实工具返回完整 45,577 字符摘要，37 项 check errors 保留；受监督 follow-up
+随后读取原观察并把 assessment、evidence_refs、needed_evidence、下一步写入
+Question（revision4）。没有新 Action、Entry/Note、远程查询、绑定变化或 Goal
+恢复。CLI/worker/provenance/521 Web 一致、重复构建、PTY 和 6 项 AITP contract
+通过。这不证明无需提示的自动综合，也不表示 NiO 已有终态/U 结果。
+
+2026-09-07 非 agent creator 映射（已本地安装并真实回放）：真实 NiO 记录
+的 candidate/authority 一致，但 AITP 的省略参数默认 created_by=agent:unknown
+与 Hakimi 错误的“该字段不存在”比较冲突。只修 saved-record 对比；prepare
+意图不变，其他身份不匹配仍拒绝。4 项先红后绿，15 项 provenance/prepare、
+6 项 AITP contract 测试通过。03:31 CST 原 checkpoint/Entry 重试接纳成功；
+只用了 GetResearchStatus、aitp_show、CommitResearchCheckpoint，没有再次保存、
+新 Action、远程查询、Goal 恢复或绑定修改。canonical show 与两份原证据核验通过。
+这不是 NiO 原科学目标完成：最近计算证据仍是 03:14 的运行中快照，没有最终 U。
+
+修复前缺口：真实 GetResearchStatus 输出 198,063 字符，被截断；完整 check receipt
+在 latest/history 重复。Question 虽已 committed，assessment 仍是观察前文字且
+evidenceRefs 为空，现有 commit 提醒未让模型更新它。上方已交付摘要读取并完成
+受监督 Question 综合；无需提示的自动综合仍未证明，不另存同一科学记录。
+
+2026-09-07 post-record review 顺序（已本地安装）：两个真实会话
+重复触发无关 harvesting。仅修改既有 exact-plugin Skill handoff 参数，先判断本次
+证据是否适用；不适用不增加 enter/check、marker 检索或 Action。真正 harvesting
+仍遵循外部 Skill 的检查与范围。1 项先红后绿，3 项通过，typecheck/import 通过；
+不新增 runtime 分类器、权限或 AITP 规则。CLI 0.21.0 入口/worker/provenance/521
+Web 文件一致，重复构建及 PTY 通过；只重启受控空闲服务。真实 NiO 恢复已在
+commit 后明确 no-op，没有 harvesting/额外检查；监督 prompt 也明确要求该行为，
+因此不作因果或普遍行为优越性主张。
+自旋链真实审计已保存有序 Casimir 变分/精确反例结果并更新 Question，Goal 保持
+paused；未修改原 TeX，未证明全链或全 L 结论。五课题完整验收仍未完成。
+
+2026-09-07 暂停 Goal 提醒修复（已本地安装）：真实有界理论检查首先误恢复 Goal，
+原因是旧提示将同课题工作等同于恢复自主推进。已修正既有提醒，不增加状态、
+权限或 hook；该请求已受控取消，Goal 保持 paused，没有新 canonical 保存。
+Goal-injection 先红后绿，22 项通过；明确区分提示指导与 runtime 语义保证。
+CLI 0.21.0 入口/worker/provenance/521 Web 字节、重复构建和 PTY 核验通过，
+类型及 import 检查通过；真实新进程已在 Goal 保持 paused 时完成旧 observation
+保存/接纳，并开始新的推导 Action。推导尚未结束，五课题验收仍未完成。
+
+2026-09-07 Theory Physics 0.2.5（已本地安装）：真实 Si 诊断前三次宽搜索各返回
+约50KB，后续还猜测 run/dataset 路径；监督后才沿原始 receipt 正确定位。
+现有 routing reference 改为优先记录中的精确位置，并在无法区分原因时明确
+缺失 observable。不增门禁、工具数量阈值、schema 或 AITP 规则。原0.2.4请求
+结束、三个自有已加载会话空闲后通过现有 plugin API 安装，六个文件与源码一致；
+后续受监督 Si 更正已补齐源码 pin 并澄清 stderr 缺失，54 行快照逐行核验；
+单条 observation 保存/接纳且 Question 更新，旧记录/失败不改，蒸馏 no-op。
+草稿曾含占位 ref 和被改动的幂等键，保存前经监督纠正，整次约15分20秒，
+不能声称自主顺畅或提速。NiO 04:52 查询约79秒，RUNNING、无 U、无额外扫描
+或 Entry/Note/card，也不改 Question/绑定。两会话各自 workstream 历史未混入。
+18 项延迟刷新/保存、冷恢复与切线隔离回归通过，耗时1.59秒；五课题整体验收
+仍未完成。Bi2Se3 和纯理论会话的明确归属确认仍待研究者回答。
+
+2026-09-07 Theory Physics 0.2.4（此前本地交付）：真实查询出现约57KB重复 MPI
+日志，旧提交回执也曾被误用为 structured Run。现有 Skill/路由/计算助手改为
+小范围进度查询、首个实质错误和迭代摘要；保留原始证据，不新增状态或工具。
+plugin manifest/marketplace 同步，安装发现/文件一致性/角色权限测试1项通过，
+Skill validator 通过。另一次蒸馏扩大扫描返回108KB历史 findings，现指引先判断
+本次 Entry 是否适用，不适用就 no-op，不开启额外 Action 或 harvesting。
+原请求结束后才安装，managed 文件与源码一致；新请求仍出现多余的 post-commit
+扫描，手册指引尚未解决该问题，下一修复应聚焦既有 Skill handoff。不能声称性能通过。
+AITP runtime/CLI/Skill/contract 不变。原 Si 只读请求已取得真实终态和导出错误，
+失败记录已保存/接纳并更新 Question，明确新终态原始快照缺失；新的有界诊断
+正在补齐该证据，不作为 ON 成功或完整五课题验收。
+
+2026-09-07 缺失 Run 指引（已本地安装）：真实 Si 查询两次把旧 Action ID
+作为 retained Run，但该会话并无结构化 Run。保留拒绝，补充省略 observed_run_action_id、
+以保存的作业证据启动普通 bounded 查询的指引，不自动造 Run、不改权限或身份守卫。
+生产 executor 回归补齐 receipt-only 分支：1 项先红后绿，5 项定向测试及类型/import
+检查通过。已取消自己的重复失败请求、正常关闭自己的空闲服务；已提交 Entry 不变，
+未查询或变更远端作业。CLI 定向构建、打包、安装为0.21.0，入口/worker/provenance/
+521 Web 文件和原生 PTY 核验通过。新的 bounded 查询单独验收，五课题科学验收仍未完成。
+
+2026-09-07 第二个真实复现：记录指引要求 current revision 却不给数值，模型拿旧值读取
+证据被拒。已在源码的既有 pending 指引补齐 checkpoint/revision；不增加 hook、状态、
+检查或 revision-only 注入。两项先红后绿，service/ops/presenter777 passed。此提示修复
+现已重装，入口/worker/521 Web、重复构建与原生 PTY 核验通过，presenter33 项复测通过。
+上一轮受控请求已取消、服务正常关闭，远端作业未动；新进程已通过原 scope 的真实
+save/commit：entry-d20fae138e384d289709d4ecbfff14ac，仅属 qsgw-headwing，pending 清空，
+原 Goal alignment 未改。原生 scoped pre/post check 均 clean，独立 AITP show 已核验。
+这只记录历史提交，不证明计算成功；当前作业查询和五课题科研闭环仍未完成。
+中途两次上游临时不可用由现有重试恢复，没有重复发送 prompt。
+
+2026-09-07 当前闭环优化 Goal 为 active，五课题真实验收尚未完成。首个已复现问题：
+归属确认后合法返回 `gap_analysis`，却被只接受 `state_updated` 的本地结论接纳检查卡住。
+最小修复沿用原 checkpoint 流程，保持人类决定、原结论和选定 phase，不新增工具许可。
+service/ops 单 worker 744 passed，typecheck 与 lint:imports 通过，AITP ledger 181 passed。
+已本地安装；入口/worker/521 Web 文件一致，重复构建与原生 PTY 通过。
+受控新进程冷恢复真实会话，原结论自动接回原 scope 的 pending checkpoint；真实保存另验。
+AITP runtime/CLI/contract/Skill 不变，双方 handoff 仅追加本轮说明；既有 dirty 改动保留。
+下列交付记录为各自日期的历史事实，不代表本轮新改动已交付。
+
 2026-09-05 Goal 预算恢复（已交付并 clean-build 安装）：恢复已耗尽的 paused/blocked
 Goal 时先报告未恢复，不短暂 active、不新建立即到期的 deadline；模型可以按
 原有预算收尾约束说明原因，不能自行加预算。用量、预算、已有 blocker 和异常

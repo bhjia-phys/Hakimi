@@ -99,7 +99,9 @@ export class SessionEventJournal {
    * recover `{epoch, lastSeq}`. A missing file or an unreadable header starts
    * a fresh journal with a new epoch.
    */
-  static async open(filePath: string, logger: JournalLogger = noopLogger): Promise<SessionEventJournal> {
+  static async open(filePath: string, logger: JournalLogger = noopLogger,
+    onRecovered?: (envelope: EventEnvelope) => void,
+  ): Promise<SessionEventJournal> {
     let epoch: string | undefined;
     let lastSeq = 0;
     let sawAnyLine = false;
@@ -113,7 +115,10 @@ export class SessionEventJournal {
           if (epoch === undefined) epoch = parsed.epoch;
           continue;
         }
-        if (parsed.seq > lastSeq) lastSeq = parsed.seq;
+        if (parsed.seq > lastSeq) {
+          lastSeq = parsed.seq;
+          if (epoch !== undefined && parsed.envelope.epoch === epoch) onRecovered?.(parsed.envelope);
+        }
       }
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;

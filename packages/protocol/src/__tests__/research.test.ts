@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   researchAlertSchema,
   researchCommandRequestSchema,
+  researchHumanGateSchema,
   researchStatusSnapshotSchema,
 } from '../research';
 import {
@@ -26,6 +27,18 @@ const validSnapshot = {
   phase: 'idle',
   revision: 0,
 };
+
+describe('human decision Goal dependency transport', () => {
+  const legacy = { gateId: 'gate-a', kind: 'decision', prompt: 'Choose the approximation', createdAt: 1 };
+  it('preserves explicit dependencies and leaves legacy ownership unknown', () => {
+    expect(researchHumanGateSchema.parse(legacy).dependentGoalIds).toBeUndefined();
+    expect(researchHumanGateSchema.parse({ ...legacy, dependentGoalIds: ['goal-a'] }).dependentGoalIds).toEqual(['goal-a']);
+  });
+  it('rejects empty dependency lists and blank IDs', () => {
+    expect(researchHumanGateSchema.safeParse({ ...legacy, dependentGoalIds: [] }).success).toBe(false);
+    expect(researchHumanGateSchema.safeParse({ ...legacy, dependentGoalIds: [''] }).success).toBe(false);
+  });
+});
 
 const readyMaintenanceReceipt = {
   status: 'ready',

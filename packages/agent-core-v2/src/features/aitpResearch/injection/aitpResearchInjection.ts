@@ -8,14 +8,14 @@
  * single effective next step, the pending human gate, and the attention the
  * model must handle. System / subagent / cron / unclassified turns abstain
  * (zero disclosure) even while the mode is active. Verbosity is Brief (full
- * trimmed state) on a new turn or when phase / progress / action / run / next
+ * trimmed state) when prior disclosure is absent or phase / progress / action / run / next
  * step / attention semantically changed since the last disclosure, Delta (only
  * the changed attention) when only attention moved, and nothing at all when
  * there is no semantic change — duplicate text is never appended. The
  * disclosure carries the snapshot revision / phase / progress timestamp plus
  * action / run / next-step / attention fingerprints so the next step can
- * deduplicate; compaction and undo both drop the prior disclosure or re-arm
- * the new-turn flag, so they re-inject the trimmed state. Inactive mode
+ * deduplicate across turns; compaction and undo that drop the prior disclosure
+ * re-inject the trimmed state. Inactive mode
  * injects nothing (zero disclosure), and AITP entry / hash / revision /
  * checkpoint ids, receipts, checkpoint history, and finding details never leak
  * into the injected text. Bound at Agent scope.

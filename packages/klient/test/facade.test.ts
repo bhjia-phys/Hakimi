@@ -440,6 +440,19 @@ describe('session skills routing', () => {
     ]);
   });
 
+  it('getTasks omits an absent limit instead of transmitting null', async () => {
+    const channel = new FakeChannel();
+    channel.results.set('agentTaskService.list', []);
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+    await agent.getTasks();
+    await agent.getTasks({ activeOnly: true });
+    await agent.getTasks({ limit: 2 });
+    expect(channel.calls.map((call) => JSON.parse(JSON.stringify(call.args)))).toEqual([
+      [false], [true], [false, 2],
+    ]);
+  });
+
   it('cancelPlan omits an absent id and preserves an explicit id', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);

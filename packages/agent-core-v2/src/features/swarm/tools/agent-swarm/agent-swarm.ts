@@ -18,6 +18,9 @@ export const MAX_AGENT_SWARM_SUBAGENTS = 128;
 
 export const AgentSwarmToolInputSchema = z
   .object({
+    goal_dependencies: z.array(z.string().trim().min(1).max(200)).max(32).optional().describe(
+      'Goal dependencies for new item-based agents only. Omit to inherit the caller task; [] means independent. Resumed agents retain their original dependencies.',
+    ),
     description: z
       .string()
       .trim()

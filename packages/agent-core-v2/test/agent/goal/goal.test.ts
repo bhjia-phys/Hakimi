@@ -3975,22 +3975,12 @@ describe('AITP Research goal contribution integration', () => {
     expect(goals.getGoal().goal).toBeNull();
   });
 
-  it('denies completion and holds continuation when an active Goal has no Research Program', async () => {
+  it('allows continuation and completion without a Research Program', async () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
     ctx!.wire.dispatch(researchSetProgram({ clear: true }));
     await goals.createGoal({ objective: 'finish the task' });
-
-    await expect(goals.markComplete({}, 'model')).rejects.toMatchObject({
-      code: ErrorCodes.GOAL_STATUS_INVALID,
-      message: 'Goal completion is blocked: AITP Research Goal has not been observed.',
-      details: {
-        code: 'research.goal-alignment.unavailable',
-        owner: 'aitpResearch',
-        nextStep: 'ConfirmGoalAlignment',
-      },
-    });
 
     const turn = makeTurn(78);
     ctx!.get(IEventBus).publish({
@@ -4007,16 +3997,18 @@ describe('AITP Research goal contribution integration', () => {
     endTurn(ctx!.get(IEventBus), turn);
     await flushMicrotasks();
 
-    expect(loopService.launches).toEqual([]);
+    expect(loopService.launches).toHaveLength(1);
     expect(research.getSnapshot().goalAlignment).toMatchObject({ status: 'unavailable' });
     expect(research.getSnapshot().effectiveNextStep).toMatchObject({
       source: 'aitp_maintenance',
-      freshness: 'blocked',
+      freshness: 'stale',
     });
     expect(research.getSnapshot().status).toMatchObject({
-      health: 'blocked',
+      health: 'attention',
       attention: [expect.stringContaining('No current AITP Research Goal')],
     });
+    await expect(goals.markComplete({}, 'model')).resolves.toMatchObject({ status: 'complete' });
+    expect(goals.getGoal().goal).toBeNull();
   });
 
   it('allows direct Plan entry while Research Mode is active and keeps Research state intact', async () => {
@@ -4031,7 +4023,7 @@ describe('AITP Research goal contribution integration', () => {
     expect(mode.phase).not.toBe('inactive');
   });
 
-  it('holds the goal continuation while the research loop is paused and keeps the goal active', async () => {
+  it('continues the Goal independently while the research loop is paused', async () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
@@ -4056,16 +4048,11 @@ describe('AITP Research goal contribution integration', () => {
     endTurn(ctx!.get(IEventBus), turn);
 
     await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-    expect(loopService.hasPendingRequests()).toBe(false);
+    expect(loopService.launches).toHaveLength(1);
     expect(goals.getGoal().goal).toMatchObject({
       status: 'active',
-      continuation: {
-        state: 'held',
-        owner: 'aitpResearch',
-        reason: expect.stringContaining('research loop is paused'),
-      },
     });
+    expect(goals.getGoal().goal?.continuation?.state).not.toBe('held');
   });
 
   it('resumes the goal continuation when the research loop is active and no gate is pending', async () => {
@@ -4175,7 +4162,7 @@ describe('AITP Research goal contribution integration', () => {
     expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
   });
 
-  it('releases a held goal continuation when the research loop resumes', async () => {
+  it('does not duplicate Goal continuation when the research loop resumes', async () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
@@ -4198,12 +4185,12 @@ describe('AITP Research goal contribution integration', () => {
     research.steer({ kind: 'pause_loop', expectedRevision: 0 });
     endTurn(ctx!.get(IEventBus), heldTurn);
     await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
+    expect(loopService.launches).toHaveLength(1);
     expect(goals.getGoal().goal?.status).toBe('active');
 
     research.steer({ kind: 'resume_loop', expectedRevision: 0 });
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+    await flushMicrotasks();
+    expect(loopService.launches).toHaveLength(1);
     expect(goals.getGoal().goal?.status).toBe('active');
   });
 
@@ -4324,7 +4311,7 @@ describe('AITP Research goal contribution integration', () => {
     expect(goals.getGoal().goal?.status).toBe('active');
   });
 
-  it('releases a held goal continuation when Research recovers from degraded mode', async () => {
+  it('continues independently of degraded Research and does not duplicate on recovery', async () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
@@ -4346,11 +4333,13 @@ describe('AITP Research goal contribution integration', () => {
     mode.setPhase('degraded');
     endTurn(ctx!.get(IEventBus), turn);
     await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
+    expect(loopService.launches).toHaveLength(1);
 
     mode.setPhase('ready');
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+    await flushMicrotasks();
+    mode.setPhase('ready');
+    await flushMicrotasks();
+    expect(loopService.launches).toHaveLength(1);
     expect(goals.getGoal().goal?.status).toBe('active');
   });
 

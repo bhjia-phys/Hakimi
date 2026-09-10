@@ -2,13 +2,14 @@
  * `aitpResearch` domain — `ISessionAitpAdapter` contract.
  *
  * The Session-scope adapter that bridges Hakimi to the external AITP CLI
- * (plugin 0.8/0.9, adapter-contract-0.1/0.2). Strictly consumes the AITP CLI surface
+ * (plugin 0.8/0.9/0.10, adapter-contract-0.1/0.2/0.3). Strictly consumes the AITP CLI surface
  * (`enter`, `list`, `show`, `check`, `record/note prepare/save`); never calls
  * `init`, `inventory`, or `backfill --apply`; never writes canonical AITP
  * files directly. Bound at Session scope.
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
+import type { Event } from '#/_base/event';
 
 import type {
   AitpAdapterHealth,
@@ -72,10 +73,13 @@ export interface AitpAdapterNotePrepareOptions extends AitpAdapterOperationOptio
 
 export interface AitpAdapterNoteSaveOptions extends AitpAdapterOperationOptions {
   readonly draftPath: string;
+  readonly expectedTopic?: string;
+  readonly exactWorkstream?: string;
 }
 
 export interface ISessionAitpAdapter {
   readonly _serviceBrand: undefined;
+  readonly onDidInvalidateMemory?: Event<void>;
 
   readonly health: AitpAdapterHealth;
 

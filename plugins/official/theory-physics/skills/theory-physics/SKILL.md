@@ -125,9 +125,10 @@ For each substantive work slice, keep the boundary explicit:
    tolerances, and provenance. A running process or a passing software test is
    not a physical result.
 5. Call `ConcludeResearchAction` with the physical work performed, result,
-   tests or derivation, limitations, impact on the mainline, and one next
-   step. Change the Question only when evidence, failure, or sustained
-   no-progress changes its assessment or next bounded action.
+   tests or derivation, limitations, impact on the mainline, one next step,
+   and the required `durability` assessment. Change the Question only when
+   evidence, failure, or sustained no-progress changes its assessment or next
+   bounded action.
 
 Do not repeat the same conclusion with `RecordResearchProgress` after Conclude.
 `state_updated` is a conclusion boundary, not a card trigger or a demand to
@@ -137,8 +138,11 @@ success/failure and durable/no-delta are separate judgments. Treat a human's
 technical suggestion as attributed guidance until a source, derivation, or
 test verifies it; the speaker's confidence is not validation.
 
-For a long external task, use action-bound observations with
-`ObserveResearchRun`. When a healthy detached background task is the only
+`ObserveResearchRun` records an observation of a structured Run; it does not
+query the scheduler. A submission receipt alone is not a recorded Run. For an
+existing job's progress, follow the bounded-query guidance in
+`../../references/research-routing.md`; never invent a retained Run reference.
+When a healthy detached background task is the only
 dependency, call `UpdateGoal` with `status: active` and
 `waitFor: { taskIds, policy }`. The runtime resumes the Goal when the selected
 policy is satisfied and the task reaches a terminal state. Do not repeatedly
@@ -190,11 +194,12 @@ would distinguish the result from a competing derivation.
 
 ## Numerical and HPC evidence
 
-Before a calculation, pin the input model, code revision, relevant parameters,
-convergence criteria, and expected observable. Prefer a small reproducible
-probe before an expensive scheduler job. For a long job, record observations
-with `ObserveResearchRun` against the current action, including the stage and
-scheduler state; never treat `RUNNING` as scientific success.
+Before a new calculation, establish the input model, code revision, relevant
+parameters, convergence criteria and expected observable. Reuse unchanged
+verified references. Prefer a small discriminating probe before an expensive
+scheduler job. A progress query is not a new calculation or build audit: read
+the existing job's relevant outputs without reconstructing its whole provenance.
+Keep scheduler state, numerical checks and physical validity separate.
 
 Interpret results only after the required gates complete. Check convergence,
 finite-size or discretization effects, symmetry and conservation constraints,

@@ -41,6 +41,10 @@ commands through Bash, resolve failures, approve a card, publish, or change
 Research state. Shell access is not OS isolation and is not authorization to
 escape the supplied task scope.
 
+For an existing-job query, start with its driver or failing-rank log, first
+causal error and iteration summary; expand only as needed. Keep full raw logs
+available, but do not flood the parent's context with duplicate rank errors.
+
 Separate process completion from numerical quality and physical validity.
 Report measured observables with units, definitions, applicable tolerance and
 comparison, including failed checks and missing outputs. Distinguish an

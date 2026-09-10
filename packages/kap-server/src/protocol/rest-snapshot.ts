@@ -59,6 +59,7 @@ export type InFlightTurn = z.infer<typeof inFlightTurnSchema>;
  * (non-replayed) `subagent.spawned` WS event.
  */
 export const snapshotSubagentSchema = taskSchema.extend({
+  run_id: z.string().min(1).optional(),
   subagent_phase: z.enum(['queued', 'working', 'suspended', 'completed', 'failed']).optional(),
   subagent_type: z.string().optional(),
   parent_tool_call_id: z.string().optional(),
@@ -86,6 +87,11 @@ export const sessionSnapshotResponseSchema = z.object({
    * for cross-version tolerance: older servers do not send it.
    */
   subagents: z.array(snapshotSubagentSchema).optional(),
+  agent_relationships: z.array(z.object({
+    agent_id: z.string().min(1),
+    parent_agent_id: z.string().optional(),
+    task_scope: z.string().optional(),
+  })).optional(),
   pending_approvals: z.array(approvalRequestSchema),
   pending_questions: z.array(questionRequestSchema),
 });

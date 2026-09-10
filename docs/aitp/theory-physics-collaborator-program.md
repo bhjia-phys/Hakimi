@@ -1159,7 +1159,7 @@ Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预
 
 本切片只修改隔离 Hakimi worktree。Conclude 在 Action 身份及已知科研上下文仍有效、但无 Line 或 Line unbound 时，原子关闭 Action、写唯一 progress，并保留原 Action、完整结果/限制/证据 detail、durability candidate 和已知 Program/Line。`localConclusion` 使用现有 checkpointed Research working state，跟随 undo、可 cold replay；它不是第二账本、正式 pending checkpoint 或持久化 lease。重复相同结论幂等，冲突结果和后续科研工作不能覆盖它；Goal continuation/completion hold，状态读取和讨论仍可用。
 
-显式归属复用现有公开 `propose_checkpoint`，只增加可选 local conclusion ID 与 `confirmedBy: user`，并要求精确非零 public revision、已有目标 Line 和 fresh confirmed workstream。已经绑定来源 Line 的结果不能转移；原 assessment/next 不可被替换。首次绑定带来的 Line revision +1 单独验证，不视为科研内容改变；原 Program/Question 或 reviewed Plan 内容、身份、revision 变化仍拒绝且保留原结果。模型侧 Propose schema 未开放这些人工字段。接纳只生成旧 bound checkpoint，随后仍走 AITP prepare/fill/exact-save/show/scoped-check/commit。
+显式归属复用现有公开 `propose_checkpoint`，只增加可选 local conclusion ID 与 `confirmedBy: user`，并要求精确非零 public revision、已有目标 Line 和 fresh confirmed workstream。已经绑定来源 Line 的结果不能转移；原 assessment/next 不可被替换。首次绑定带来的 Line revision +1 单独验证，不视为科研内容改变；原 Program/Question 或 reviewed Plan 内容、身份、revision 变化仍拒绝且保留原结果。模型侧 `ProposeResearchCheckpoint` schema 只在三个字段完整出现时开放此接纳路径：local conclusion ID、`confirmed_by=user` 和刚读取的正数 current Research revision；它不从 `ResolveResearchDecision`、Goal alignment 或本地状态自动伪造确认。接纳只生成旧 bound checkpoint，随后仍走 AITP prepare/fill/exact-save/show/scoped-check/commit。
 
 TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，不显示旧工作仍在执行。Web Checkpoint 区展示只读原结论并提供显式确认，未有前景 Line 时可先选择目标并确认 binding，不偷偷切换 Line。TUI 使用 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]`；已有 Manager 的 `W` 控件可对所选 Line 确认 binding。REST、共享事件、SDK 与 klient 同步新增可选投影和恢复字段；不增加 AITP schema/CLI/contract、自动绑定、approval、publication 或 trial。
 

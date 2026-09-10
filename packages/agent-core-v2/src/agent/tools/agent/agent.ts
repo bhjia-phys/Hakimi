@@ -19,6 +19,12 @@ export const RESUMED_LABEL = 'subagent';
 const SubagentToolInputBaseSchema = z.object({
   prompt: z.string().describe('Full task prompt for the subagent'),
   description: z.string().describe('Short task description (3-5 words) for UI display'),
+  goal_dependencies: z.array(z.string().trim().min(1).max(200)).max(32).optional().describe(
+    'Exact Goals this task depends on. Omit to inherit parent task dependencies; [] explicitly means independent. Do not infer from the selected Line. Resume retains the original dependencies.',
+  ),
+  task_scope: z.string().trim().min(1).max(256).optional().describe(
+    'Stable task ownership label, not a permission grant. New agents inherit the caller label when omitted. Resumed agents retain their original label; use a new agent for a different scope.',
+  ),
   subagent_type: z
     .string()
     .optional()

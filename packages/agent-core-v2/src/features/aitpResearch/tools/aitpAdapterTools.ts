@@ -270,7 +270,7 @@ export const IAitpEnterTool = createDecorator<IAitpEnterTool>('aitpEnterTool');
 export class AitpEnterTool implements IAitpEnterTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'aitp_enter' as const;
-  readonly description = 'Enter or resume an AITP research workspace. Returns recent entries, unresolved failures, next action, recent notes, counts, and warnings. Use at the start and end of a research session.';
+  readonly description = 'Recover recorded AITP state when resuming a topic or when relevant memory changed. Reuse a fresh matching report; do not repeat for every question or automatically at turn end. Use an explicitly known workstream and a small recent window for focused recovery; never infer membership. Read the referenced Working Note and evidence relevant to the question. Recorded next_action is history, not execution authority; a recent window is not proof of absence. No durable delta requires no new record.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(AitpEnterInputSchema);
 
   constructor(
@@ -291,7 +291,10 @@ export class AitpEnterTool implements IAitpEnterTool {
             recent: args.recent,
             signal,
           });
-          return ok(result);
+          // Keep orientation visible in the generic oversized-result preview.
+          // Preserve every field and record in the persisted full JSON.
+          const { recent_entries, recent_notes, unresolved_failures, ...summary } = result;
+          return ok({ ...summary, recent_entries, recent_notes, unresolved_failures });
         } catch (error) {
           if (signal.aborted) throw error;
           if (error instanceof AitpResearchError) return errorResult(error.message);
@@ -391,7 +394,7 @@ export const IAitpCheckTool = createDecorator<IAitpCheckTool>('aitpCheckTool');
 export class AitpCheckTool implements IAitpCheckTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'aitp_check' as const;
-  readonly description = 'Validate the whole AITP store read-only and report findings. Exit code 1 means findings were reported (warnings or errors), NOT a failed tool call; read the JSON payload and investigate errors before continuing.';
+  readonly description = 'Validate AITP memory read-only, optionally projecting findings for an explicit workstream. Reuse a complete matching report only while ledger, policy and evidence are known unchanged; verify after save. Exit code 1 means findings, not a failed tool call or a global research stop. Investigate findings affecting evidence you rely on; unrelated findings do not block independent work. Exit code 2 means validation could not run: do not claim the memory was verified. Empty scoped clean does not certify the whole store.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(AitpCheckInputSchema);
 
   constructor(
@@ -408,7 +411,8 @@ export class AitpCheckTool implements IAitpCheckTool {
         if (err !== undefined) return errorResult(err);
         try {
           const result = await this.adapter.check({ workstream: args.workstream, signal });
-          return ok(result);
+          const { findings, ...summary } = result;
+          return ok({ ...summary, findings });
         } catch (error) {
           if (signal.aborted) throw error;
           if (error instanceof AitpResearchError) return errorResult(error.message);
@@ -479,6 +483,14 @@ export class AitpRecordPrepareTool implements IAitpRecordPrepareTool {
           let binding = args.checkpoint_id === undefined
             ? undefined
             : requireCurrentCheckpointBinding(this.research, args.checkpoint_id);
+          const directScope = binding === undefined ? this.research.captureDirectRecordScope() : undefined;
+          if (directScope !== undefined && !hasExactCheckpointWorkstream(args.workstreams, directScope.workstream)) {
+            return errorResult(`Direct record prepare requires exactly one workstream: ${directScope.workstream}.`);
+          }
+          if (directScope !== undefined && args.idempotency_key !== undefined &&
+            args.idempotency_key === this.research.getPendingCheckpoint()?.idempotencyKey) {
+            return errorResult('This idempotency key belongs to a pending checkpoint; use its checkpoint_id.');
+          }
           if (
             binding !== undefined &&
             !hasExactCheckpointWorkstream(args.workstreams, binding.workstream)
@@ -520,6 +532,9 @@ export class AitpRecordPrepareTool implements IAitpRecordPrepareTool {
             workstreams: args.workstreams,
             signal,
           });
+          if (directScope !== undefined && !isCanonicalEntryPath(result.path)) {
+            this.research.rememberDirectRecordDraft(result.path, directScope);
+          }
           if (binding !== undefined) {
             const prepare = toPrepareReceipt(
               result,
@@ -576,7 +591,7 @@ export const IAitpRecordSaveTool = createDecorator<IAitpRecordSaveTool>('aitpRec
 export class AitpRecordSaveTool implements IAitpRecordSaveTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'aitp_record_save' as const;
-  readonly description = 'Validate and save a prepared AITP Entry draft into the canonical ledger. The draft must already be filled in. Pass checkpoint_id when saving the Entry bound to a pending Research checkpoint; Hakimi then supplies the captured Topic and exact singleton workstream as atomic AITP save preconditions and records the pre-save baseline and save receipt.';
+  readonly description = 'Save a filled Entry draft returned by aitp_record_prepare. Direct recording requires no Research Action or checkpoint. Hakimi supplies the prepared draft\'s captured Topic and exact singleton workstream as atomic save preconditions. Pass checkpoint_id only for a checkpoint-bound Entry; that path also retains its baseline and save receipt. Record durable changes, not every intermediate query.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(AitpRecordSaveInputSchema);
 
   constructor(
@@ -603,6 +618,9 @@ export class AitpRecordSaveTool implements IAitpRecordSaveTool {
               `Draft ${args.draft_path} is not the prepared draft bound to checkpoint ${binding.checkpoint.checkpointId}.`,
             );
           }
+          const directScope = binding === undefined
+            ? this.research.getDirectRecordDraftScope(args.draft_path)
+            : undefined;
           if (
             binding !== undefined &&
             !hasExactCheckpointWorkstream(
@@ -642,8 +660,8 @@ export class AitpRecordSaveTool implements IAitpRecordSaveTool {
           if (finalWriteErr !== undefined) return errorResult(finalWriteErr);
           const result = await this.adapter.recordSave({
             draftPath: args.draft_path,
-            expectedTopic: binding?.checkpoint.workstreamBinding?.topicId,
-            exactWorkstream: binding?.workstream,
+            expectedTopic: binding?.checkpoint.workstreamBinding?.topicId ?? directScope?.topicId,
+            exactWorkstream: binding?.workstream ?? directScope?.workstream,
             signal,
           });
           if (binding !== undefined) {

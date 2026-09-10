@@ -194,6 +194,8 @@ export const agentTaskInfoSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('agent'),
     agentId: z.string().optional(),
+    parentAgentId: z.string().optional(),
+    taskScope: z.string().optional(),
     subagentType: z.string().optional(),
     model: z.string().optional(),
     thinkingEffort: z.string().optional(),

@@ -79,6 +79,21 @@ describe('goal tools', () => {
     await ctx.dispose();
   });
 
+  it('CreateGoal and GetGoal expose the same real identity for explicit decision dependencies', async () => {
+    const create = ctx.get(IAgentToolRegistryService).resolve('CreateGoal');
+    if (create === undefined) throw new Error('CreateGoal should be registered');
+    const execution = await create.resolveExecution({ objective: 'Wait for synthetic A/B choice' });
+    if (execution.isError === true) throw new Error('execution should not be an error');
+    const result = await execution.execute({ turnId: 0, toolCallId: 'call_identity', signal });
+    const goalId = goals.getGoal().goal?.goalId;
+    expect(goalId).toEqual(expect.any(String));
+    expect(JSON.parse(String(result.output)).goal.goalId).toBe(goalId);
+    const read = new GetGoalTool(goals).resolveExecution({});
+    if (read.isError === true) throw new Error('read should not be an error');
+    const reread = await read.execute({ turnId: 0, toolCallId: 'call_read_identity', signal });
+    expect(JSON.parse(String(reread.output)).goal.goalId).toBe(goalId);
+  });
+
   it('CreateGoal does not apply a delayed execution to a replacement goal', async () => {
     await goals.createGoal({ objective: 'old task' });
     eventBus.publish({ type: 'turn.started', turnId: 6, origin: USER_PROMPT_ORIGIN });

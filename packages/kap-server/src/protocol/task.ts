@@ -33,6 +33,8 @@ export const taskSchema = z.object({
   agent_id: z.string().optional(),
   subagent_type: z.string().optional(),
   parent_tool_call_id: z.string().optional(),
+  task_scope: z.string().optional(),
+  parent_agent_id: z.string().optional(),
   run_in_background: z.boolean().optional(),
 });
 export type Task = z.infer<typeof taskSchema>;

@@ -25,6 +25,35 @@ export interface ResearchWorkstreamBindingPresentation {
   variant: 'neutral' | 'success' | 'warning' | 'danger';
 }
 
+/** Presentation only: Goal continuation remains owned by the server. */
+export function presentResearchDecisionDependency(
+  gate: ResearchStatusSnapshot['humanGate'],
+  currentGoalId?: string,
+) {
+  if (gate === undefined) return undefined;
+  const goalIds = [...(gate.dependentGoalIds ?? [])];
+  return {
+    status: gate.resolvedAt !== undefined ? 'resolved' as const : 'pending' as const,
+    scope: goalIds.length === 0 ? 'unknown' as const : 'explicit' as const,
+    goalIds,
+    currentGoalDependency: currentGoalId === undefined || goalIds.length === 0
+      ? 'unknown' as const
+      : goalIds.includes(currentGoalId) ? 'dependent' as const : 'independent' as const,
+  };
+}
+
+/** Read-only browsing, deliberately separate from the execution snapshot. */
+export function selectResearchLineOverview(snapshot: ResearchStatusSnapshot, slug: string) {
+  const line = snapshot.lines.find((candidate) => candidate.slug === slug);
+  if (line === undefined) return undefined;
+  return {
+    line,
+    questions: snapshot.questions.filter((question) => question.lineSlug === slug),
+    binding: snapshot.lineWorkstreamBindings.find((binding) => binding.lineSlug === slug),
+    executionLineSlug: snapshot.currentLineSlug,
+  };
+}
+
 export function presentResearchWorkstreamBinding(
   alignment: ResearchLineWorkstreamAlignment | undefined,
 ): ResearchWorkstreamBindingPresentation | undefined {
@@ -197,10 +226,14 @@ export function presentResearchAitpAdapterCapabilities(
         ? 'degraded_available'
         : 'unavailable',
     checkpointWrite:
-      snapshot.aitpHealth.phase === 'ready' && snapshot.aitpHealth.contractVersion === '0.2'
+      snapshot.aitpHealth.phase === 'ready' && supportsAtomicCheckpointWrite(snapshot.aitpHealth.contractVersion)
         ? 'ready'
         : 'unavailable',
   };
+}
+
+function supportsAtomicCheckpointWrite(contractVersion: string | undefined): boolean {
+  return contractVersion === '0.2' || contractVersion === '0.3';
 }
 
 export function isResearchCheckpointHistorical(
@@ -268,6 +301,27 @@ function currentRun(snapshot: ResearchStatusSnapshot) {
   return snapshot.currentRun?.actionId === action.actionId ? snapshot.currentRun : undefined;
 }
 
+function currentProgress(snapshot: ResearchStatusSnapshot) {
+  // Progress has no independent Line identity. Never borrow a foreign action's
+  // report, or guess ownership of an unbound report in a multi-Line snapshot.
+  if (snapshot.currentAction !== undefined) {
+    return currentAction(snapshot) === undefined ? undefined : snapshot.latestProgress;
+  }
+  return snapshot.lines.length <= 1 ? snapshot.latestProgress : undefined;
+}
+
+function currentLocalConclusion(snapshot: ResearchStatusSnapshot) {
+  const local = snapshot.localConclusion;
+  if (local === undefined) return undefined;
+  const question = snapshot.questions.find((item) => item.id === local.action.questionId);
+  if (local.action.lineSlug !== undefined && question !== undefined
+    && local.action.lineSlug !== question.lineSlug) return undefined;
+  const line = local.action.lineSlug ?? question?.lineSlug;
+  return line === undefined
+    ? snapshot.lines.length <= 1 ? local : undefined
+    : line === snapshot.currentLineSlug ? local : undefined;
+}
+
 function currentHumanGate(snapshot: ResearchStatusSnapshot) {
   const gate = snapshot.humanGate;
   if (gate === undefined) return undefined;
@@ -320,7 +374,6 @@ function projectSlot(snapshot: ResearchStatusSnapshot): ResearchBoardProjectSlot
 }
 
 function cycleStage(snapshot: ResearchStatusSnapshot): ResearchBoardCycleStage {
-  if (snapshot.localConclusion !== undefined) return 'confirm_ownership';
   const goal = snapshot.researchGoal ?? snapshot.goalSummary;
   if (goal?.status === 'active' && goal.continuation?.state === 'waiting') return 'waiting';
   switch (snapshot.phase) {
@@ -347,6 +400,7 @@ function cycleStage(snapshot: ResearchStatusSnapshot): ResearchBoardCycleStage {
 
 function cycleSlot(snapshot: ResearchStatusSnapshot): ResearchBoardCycleSlot {
   const action = currentAction(snapshot);
+  const local = currentLocalConclusion(snapshot);
   const goal = snapshot.researchGoal ?? snapshot.goalSummary;
   return {
     kind: 'cycle',
@@ -357,10 +411,8 @@ function cycleSlot(snapshot: ResearchStatusSnapshot): ResearchBoardCycleSlot {
     planningPolicy: snapshot.planningPolicy,
     continuationState: goal?.continuation?.state,
     continuationAvailable: goal === undefined ? undefined : goal.continuation !== undefined,
-    actionStatus: snapshot.localConclusion !== undefined
-      && (snapshot.localConclusion.action.lineSlug === undefined
-        || snapshot.localConclusion.action.lineSlug === snapshot.currentLineSlug)
-      ? snapshot.localConclusion.action.status
+    actionStatus: local !== undefined
+      ? local.action.status
       : actionNeedsRecovery(snapshot)
       ? 'recovery_required'
       : action?.status === 'planned' || action?.status === 'in_progress'
@@ -374,7 +426,7 @@ function attentionSlot(
   snapshot: ResearchStatusSnapshot,
 ): ResearchBoardAttentionSlot | undefined {
   const gate = currentHumanGate(snapshot);
-  if (snapshot.localConclusion !== undefined && (gate === undefined || gate.resolvedAt !== undefined)) {
+  if (currentLocalConclusion(snapshot) !== undefined && (gate === undefined || gate.resolvedAt !== undefined)) {
     return {
       kind: 'attention', source: 'local_conclusion', additionalCount: 0,
       text: 'Record ownership needs confirmation; the scientific result is retained locally, not recorded in AITP.',
@@ -428,7 +480,7 @@ function attentionSlot(
       source: 'action_recovery',
       text: projected?.source === 'research_action' && projected.freshness === 'blocked'
         ? projected.text
-        : `Action ${action.actionId} is ${action.status} while the Research phase is ${snapshot.phase}; conclude or abandon it before starting another action.`,
+        : `Action ${action.actionId} is ${action.status} while the Research phase is ${snapshot.phase}. This historical tracking mismatch does not block independent work; reconcile it only from evidence.`,
     }, 'action_recovery');
   }
   if (snapshot.pendingCheckpoint !== undefined) {
@@ -441,8 +493,8 @@ function attentionSlot(
           projected.text.includes(snapshot.pendingCheckpoint.checkpointId)
         ? projected.text
         : historical
-          ? `Historical checkpoint ${snapshot.pendingCheckpoint.checkpointId} belongs to an older question revision; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.`
-          : `Checkpoint ${snapshot.pendingCheckpoint.checkpointId} must be committed or its proposal undone before automatic continuation.`,
+          ? `Historical checkpoint ${snapshot.pendingCheckpoint.checkpointId} belongs to an older question revision; do not commit it as current evidence. Recover this memory item separately; independent work can continue.`
+          : `Checkpoint ${snapshot.pendingCheckpoint.checkpointId} is pending AITP persistence. Retain it for recovery without repeating the scientific work; it does not block independent work.`,
     }, 'checkpoint');
   }
   const goalAlignment = snapshot.goalAlignment;
@@ -519,11 +571,11 @@ function attentionSlot(
     snapshot.pendingCheckpoint !== undefined &&
     snapshot.aitpHealth.phase === 'ready' &&
     snapshot.aitpHealth.contractVersion !== undefined &&
-    snapshot.aitpHealth.contractVersion !== '0.2'
+    !supportsAtomicCheckpointWrite(snapshot.aitpHealth.contractVersion)
   ) {
     pushCandidate({
       source: 'adapter',
-      text: `AITP reads are ready, but checkpoint writes are unavailable with adapter contract ${snapshot.aitpHealth.contractVersion}; contract 0.2 is required.`,
+      text: `AITP reads are ready, but checkpoint writes are unavailable with adapter contract ${snapshot.aitpHealth.contractVersion}; contract 0.2 or 0.3 is required.`,
     }, 'adapter_checkpoint_write');
   }
 
@@ -567,8 +619,8 @@ function runIsActive(
 }
 
 function cycleCurrent(snapshot: ResearchStatusSnapshot): ResearchBoardCycleCurrent | undefined {
-  const local = snapshot.localConclusion;
-  if (local !== undefined && (local.action.lineSlug === undefined || local.action.lineSlug === snapshot.currentLineSlug)) {
+  const local = currentLocalConclusion(snapshot);
+  if (local !== undefined) {
     return { source: 'local_conclusion', text: local.progress.headline };
   }
   const actionRecoveryRequired = actionNeedsRecovery(snapshot);
@@ -597,7 +649,7 @@ function cycleCurrent(snapshot: ResearchStatusSnapshot): ResearchBoardCycleCurre
     };
   }
 
-  const progressText = presentText(snapshot.latestProgress?.headline);
+  const progressText = presentText(currentProgress(snapshot)?.headline);
   if (progressText !== undefined) {
     return { source: 'progress', text: progressText };
   }
@@ -607,10 +659,8 @@ function cycleCurrent(snapshot: ResearchStatusSnapshot): ResearchBoardCycleCurre
     return { source: 'question', text: questionText };
   }
 
-  const stateChangeText = presentText(snapshot.recentStateChange?.summary);
-  if (stateChangeText !== undefined) {
-    return { source: 'state_change', text: stateChangeText };
-  }
+  // A phase transition describes bookkeeping, not scientific work. Keep it in
+  // expanded provenance; do not substitute it for an absent research report.
 
   const currentLine = snapshot.lines.find(
     (line) => line.slug === snapshot.currentLineSlug,
@@ -640,48 +690,6 @@ function currentEffectiveNextStep(snapshot: ResearchStatusSnapshot) {
 }
 
 function nextSlot(snapshot: ResearchStatusSnapshot): ResearchBoardNextSlot | undefined {
-  const local = snapshot.localConclusion;
-  const gate = currentHumanGate(snapshot);
-  if (local !== undefined && (gate === undefined || gate.resolvedAt !== undefined)) {
-    return {
-      kind: 'next', source: 'aitp_maintenance', freshness: 'blocked',
-      text: 'In Research Manager, explicitly confirm the result’s target Line/workstream, then adopt the unchanged conclusion into a checkpoint. AITP has not been written yet.',
-      observedAt: local.progress.recordedAt,
-      derivedFrom: {
-        actionId: local.action.actionId, lineSlug: local.action.lineSlug, questionId: local.action.questionId,
-      },
-    };
-  }
-  if (actionNeedsRecovery(snapshot)) {
-    const action = currentAction(snapshot)!;
-    const projected = currentEffectiveNextStep(snapshot);
-    if (
-      projected?.source === 'research_action' &&
-      projected.freshness === 'blocked' &&
-      projected.derivedFrom.actionId === action.actionId
-    ) {
-      return {
-        kind: 'next',
-        source: projected.source,
-        text: projected.text,
-        freshness: projected.freshness,
-        observedAt: projected.observedAt,
-        derivedFrom: projected.derivedFrom,
-      };
-    }
-    return {
-      kind: 'next',
-      source: 'research_action',
-      text: `Recover action ${action.actionId}: it is ${action.status} while the Research phase is ${snapshot.phase}; conclude or abandon it before starting another action.`,
-      freshness: 'blocked',
-      observedAt: action.createdAt,
-      derivedFrom: {
-        actionId: action.actionId,
-        questionId: action.questionId,
-        lineSlug: action.lineSlug,
-      },
-    };
-  }
   const effectiveNextStep = currentEffectiveNextStep(snapshot);
   const effectiveText = presentText(effectiveNextStep?.text);
   if (effectiveText !== undefined && effectiveNextStep !== undefined) {
@@ -695,7 +703,7 @@ function nextSlot(snapshot: ResearchStatusSnapshot): ResearchBoardNextSlot | und
     };
   }
 
-  const progressText = presentText(snapshot.latestProgress?.nextAction);
+  const progressText = presentText(currentProgress(snapshot)?.nextAction);
   if (progressText !== undefined) {
     return { kind: 'next', source: 'progress', text: progressText };
   }

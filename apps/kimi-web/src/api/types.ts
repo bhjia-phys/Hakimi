@@ -457,8 +457,11 @@ export interface AppTask {
   model?: string;
   thinkingEffort?: string;
   subagentPhase?: AppSubagentPhase;
+  subagentRunId?: string;
   subagentType?: string;
   parentToolCallId?: string;
+  taskScope?: string;
+  parentAgentId?: string;
   suspendedReason?: string;
   swarmIndex?: number;
   /** True only for subagents detached into the background task store. Drives
@@ -950,6 +953,8 @@ export interface ResearchStateChange {
 export interface ResearchHumanGate {
   gateId: string;
   kind: ResearchHumanGateKind;
+  /** Missing on historical decisions; never infer dependency from prompt text. */
+  dependentGoalIds?: string[];
   actionId?: string;
   questionId?: string;
   prompt: string;
@@ -1505,7 +1510,14 @@ export interface AppInFlightTurn {
  * state, consistent at `asOfSeq`. The standard flow is
  * `getSessionSnapshot()` → `subscribe(sessionId, {seq: asOfSeq, epoch})`.
  */
+export interface AgentRelationship {
+  agentId: string;
+  parentAgentId?: string;
+  taskScope?: string;
+}
+
 export interface AppSessionSnapshot {
+  agentRelationships?: AgentRelationship[];
   asOfSeq: number;
   epoch: string;
   session: AppSession;

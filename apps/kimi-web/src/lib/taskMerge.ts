@@ -60,6 +60,11 @@ export function keepLiveSubagents(restBased: AppTask[], existing: AppTask[]): Ap
             live.parentToolCallId,
           );
     if (rest === undefined) return live;
+    if (rest.sessionId !== live.sessionId ||
+      (live.parentAgentId !== undefined && rest.parentAgentId !== undefined &&
+        live.parentAgentId !== rest.parentAgentId) ||
+      (live.taskScope !== undefined && rest.taskScope !== undefined &&
+        live.taskScope !== rest.taskScope)) return live;
     foldedRestIds.add(rest.id);
     // True when the fold — not the event stream — is what makes the row terminal.
     const restCompletesLiveRow = live.status === 'running' && rest.status !== 'running';
@@ -72,6 +77,8 @@ export function keepLiveSubagents(restBased: AppTask[], existing: AppTask[]): Ap
       model: live.model ?? rest.model,
       thinkingEffort: live.thinkingEffort ?? rest.thinkingEffort,
       subagentType: live.subagentType ?? rest.subagentType,
+      taskScope: live.taskScope ?? rest.taskScope,
+      parentAgentId: live.parentAgentId ?? rest.parentAgentId,
       // Terminal-stickiness: never let a lagging poll flip a finished row back
       // to running, but let REST complete a row whose finish event was missed.
       status: live.status === 'running' ? rest.status : live.status,
@@ -109,7 +116,12 @@ export function mergeSnapshotSubagents(roster: AppTask[], existing: AppTask[]): 
   const merged = roster.map((task) => {
     const live = existingById.get(task.id);
     if (!live) return task;
-    return { ...task, outputLines: live.outputLines, text: live.text };
+    if (task.sessionId !== live.sessionId ||
+      (task.parentAgentId !== undefined && live.parentAgentId !== undefined && task.parentAgentId !== live.parentAgentId) ||
+      (task.taskScope !== undefined && live.taskScope !== undefined && task.taskScope !== live.taskScope)) return task;
+    return { ...task, taskScope: task.taskScope ?? live.taskScope,
+      parentAgentId: task.parentAgentId ?? live.parentAgentId,
+      outputLines: live.outputLines, text: live.text };
   });
   const kept = existing.filter((t) => !rosterIds.has(t.id));
   return kept.length === 0 ? merged : [...merged, ...kept];

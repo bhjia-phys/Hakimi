@@ -352,6 +352,9 @@ export interface TaskItem {
    *  to its inline tool card, so the card's "Open detail" button can be hidden
    *  when the task is no longer available. */
   parentToolCallId?: string;
+  taskScope?: string;
+  agentId?: string;
+  parentAgentId?: string;
 }
 
 export interface ConversationStatus {

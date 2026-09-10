@@ -3,8 +3,9 @@
  *
  * Each tool delegates to `IAgentResearchService` (and `IAgentAitpModeService`
  * for the mode gate). Active-only: the `when` predicate in the Feature
- * contribution checks `mode.isActive`. Normal bounded work uses
- * `BeginResearchAction` and `ConcludeResearchAction`; atomic operations kept in
+ * contribution checks `mode.isActive`. Optional attempt tracking uses
+ * `BeginResearchAction` and `ConcludeResearchAction`; these do not license
+ * ordinary tool execution or AITP recording. Atomic operations kept in
  * this module support approval recovery and maintenance. Research outputs lead
  * with what was done, the result, the mainline impact, and the next step rather
  * than raw ids or revisions. Successful first-time checkpoint commits hand one
@@ -21,6 +22,7 @@ import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMod
 import { AitpResearchError } from '#/features/aitpResearch/errors';
 import { IAitpDistillationHandoffService } from '#/features/aitpResearch/research/distillationHandoff';
 import type { ResearchCheckpoint } from '#/features/aitpResearch/types';
+import { projectResearchLineForTool, projectResearchStatusForTool } from './researchStatusPresenter';
 
 import {
   ICommitResearchCheckpointTool,
@@ -138,7 +140,7 @@ function nextStepMeaning(phase: SetResearchPhaseInput['phase']): string {
 export class GetResearchStatusTool implements IGetResearchStatusTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'GetResearchStatus' as const;
-  readonly description = 'Get the current AITP Research Mode status snapshot.';
+  readonly description = 'Read Research questions, evidence gaps, plans, ownership and blockers. Set line_slug to browse an existing line without switching execution focus or changing task/record ownership; this scoped overview omits unrelated items even with detail="full". Without line_slug, repeated checkpoint check details are summarized; use detail="full" for session-wide receipt diagnostics. Reading status does not refresh evidence or update synthesis.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(GetResearchStatusInputSchema);
 
   constructor(
@@ -146,7 +148,7 @@ export class GetResearchStatusTool implements IGetResearchStatusTool {
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
   ) {}
 
-  resolveExecution(_args: GetResearchStatusInput): ToolExecution {
+  resolveExecution(args: GetResearchStatusInput): ToolExecution {
     return {
       description: 'Getting research status',
       approvalRule: this.name,
@@ -154,7 +156,14 @@ export class GetResearchStatusTool implements IGetResearchStatusTool {
         const inactive = requireActive(this.mode);
         if (inactive !== undefined) return errorResult(inactive);
         const snapshot = this.research.getSnapshot();
-        return { output: JSON.stringify(snapshot, null, 2) };
+        if (args.line_slug !== undefined) {
+          const overview = projectResearchLineForTool(snapshot, args.line_slug);
+          return overview === undefined
+            ? errorResult(`Research Line ${args.line_slug} not found; no focus or ownership was changed.`)
+            : { output: JSON.stringify(overview, null, 2) };
+        }
+        const output = args.detail === 'full' ? snapshot : projectResearchStatusForTool(snapshot);
+        return { output: JSON.stringify(output, null, 2) };
       },
     };
   }
@@ -479,7 +488,7 @@ export class SetResearchPhaseTool implements ISetResearchPhaseTool {
 export class ProposeResearchCheckpointTool implements IProposeResearchCheckpointTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'ProposeResearchCheckpoint' as const;
-  readonly description = 'Propose a pending research checkpoint at a durable boundary.';
+  readonly description = 'Propose a pending research checkpoint at a durable boundary. To adopt a retained local conclusion, pass its ID, explicit confirmed_by=user, and the current revision from a freshly read Research snapshot; this tool does not infer user confirmation.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(ProposeResearchCheckpointInputSchema);
 
   constructor(
@@ -495,7 +504,9 @@ export class ProposeResearchCheckpointTool implements IProposeResearchCheckpoint
         const inactive = requireActive(this.mode);
         if (inactive !== undefined) return errorResult(inactive);
         const checkpoint = this.research.proposeCheckpoint({
-          expectedRevision: 0,
+          expectedRevision: args.expected_revision ?? 0,
+          localConclusionId: args.local_conclusion_id,
+          confirmedBy: args.confirmed_by,
           questionId: args.question_id,
           lineSlug: args.line_slug,
           assessment: args.assessment,
@@ -580,6 +591,7 @@ export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTo
           }
           const output = (handoff: string): string => [
             `Checkpoint ${args.checkpoint_id} committed.`,
+            'Native checkpoint verification completed: the saved Entry was verified with show and a scoped post-save check against its captured pre-save baseline. Reuse this receipt; do not rerun enter/check solely because this checkpoint committed. This is not a claim of whole-Topic health or scientific validity. Read relevant evidence as needed; new external changes, stale scope, Note saves and required candidate review checks still need their own applicable verification.',
             this.questionSynthesisGuidance(checkpoint, args),
             handoff,
           ].filter(Boolean).join('\n');
@@ -699,7 +711,7 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
 export class BeginResearchActionTool implements IBeginResearchActionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'BeginResearchAction' as const;
-  readonly description = 'Plan and begin one bounded research action atomically. Routine execution approval follows the active permission mode; use RequestResearchDecision separately for a non-delegable scientific or protocol choice. For a stage Note from existing evidence, first read the relevant canonical Entries and settle the Question assessment and evidenceRefs/falsifierRefs through UpdateResearchQuestion, then begin a fresh Question-bound Note Action with exact tool:aitp_note_prepare and tool:aitp_note_save grants. Begin captures the Question revision: changing its refs afterward invalidates that scope. If evidence gathering needs an Action, conclude that reading Action before updating the Question and beginning the Note Action. Reuse an adequate existing Note when there is no durable delta; do not manufacture an Entry to obtain Note permission.';
+  readonly description = 'Optionally track a coherent research attempt with a purpose, expected evidence and stopping condition. This creates local Action state, not tool permission. Routine inspection, literature search, derivation, code work and AITP recording do not require an Action. Use RequestResearchDecision separately for a genuinely non-delegable choice; normal execution permissions still apply. Reuse an adequate existing Note when there is no durable delta.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(BeginResearchActionInputSchema);
 
   constructor(
@@ -1176,6 +1188,7 @@ export class RequestResearchDecisionTool implements IRequestResearchDecisionTool
         if (inactive !== undefined) return errorResult(inactive);
         try {
           const gate = this.research.requestHumanDecision({
+            dependentGoalIds: args.dependent_goal_ids,
             kind: args.kind,
             prompt: args.prompt,
             actionId: args.action_id,
@@ -1186,8 +1199,10 @@ export class RequestResearchDecisionTool implements IRequestResearchDecisionTool
             `Human ${gate.kind} requested.`,
             `Prompt: ${gate.prompt}`,
             `Phase: ${snapshot.phase}.`,
-            'Mainline impact: the research loop is paused pending human input.',
-            'Next step: wait for the human decision, then resume with RecordResearchProgress or a new action.',
+            gate.dependentGoalIds === undefined
+              ? 'Goal dependency: unknown; automatic Goal continuation is conservatively held, but ordinary independent work remains available.'
+              : `Dependent Goals: ${gate.dependentGoalIds.join(', ')}. Other Goals and ordinary independent work are not held.`,
+            'Wait only on work that depends on this decision. Independent work may continue under normal permissions. Record an explicit human answer with ResolveResearchDecision; do not invent an answer or require RecordResearchProgress/new Action merely to resume.',
           ];
           return { output: lines.join('\n') };
         } catch (error) {

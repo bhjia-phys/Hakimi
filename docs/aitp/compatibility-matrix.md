@@ -1,5 +1,238 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+Current delivery, 2026-09-10 06:38 UTC (supersedes older source-only/pending
+installation paragraphs below): AITP 0.10.0 / adapter-contract-0.3 is installed
+in Codex and Hakimi. Latest Hakimi CLI 0.21.0 core/worker/Web match the verified
+package; restart followed a complete 225-session idle check. New synthetic
+session fb8775d0… reports ready, Python 3.12, no Goal. Agent/nested/Swarm explicit
+decision-dependency cases and compaction recovery have finite model evidence;
+this is not production-science acceptance or an OS sandbox. Atomic Note save
+and Entry/Note failure/retry/concurrency evidence are recorded in the atomic-save
+tests and lean-harness-live-acceptance document. Codex needs a new thread to
+load cache 0.10.0+codex.20260910054835. The finite G1–G7 coverage audit is complete;
+explicit old/new Note history recall passed and final REST/WS tests passed 32/32.
+Scientific task completion, universal recall and OS isolation are not claimed.
+Earlier dated notes retain their observed failures and former authorization
+boundaries; they do not override this installed-version statement.
+
+Distillation loading refinement (2026-09-09; source only, not reinstalled):
+Follow-up pin guidance: ordinary recall adds no standalone per-file hash audit;
+new pins may reuse verified same-target unchanged digests. Existence is not
+version identity. Save/check, exact-card pins and historical verification remain
+unchanged; no host permission or runtime change.
+ordinary read-only recall no longer instructs loading full candidate review just
+because historical markers exist. Current-task/touched-evidence relevance comes
+first; explicit requests, relevant recurrence and new card trial/revision evidence
+retain full review. Drafting/trial/human-decision rules, version 0.9.0, contract
+schema 0.2 and CLI/runtime are unchanged; contract sync text reflects the routing.
+No Hakimi runtime/permission change or behavioral speedup claim. Evidence and
+limits: AITP feedback/2026-09-09-distillation-loading-natural-use.md.
+
+Check-call deduplication (2026-09-09, reinstalled in Codex and Hakimi):
+using-aitp now discovers and verifies a Python 3.11+ path before CLI use,
+reuses current pre-write/closeout views only over a known-unchanged interval,
+and uses one global check plus scoped enter for multi-line read-only recovery.
+Evidence/ledger/policy changes, concurrent writers or uncertain freshness
+require refresh; every save still gets check/enter verification. Scoped check
+itself still scans globally under M1d; no new runtime/cache/schema/CLI or host
+permission behavior. The added fixture verifies zero-write multi-line reads and
+stale-report invalidation after evidence changes. This is Skill guidance, not
+a scheduling hook or a measured model speedup.
+Validation:193 ledger tests pass/44.74s, Skill validator and diff checks pass.
+Single local GW call-pattern comparison:3checks+3enters5.440s versus
+1globalcheck+3enters2.965s; equal enter views, no real-record writes. This is
+not a controlled timing study or a new model-conformance claim.
+Installation:2026-09-08 19:08UTC,65files match on both hosts. Hakimi enabled/ok,
+no diagnostics,227sessions idle before install. Codex cache version
+0.9.0+codex.20260908190759; use a new Codex thread for new Skill pickup.
+No system-Python replacement, Goal resumption or scientific-record write.
+
+Historical-version memory increment (2026-09-09, installed and cold-retested): AITP adds
+on-demand guidance separating record discovery, old-byte retrieval and scientific
+validation; nested Git locators are not root-repository validated pins. Existing
+enter description changes, not contract0.2/version0.9.0, CLI/schema/runtime or
+Hakimi permissions. AITP ledger192passed; Skill validation passed. Si gained an
+append-only recovery Entry and superseding working Note; old records preserved.
+Five-topic bounded acceptance completed: all30frozen questions passed; Si
+postorganization retest7/7 (six repeated plus exact-version recovery). Earlier
+provider522 attempts are unscored; no speedup/long-term guarantee. A single local plugin installation request timed
+out after all224sessions were verified idle; the subsequent file check still
+found the two intended bundle differences. Without resubmission,17:57UTC Sep8
+verification matched all65files and plugin enabled/ok with noerrors;224sessions
+remained idle. The serialized install/reload completed. See AITP docs/hakimi/README.md.
+
+Read/write efficiency slice (2026-09-09 Asia/Shanghai; locally installed):
+using-aitp entrypoint684->182lines; on-demand recording and CLI-contract
+references preserve detailed rules. Existing enter/check/note-save descriptions
+are synchronized, contract0.2/version0.9.0 unchanged. No runtime/schema/CLI/
+Skill-visibility change. Final ledger191passed; final plugin reload16:14:48UTC
+on Sep8 verified65files after all217sessions were idle. Independent reads can
+batch; dependent writes and complete check reports/exit status remain protected.
+Two fresh mode-off read tests reduced model requests12->8 and13->9, but Chain
+needed an assisted2-request correction separating standing direction from paused
+Goal execution; not an unassisted correctness or causal speedup claim.
+Isolated synthetic save/retry/working-Note/scoped-query acceptance passed with
+exactly1Entry/1Note, no duplicates or scope leakage. All974 real-store Markdown
+files unchanged. Approval wait remains a major host/supervision cost; no write-
+speedup claim. Detailed results: AITP docs/research-memory.zh-CN.md, efficiency
+acceptance section; private Hakimi .tmp/aitp-lean-read-write-20260909 reports.
+
+Authorized navigation application (2026-09-08): user confirmed the narrow
+ordinary-file exception; GW Topic navigation now separates four explicit
+directions with dated Note entrances. Original identity/Research Goal and all
+other 973 canonical Markdown files across the three stores remain unchanged;
+no records added. Whole-store check is byte-identical before/after (exit1,
+73 errors/201 warnings), and scoped enter preserves each line's own Note.
+This is not a new CLI command or human scientific/Goal-alignment decision.
+Mode-off public-file/CLI recovery and no-op maintenance were tested; automatic
+host Skill discovery remains unavailable. No runtime/schema/harness change,
+new-template positive save, full-recall or efficiency claim. Earlier pending
+permission/installation statements below are historical observations.
+
+Topic-map/writing follow-up (2026-09-08; locally installed/reloaded at 14:46 UTC,
+new real-session acceptance pending): on-demand guidance separates a stable Topic
+map from scoped current records and pinned long-form derivations. Existing
+theory-template/enter descriptions are synchronized; no runtime, CLI, schema,
+authority or Hakimi harness change. A scoped regression covers old Topic links
+and rejects prose-inferred membership. Topic-update and Note-show remain
+unavailable; real GW Topic editing awaits resolution of canonical-write authority.
+Earlier installation/test reports below describe earlier slices only.
+This slice: 190 ledger tests passed (36.38s), Skill validation and scoped diff
+checks passed. All 210 sessions were idle before installation; 63 installed
+files match source. A fresh mode-off navigation test failed automatic entry
+discovery: host Skill visibility requires active Research Mode, and bare aitp
+is absent from PATH. With installed file/CLI locations supplied, the same
+read-only session recovered distinct QSGW lines and evidence limits with one
+check and no writes. This assisted result does not prove automatic discovery;
+changing host Skill visibility is outside this docs-only Hakimi slice.
+A second fresh mode-off test recovered the recorded phase-bound derivation and
+its scientific limits. Given permission for justified synthesis, it chose no
+write because the existing Note covers the evidence. Both sessions ended idle;
+this does not exercise a new-template save. Real Topic update still needs the
+explicit canonical-edit exception; its private navigation proposal preserves
+the original identity and Research Goal. No completion or speedup claim.
+
+**Companion AITP research-memory guidance (2026-09-08; locally installed/reloaded):** bundled
+using-aitp reference, Note template prompts and existing enter/note-save
+descriptions change. Contract schema remains 0.2, version metadata 0.9.0;
+CLI/file/read transports, runtime and authority are unchanged. No Hakimi
+implementation, new API or automatic semantic handoff is implied. Reviewed
+delivery matched 62 installed files and reached the original Si session. Scoped
+recovery and one Note save worked without altering old records or other scopes;
+instruction-read admission, revision ambiguity and incomplete Entry citations
+remain open. Relay failures prevented the queued citation correction; the test
+was stopped without resuming a Goal or leaving pending work. See the
+[handoff](README.md#research-memory-guidance).
+
+**Scoped Note retrieval (2026-09-07; locally installed, cold reads verified):**
+existing Research guidance distinguishes a needed, scoped Note lookup from
+duplicated maintenance. Uses existing `aitp_enter` and exact Note Read; no public
+transport, AITP CLI/schema/contract/Skill or permission change. 714 related tests
+and typecheck/import pass. CLI/Web/PTY delivery and five-session cold-scope
+preservation pass; real context contains the new guidance. The earlier supervised
+correction is not autonomous acceptance. A separately requested Si Working Note
+was saved through existing Note tools; native maintenance and cross-session
+checks preserve scope and all old canonical bytes. No Entry/card/trial or
+permission change. See the [handoff](README.md#scoped-note-retrieval).
+
+Checkpoint verification disclosure follow-up (locally installed, cold reads verified):
+fresh successful commits identify existing native show/scoped checks; failed or
+duplicate commits do not claim new verification. Required evidence/Note/candidate
+checks are retained. No API/schema/Skill or AITP behavior change; 714 related
+Hakimi tests and six AITP contract tests pass. CLI/Web/PTY delivery and five-session
+cold reads preserve scope and records; model non-repetition remains unproven.
+See the same handoff for limits.
+
+**Focus intent disclosure (2026-09-07; locally installed, read-only model replay passed):** default
+model status omits captured Focus boundedAction, retains selection identity and
+current next-step guidance, and leaves full/public snapshots unchanged. Four new
+regressions, 815 related tests and typecheck/import pass; five real snapshots pass
+read-only source projection. Installation/Web/PTY and five-session cold reads
+pass; one real status-only model answer used current guidance without changing
+science, scope, Goal or canonical records. No AITP surface or authority change,
+and no general model-conformance claim. See the [handoff](README.md#focus-intent-disclosure).
+
+Saved checkpoint key verification (2026-09-07; locally installed; cold read verified): Hakimi
+compares canonical show.frontmatter.idempotency_key with the captured nonempty
+checkpoint key before advancing its committed cursor. A missing, malformed or
+changed key retains the pending record and receipt; no resave or replacement
+is attempted. Exact retries remain idempotent. The same existing show call is
+used by both verification paths, with no additional CLI call or AITP change.
+Sixteen new regressions cover canonical mismatch, corrupted local key and valid
+retry; 778 related Hakimi tests and six unchanged AITP contract tests pass.
+This is post-save defense, not atomic pre-save key enforcement. The motivating
+Si draft was corrected under supervision before saving; no wrong-key canonical
+save was observed there. AITP 0.9.0/contract-0.2 and all public transports remain
+unchanged. Five-subject and autonomous scientific acceptance remain incomplete.
+Delivery: CLI 0.21.0 entry/worker/provenance and all 521 Web files match the
+tested build; reproducible Web rebuild and installed PTY smoke pass. Only the
+owned idle server was restarted. All five real sessions retained their Lines,
+Questions, bindings, Goal status and commit histories; three latest canonical
+Entries read through AITP show were unchanged. No model prompt or ledger save
+was performed. This cold-read check is not an installed negative-key experiment
+or evidence that the underlying scientific goals are complete.
+
+Line-return focus (2026-09-07; locally installed and replayed): a settled
+Line switch restores its last open/active/blocked Question only when the archived
+period captured the same Topic observation. It uses the Question's current next
+step, not old action state. Unknown/changed scope, closed/deferred/cancelled
+Questions and a latest unfocused period stay unfocused. No AITP writes, binding
+confirmation or Goal resumption; public snapshot shapes are unchanged.
+
+**Model status disclosure (2026-09-07; locally installed and replayed):** optional summary/full
+detail in GetResearchStatus; summary retains facts and summarizes repeated
+receipts, full is unchanged. No public Research transport or AITP contract change.
+18 targeted tests and typecheck/import pass. Real summary output and supervised
+Question synthesis passed without a second record; no automatic-behavior guarantee.
+
+**Non-agent creator mapping (2026-09-07; locally installed and replayed):**
+saved records use AITP's existing agent:unknown default for omitted creator;
+prepare arguments and all other identity checks remain unchanged. 15 Hakimi
+provenance/prepare and six AITP contract tests pass. No AITP/public schema change.
+The original NiO saved Entry was accepted without resaving or changing authority.
+
+**Post-record review ordering (2026-09-07; locally installed):**
+existing handoff guidance assesses touched evidence before optional harvesting.
+External AITP Skill checks remain authoritative; no schema, CLI, permission,
+trigger implementation or new hook. Three handoff tests pass; one supervised
+NiO recovery no-opped without harvesting. General/causal conformance is unproven.
+
+**Paused Goal reminder (2026-09-07; locally installed):** bounded user work does not
+authorize autonomous resumption. Existing model guidance is corrected; 22
+Goal-injection tests pass. No lifecycle, permission, public schema or AITP
+contract change; real theory audit and NiO recovery kept their Goals paused.
+General model conformance remains unproven. See [handoff](README.md).
+
+**Theory Physics 0.2.5 (2026-09-07; locally installed):** exact recorded-locator-first
+diagnosis and a named missing-observable stopping boundary. No new tool policy,
+AITP contract, state or permission; general behavioral acceptance remains pending.
+Installed through the existing plugin API after the 0.2.4 request ended;
+six managed files match source. A supervised scoped Si correction and a zero-write
+NiO query completed; draft repair and model latency remain observed limitations.
+No five-subject or autonomous-efficiency claim. See [handoff](README.md).
+
+**Theory Physics 0.2.4 (2026-09-07; previous local delivery):** bounded existing-job
+query/diagnosis guidance, not a new tool or execution policy. Receipt-only
+jobs are not fabricated Runs; raw evidence stays available while repetitive
+logs are kept out of the normal report. Installation/discovery tests pass;
+managed files matched that revision; real behavioral acceptance is pending. No AITP/public transport
+contract, schema, stage or human-decision change.
+
+**Pending-record prompt follow-up (2026-09-07; locally installed):** checkpoint evidence
+instructions now supply their exact current snapshot arguments. Existing stale
+checks, semantic injection deduplication and public/AITP contracts are unchanged.
+This repairs a reproduced model-facing omission; it is not scientific acceptance
+or an automatic status-query capability. See the [current handoff](README.md).
+
+**Confirmed-conclusion phase recovery (2026-09-07; locally installed):** the existing
+checkpoint adoption path also accepts non-executing return phases after a human
+decision, retaining the exact concluded Action, context freshness, explicit
+binding and external-commit guards. No public schema, AITP CLI/contract, Skill,
+scientific authority or Goal ownership change. See the [current handoff](README.md)
+for tests, installed-byte verification and the real cold-recovery result.
+The original Si submission subsequently passed real scoped save/commit; canonical
+persistence is verified, while current numerical/scientific acceptance remains open.
+
 **Automatic proposal for confirmed original conclusions (2026-09-06; uncommitted, not installed):**
 the existing Hakimi reconciliation and checkpoint reducer now recover fresh
 agent-authority local conclusions after their original Line's first explicit

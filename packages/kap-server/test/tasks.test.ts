@@ -42,6 +42,7 @@ interface TaskWire {
   agent_id?: string;
   subagent_type?: string;
   parent_tool_call_id?: string;
+  task_scope?: string;
   run_in_background?: boolean;
 }
 
@@ -180,6 +181,8 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
               agentId: 'sub-1',
               subagentType: 'explore',
               parentToolCallId: 'call-parent-1',
+              taskScope: 'direction-a',
+              parentAgentId: 'coordinator-a',
               model: 'provider/secondary',
               thinkingEffort: 'low',
             };
@@ -274,6 +277,8 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
       agent_id: 'sub-1',
       subagent_type: 'explore',
       parent_tool_call_id: 'call-parent-1',
+      task_scope: 'direction-a',
+      parent_agent_id: 'coordinator-a',
       run_in_background: true,
     });
     expect(byId.get(agentId)?.command).toBeUndefined();

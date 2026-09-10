@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeHostFs } from '../../../tools/fixtures/fake-exec';
 import { IAgentContextInjectorService } from '#/agent/contextInjector/contextInjector';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
+import { IAgentPromptService } from '#/agent/prompt/prompt';
 import type { ContextMessage } from '#/agent/contextMemory/types';
 import { IAgentPlanService } from '#/features/plan/plan';
 import {
@@ -174,7 +175,7 @@ describe('PlanModeService dynamic injection cadence', () => {
     expect(planReminderMessages(context)).toHaveLength(1);
   });
 
-  it('injects the sparse reminder after the short assistant-turn threshold', async () => {
+  it('does not repeat unchanged instructions after two assistant messages', async () => {
     const planFilePath = await enterPlan(plan);
 
     await injectDynamic(injector);
@@ -183,12 +184,12 @@ describe('PlanModeService dynamic injection cadence', () => {
     await injectDynamic(injector);
 
     const text = lastPlanReminder(context);
-    expect(text).toContain('Plan mode still active');
-    expect(text).toContain('see full instructions earlier');
+    expect(planReminderMessages(context)).toHaveLength(1);
+    expect(text).toContain('Plan mode is active');
     expect(text).toContain(`Plan file: ${planFilePath}`);
   });
 
-  it('refreshes the full reminder after the long assistant-turn threshold', async () => {
+  it('does not repeat unchanged instructions after five assistant messages', async () => {
     await enterPlan(plan);
 
     await injectDynamic(injector);
@@ -198,11 +199,12 @@ describe('PlanModeService dynamic injection cadence', () => {
     await injectDynamic(injector);
 
     const text = lastPlanReminder(context);
+    expect(planReminderMessages(context)).toHaveLength(1);
     expect(text).toContain('Plan mode is active');
     expect(text).not.toContain('Plan mode still active');
   });
 
-  it('refreshes the full reminder if a user message appears after the last injection', async () => {
+  it('does not repeat unchanged instructions merely because a user spoke', async () => {
     await enterPlan(plan);
 
     await injectDynamic(injector);
@@ -210,7 +212,41 @@ describe('PlanModeService dynamic injection cadence', () => {
     await injectDynamic(injector);
 
     const text = lastPlanReminder(context);
+    expect(planReminderMessages(context)).toHaveLength(1);
     expect(text).toContain('Plan mode is active');
     expect(text).not.toContain('Plan mode still active');
+  });
+
+  it('keeps one full Plan reminder in actual requests and restores it after compaction', async () => {
+    await enterPlan(plan);
+    const ask = async () => {
+      ctx.mockNextResponse({ type: 'text', text: 'The plan remains under discussion.' });
+      const handle = await ctx.get(IAgentPromptService).enqueue({ message: {
+        role: 'user', content: [{ type: 'text', text: 'Explain the proposed experiment.' }],
+        toolCalls: [], origin: { kind: 'user' },
+      } });
+      expect((await handle.completion).state).toBe('completed');
+      return JSON.stringify(ctx.llmCalls.at(-1));
+    };
+    expect((await ask()).match(/Plan mode is active/g)).toHaveLength(1);
+    expect((await ask()).match(/Plan mode is active/g)).toHaveLength(1);
+    context.applyCompaction({ summary: 'A plan is under discussion.',
+      compactedCount: context.get().length, tokensBefore: 3000, tokensAfter: 20,
+      keptUserMessageCount: 0, keptHeadUserMessageCount: 0 });
+    expect((await ask()).match(/Plan mode is active/g)).toHaveLength(1);
+  });
+
+  it('restores instructions after context loss and updates a changed plan path', async () => {
+    await enterPlan(plan);
+    await injectDynamic(injector);
+    await context.clear();
+    await injectDynamic(injector);
+    expect(planReminderMessages(context)).toHaveLength(1);
+    expect(lastPlanReminder(context)).toContain('Plan mode is active');
+    plan.exit();
+    const path = await enterPlan(plan, 'different-plan');
+    await injectDynamic(injector);
+    expect(planReminderMessages(context)).toHaveLength(2);
+    expect(lastPlanReminder(context)).toContain(`Plan file: ${path}`);
   });
 });

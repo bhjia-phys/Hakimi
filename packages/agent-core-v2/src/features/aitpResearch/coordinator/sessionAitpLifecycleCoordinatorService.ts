@@ -27,6 +27,7 @@ import type {
 } from '../types';
 import {
   ISessionAitpLifecycleCoordinator,
+  isMaintenanceReceiptRecent,
   type AitpMaintenanceRefreshOptions,
 } from './sessionAitpLifecycleCoordinator';
 
@@ -51,6 +52,9 @@ export class SessionAitpLifecycleCoordinatorService
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
   ) {
     super();
+    if (adapter.onDidInvalidateMemory !== undefined) {
+      this._register(adapter.onDidInvalidateMemory(() => this.reset()));
+    }
   }
 
   refresh(options?: AitpMaintenanceRefreshOptions): Promise<AitpMaintenanceReceipt> {
@@ -61,7 +65,8 @@ export class SessionAitpLifecycleCoordinatorService
     if (inFlight !== undefined) return inFlight;
 
     const previous = this.receipts.get(key);
-    if (previous !== undefined && options?.force !== true) {
+    if (previous !== undefined && options?.force !== true &&
+      (workstream === undefined || isMaintenanceReceiptRecent(previous))) {
       return Promise.resolve(previous);
     }
 

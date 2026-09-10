@@ -1,12 +1,27 @@
 # 研究模式
 
-## 记录与作业观察恢复（源码已实现，尚未安装）
+切线焦点恢复（2026-09-07；已本地安装并真实回访）：返回已结束的研究线时，
+仅在历史 period 保存的 Topic observation 与当前完全相同时，恢复该线最后的
+open/active/blocked Question，使用问题当前的下一步，不复活旧 action。
+未知/变化归属、已关闭/取消/延期的问题或最近一次无焦点时不恢复。
+不写 AITP、不确认绑定、不恢复 Goal，公共快照格式不变。
+
+已本地安装的修正：记录后的既有 Skill handoff 先判断本轮证据是否
+值得检索候选。不适用就不为此次 review 增加扫描、检查或 Action；真正 harvesting
+仍保留外部 AITP Skill 要求的检查。这是指引，不是自动科学分类或模型行为保证。
+
+已本地安装的指引：Theory Physics 0.2.4 把进度查询作为一个小范围、有归属的检查，
+不重新做构建审计。旧作业只有提交回执也可查询，不虚构 structured Run；优先
+读取首个实质错误和迭代摘要，完整原始日志保留在审计详情。
+managed 文件与源码一致；真实行为验收仍未完成。
+
+## 记录与作业观察恢复
 
 记录阶段可用 `ReadResearchCheckpointEvidence`，传入当前 `checkpoint_id`、`expected_revision` 和一个明确的 workspace 相对 `path`。工具只读该文件，返回原始字节的 `sha256:` pin 和最多 16000 字符；可用 `offset` 分页。文件上限 8 MiB，拒绝越界路径、`.aitp`/`.git` 及指向这些位置的符号链接。canonical Entry 仍用 `aitp_show`。读取前后都核验 checkpoint、研究线归属和 revision；已保存、过时或模式退出后不保留权限。不会开放通用 Bash/Read/Edit，也不会把文件存在当成科学验证。AITP save 仍负责最终校验 pin 和写账本；这不是 OS sandbox。
 
 提交结论完成持久化后，新 `BeginResearchAction` 可显式设置 `observed_run_action_id = currentRun.actionId`，沿用原 Question/Line。新观察 Action 保留原 Run；`ObserveResearchRun` 使用新 Action ID 登记观察，但 Run 的提交来源、作业和 source/binary 身份不变。普通新 Action 仍不能覆盖 live Run。具体查询使用该 Action 已获授权的现有工具，shell 权限不等于操作系统级只读查询。没有新增 scheduler/cron、自动重提作业或自动恢复 blocked Goal。
 
-两项修复仍需发布安装及真实会话验收；不改变 AITP CLI/schema 或知识卡人工决策规则。
+这些恢复改动已本地安装为 CLI 0.21.0。真实 Si 会话已读取 checkpoint 证据、保存原归属的提交记录，并通过新的 bounded Action 查询既有作业。该会话没有结构化 Run，不能替代 Run 沿用路径的真实验收，后者目前由回归测试验证。科研闭环与已安装 Theory Physics 0.2.4 的真实行为仍需分别验收；不改变 AITP CLI/schema 或知识卡人工决策规则。
 
 研究模式（Research Mode）让 Hakimi 成为以 [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) 证据账本为支撑的联合研究伙伴。Agent 不再是回答一个问题就忘记，而是维护一个实时的研究问题看板，通过有界行动自主推进，并将持久检查点写入 AITP——同时你始终可以通过 `/research`、TUI 与 Web 中的 Research Board 和 Research Manager 掌控方向。
 
@@ -85,6 +100,13 @@ Research Mode 不需要选择性启用开关。`/research` 命令和 `EnterAITPM
 
 在 TUI 中，该命令会显示模式阶段、循环状态、当前研究线、焦点问题、AITP adapter 健康状态，以及（可用时）current-state maintenance 摘要；在 Web 中，它会刷新 authoritative session snapshot，并展开 live Board。
 
+模型使用的 `GetResearchStatus` 默认 `detail="summary"`：保留科研状态、归属、
+阻塞以及恢复 ID/路径，将重复 check fingerprints 改为计数，省略历史 checkpoint
+的完整回执。省略会明确说明，不能解读为无回执或检查 clean。诊断回执时可用
+`detail="full"` 读取原样完整快照。会话级提交历史不自动属于当前 Line/Question；
+读取状态也不会刷新外部计算证据或替模型综合科研结果，过时 Question 仍需有依据
+的 `UpdateResearchQuestion`。REST/WS/SDK/klient/TUI/Web 快照契约不变。
+
 ## 当前状态维护（current-state maintenance）
 
 适配器 probe 报告 `ready` 后，Hakimi 先执行一次无作用域的 `enter`，只观测当前 Topic identity 和 revision，不采纳全局 handoff 或 evidence set。只有当前 Research Line 已为该 Topic revision 建立精确的 confirmed binding 时，Hakimi 才会对其 workstream 执行只读的 scoped `enter` → `check` maintenance。没有这条 binding 时，会清除旧 maintenance scope，不作任何 scoped maintenance 声明。
@@ -126,6 +148,10 @@ Research Mode 与 Goal 相互关联，但不拥有同一套生命周期：
 要求 Goal。存在 Goal 时，Research Goal 只是它的科研投影而不是替代品；
 Goal–Program alignment 约束自动续跑和完成，但不能遮住当前 bounded
 action 的恢复工作。
+
+Goal 暂停不禁止同一课题上的有界用户请求。问题、进度查询、恢复或单步任务
+可以正常处理并保持 Goal 暂停；只有明确要求恢复自主推进才恢复自动续行。
+修正后的既有 Goal 提醒属于模型指导，不是 runtime 自然语言授权判断。
 
 研究模式激活后，TUI 的 **研究面板**（Research Board）仍在输入区上方。Web 则在对话右侧显示默认收起的 **研究看板** 按钮，点击后打开可独立滚动的浮层，不挤占对话或输入框空间。点击 **收起研究看板**，或在面板内按 Esc，即可收起；这不会暂停 Research 或 Goal。实时更新不会自动弹开面板，切换会话后重新收起。面板内的 **展开** 用于查看详细审计记录。紧凑 Board 只保留一眼就需要判断的信息：
 
@@ -286,6 +312,8 @@ active Research Goal 要完成或自动继续前，必须显式确认它与 obse
 
 ### Action 作用域工具强制
 
+资源清理不属于新的科研工作：`TaskStop` 可以按精确 ID 停止当前 Agent 已记录的进程任务，不要求 `task` capability 或 live Action；loop 暂停、科研状态过期或存在 human gate 时仍可清理。它不授权 `TaskOutput`、`TaskList`、shell 执行、其他 Agent 的任务访问或远端 scheduler 取消。常规工具权限及任务服务的查询/停止语义仍然生效；恢复出的任务记录不证明进程仍存活。清理不会结束 Action，也不会解决科学决策。
+
 Research Mode active 时，Research Action 归属直接成为 admitted Research turn 上由统一 Tool Executor 强制的策略，不需要实验开关。
 
 启用后，状态/控制工具和严格限定的恢复工具可以在没有 active Action 时运行。新的科研工作则必须具有处于 `action_executing` 的 `in_progress` Action、fresh 的 Line/Question/Plan binding、没有 unresolved human gate，并取得与 `allowed_tool_kinds` 匹配的 capability。已知 capability 为 `workspace_read`、`workspace_write`、`web_search`、`web_fetch`、`shell`、`task`、`subagent` 和 `scheduler`；其他未知 plugin/MCP 工具必须取得精确的 `tool:<小写工具名>` 授权，否则默认拒绝。同一个 tool-call batch 中的 `BeginResearchAction` 与工作工具会被拒绝，避免 Begin 失败时未归属的工作先行执行。
@@ -308,6 +336,8 @@ Web Manager 的 Checkpoint 表单保留这一边界。**Propose** 只创建 pend
 `aitp_check` 把退出码 0 视为 clean，把退出码 1 视为成功返回 findings。findings 会保留展示，但不会使适配器降级。新增的 error finding 会让相关 checkpoint 保持 pending；已有的 error 会作为可审计的 receipt warning 保留。finding code 只作为 opaque string 投影；适配器不实现 AITP 的 `sha256-once:` 或 `check-policy` 语义。在进入或恢复时的维护周期中，合法的 error finding 仍保持 Research Mode receipt 为 `ready`；只有维护周期不可用或无效时才是 `degraded`。退出码 2 表示命令失败：有效的 AITP JSON 错误或无效的 check transport 会使适配器降级，参数解析错误则只报告为工具错误，不会污染整个会话。全文 `Grep` 可以定位候选记录，但完整的 canonical Entry 必须通过 `aitp_show` 读取；`aitp_show` 失败后，绝不能改用直接解析 Markdown 来模拟成功。
 
 ### 保留的本地结论
+
+回答归属问题后可以合法返回规划、评价或空闲。这不会使已经结束的结论失效：原归属明确确认且上下文仍 fresh 后，原 checkpoint 恢复流程可以继续，不必重复结论或再次接纳。未解决的人类决定、正在执行的替换 Action 仍阻止接纳。
 
 一次已完成的检验可能先得到证据，之后才能明确记录归属。如果 Action 本身仍 fresh，但没有 Line 或该 Line 尚未绑定，`ConcludeResearchAction` 会关闭 Action，并在本地 Research working state 保留完整结果、证据细节、限制与 durability assessment。Board 显示真实结果并请求确认归属。这不是 AITP Entry，也不是 pending checkpoint，不能改称 no durable delta，更不能再用 `RecordResearchProgress` 重复记录。
 

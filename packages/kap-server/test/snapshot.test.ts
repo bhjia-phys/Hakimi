@@ -327,6 +327,14 @@ describe('server-v2 GET /api/v1/sessions/:id/snapshot', () => {
     if (live === undefined) throw new Error(`session ${sid} not found`);
     const metaScope = live.accessor.get(ISessionContext).metaScope;
 
+    await live.accessor.get(ISessionMetadata).registerAgent('coordinator-a', {
+      type: 'sub', labels: { parentAgentId: 'main', taskScope: 'research-line:direction-a' },
+    });
+    await live.accessor.get(ISessionMetadata).registerAgent('reviewer-a', {
+      type: 'sub', labels: { parentAgentId: 'coordinator-a', taskScope: 'research-line:direction-a' },
+    });
+    await live.accessor.get(ISessionMetadata).registerAgent('legacy-agent', { type: 'sub' });
+
     const wireDir = join(home as string, metaScope, 'agents', 'main');
     await mkdir(wireDir, { recursive: true });
     const records = [
@@ -363,6 +371,11 @@ describe('server-v2 GET /api/v1/sessions/:id/snapshot', () => {
     expect(snap.messages.items).toHaveLength(2);
     expect((snap.messages.items[0]!.content[0] as { text: string }).text).toBe('hello-from-disk');
     expect((snap.messages.items[1]!.content[0] as { text: string }).text).toBe('hi-from-disk');
+    expect(snap.agent_relationships).toEqual([
+      { agent_id: 'coordinator-a', parent_agent_id: 'main', task_scope: 'research-line:direction-a' },
+      { agent_id: 'reviewer-a', parent_agent_id: 'coordinator-a', task_scope: 'research-line:direction-a' },
+      { agent_id: 'legacy-agent' },
+    ]);
     expect(snap.epoch).toMatch(/^ep_/);
   });
 

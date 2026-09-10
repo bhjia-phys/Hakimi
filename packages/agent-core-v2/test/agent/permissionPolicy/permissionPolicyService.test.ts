@@ -131,6 +131,22 @@ describe('AgentPermissionPolicyService chain', () => {
     });
   });
 
+  it.each(['aitp_enter', 'aitp_list', 'aitp_show', 'aitp_check', 'GetResearchStatus', 'ReadResearchCheckpointEvidence'])(
+    'treats native %s as low risk but honors explicit user deny and ask', async (toolName) => {
+      await expect(evaluate({ toolName, args: {} })).resolves.toMatchObject({
+        policyName: 'default-tool-approve', result: { kind: 'approve' },
+      });
+      rules.push({ decision: 'deny', scope: 'user', pattern: toolName });
+      await expect(evaluate({ toolName, args: {} })).resolves.toMatchObject({
+        policyName: 'user-configured-deny', result: { kind: 'deny' },
+      });
+      rules.splice(0, 1, { decision: 'ask', scope: 'user', pattern: toolName });
+      await expect(evaluate({ toolName, args: {} })).resolves.toMatchObject({
+        policyName: 'user-configured-ask', result: { kind: 'ask' },
+      });
+    },
+  );
+
   it('applies deny rules before yolo-mode approval', async () => {
     mode = 'yolo';
     rules.push({

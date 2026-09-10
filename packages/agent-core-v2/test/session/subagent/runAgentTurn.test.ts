@@ -180,6 +180,20 @@ describe('runAgentTurn usage accounting', () => {
     expect(outcome.runUsage).toEqual({ inputOther: 30, output: 10, inputCacheRead: 0, inputCacheCreation: 5 });
   });
 
+  it('returns a short handoff without another model turn when no summary policy is configured', async () => {
+    latestSummary = '未运行：缺少输入。';
+    const enqueue = vi.spyOn(prompt, 'enqueue');
+    prompt.steps.push({
+      method: 'enqueue',
+      turn: fakeTurn(1, Promise.resolve({ type: 'completed', steps: 1, truncated: false })),
+    });
+    const run = await runAgentTurn(handle, { kind: 'prompt', prompt: 'Brief status only' }, {
+      signal: new AbortController().signal,
+    });
+    expect((await run.completion).summary).toBe(latestSummary);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
   it('covers continuation timing, including steps completed before each turn is tracked', async () => {
     const first = deferred<TurnResult>();
     const second = deferred<TurnResult>();

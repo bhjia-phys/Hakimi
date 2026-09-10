@@ -1,5 +1,544 @@
 # AITP integration handoff
 
+Human-decision ownership source update: optional `dependentGoalIds` survives
+local operations and protocol/server/klient snapshots. Model request uses
+`dependent_goal_ids`; nonempty explicit dependencies scope Goal completion and
+continuation advice. Missing legacy dependencies hold conservatively and remain
+unresolved. AITP ledger schema, authority and decision records are unchanged.
+Task-level dependencies, legacy clarification UI and final installed acceptance
+are not claimed by this slice.
+
+Adapter source update (2026-09-10): companion AITP source is now 0.10.0 /
+adapter-contract-0.3 with atomic Topic/exact-workstream Note save. Installed
+bundle remains 0.9.0/0.2. Adapter source recognizes 0.1/0.2/0.3; atomic Entry
+save accepts 0.2/0.3, while scoped Note save requires 0.3 with no legacy fallback.
+Research Note saves forward captured Topic/workstream, overriding caller scope.
+Final cross-process acceptance and installation remain pending.
+No new SDK major, permissions or direct canonical writes are implied.
+
+AITP installation follow-up (2026-09-10 02:35 UTC): the theory/history guidance
+below is now locally reinstalled on both hosts. Each copy matches all 65 source
+bundle files. Public Hakimi install returned enabled/ok, no diagnostics; all224
+listed sessions were idle beforehand. Codex cache 0.9.0+codex.20260910023532
+requires a new thread for pickup. No daemon restart or new-session behavior test.
+
+AITP theory/history guidance (2026-09-10; source-only, not reinstalled): the
+companion using-aitp Skill adds on-demand theory/numerics examples, avoids
+automatic report/Entry/Note/card duplication, and separates record supersession
+from scientific refutation. Its existing note-prepare description is synchronized;
+0.9.0 / adapter-contract-0.2 and all CLI/schema/host permissions are unchanged.
+This handoff adds no Hakimi behavior. Model conformance and speedup remain unmeasured;
+see AITP docs/research-memory.zh-CN.md#theory-history-refinement.
+
+Task ownership transport (2026-09-09; source only): an optional Agent task_scope
+label survives task records, REST tasks, task WS events and foreground roster
+snapshots into Web task data. Conflicting explicit REST/live labels are not
+silently folded. This is Hakimi task identity, not AITP binding or write authority;
+Main-agent delegation with research-line:<existing slug> validates Line existence
+without requiring an Action; this abstains from Research policy, not normal tool
+permissions. Nested cross-direction validation and the task-tree UI remain incomplete.
+
+Native read risk policy (2026-09-09; source only): aitp_enter/list/show/check join
+the existing default-tool-approve list. Explicit user deny/ask retain precedence;
+adapter readiness, scope and Research guards are unchanged. No write, backfill,
+unknown MCP or Bash approval expansion. Permission-chain tests pass. An isolated
+source-service restart and fresh-session R3 probe completed four native reads with
+zero approval events; normal installation remains pending. This is Hakimi policy,
+not AITP runtime. See [live acceptance](lean-harness-live-acceptance.zh-CN.md).
+
+Read-routing follow-up (2026-09-09; source only): the AITP plugin's injected
+Skill wrapper now prefers available native read tools rather than duplicate
+CLI calls, with exact Skill-directory fallback and no bypass after denial.
+This responds to a real isolated GW recall that guessed a wrong CLI path and
+hit the action guard. R2 with the newly loaded wrapper completed without Bash or
+tool errors. No Bash permission broadening or schema change; full acceptance and
+normal installation remain pending.
+
+Hakimi Board follow-up (2026-09-09; source only): local cross-Line browsing
+does not issue a line-switch command or move task/checkpoint ownership. Foreign
+action progress is filtered from the execution summary. Isolated Chromium checks
+cover light/dark, focus, browsing/return and forced expansion with no API calls
+or snapshot mutation; this does not prove background-task or AITP write isolation.
+Canonical Web assets regenerated; installation and real-session acceptance pending.
+
+Hakimi source-only follow-up (2026-09-09): mechanical idle-to-orienting changes
+do not alone refresh AITP at turn end. The post-commit handoff normally delivers
+the exact Skill's description and a touched-evidence routing reminder, not its
+full content or an activation receipt. Relevant or uncertain candidates must
+invoke the Skill before review/card work. Name collisions retain exact plugin
+loading; visibility, model-invocation and inline-type restrictions remain.
+`review_requested` means a reminder was requested, not a completed review.
+No AITP schema, save validation, human decision or publication change; not installed.
+
+Distillation loading refinement (2026-09-09; source only, not reinstalled):
+Follow-up pin guidance: ordinary recall adds no standalone per-file hash audit;
+new pins may reuse verified same-target unchanged digests. Existence is not
+version identity. Save/check, exact-card pins and historical verification remain
+unchanged; no host permission or runtime change.
+ordinary read-only recall no longer instructs loading full candidate review just
+because historical markers exist. Current-task/touched-evidence relevance comes
+first; explicit requests, relevant recurrence and new card trial/revision evidence
+retain full review. Drafting/trial/human-decision rules, version 0.9.0, contract
+schema 0.2 and CLI/runtime are unchanged; contract sync text reflects the routing.
+No Hakimi runtime/permission change or behavioral speedup claim. Evidence and
+limits: AITP feedback/2026-09-09-distillation-loading-natural-use.md.
+
+Check-call deduplication (2026-09-09, reinstalled in Codex and Hakimi):
+using-aitp now discovers and verifies a Python 3.11+ path before CLI use,
+reuses current pre-write/closeout views only over a known-unchanged interval,
+and uses one global check plus scoped enter for multi-line read-only recovery.
+Evidence/ledger/policy changes, concurrent writers or uncertain freshness
+require refresh; every save still gets check/enter verification. Scoped check
+itself still scans globally under M1d; no new runtime/cache/schema/CLI or host
+permission behavior. The added fixture verifies zero-write multi-line reads and
+stale-report invalidation after evidence changes. This is Skill guidance, not
+a scheduling hook or a measured model speedup.
+Validation:193 ledger tests pass/44.74s, Skill validator and diff checks pass.
+Single local GW call-pattern comparison:3checks+3enters5.440s versus
+1globalcheck+3enters2.965s; equal enter views, no real-record writes. This is
+not a controlled timing study or a new model-conformance claim.
+Installation:2026-09-08 19:08UTC,65files match on both hosts. Hakimi enabled/ok,
+no diagnostics,227sessions idle before install. Codex cache version
+0.9.0+codex.20260908190759; use a new Codex thread for new Skill pickup.
+No system-Python replacement, Goal resumption or scientific-record write.
+
+Historical-version memory increment (2026-09-09, installed and cold-retested): AITP adds
+on-demand guidance separating record discovery, old-byte retrieval and scientific
+validation; nested Git locators are not root-repository validated pins. Existing
+enter description changes, not contract0.2/version0.9.0, CLI/schema/runtime or
+Hakimi permissions. AITP ledger192passed; Skill validation passed. Si gained an
+append-only recovery Entry and superseding working Note; old records preserved.
+Five-topic bounded acceptance completed: all30frozen questions passed; Si
+postorganization retest7/7 (six repeated plus exact-version recovery). Earlier
+provider522 attempts are unscored; no speedup/long-term guarantee. A single local plugin installation request timed
+out after all224sessions were verified idle; the subsequent file check still
+found the two intended bundle differences. Without resubmission,17:57UTC Sep8
+verification matched all65files and plugin enabled/ok with noerrors;224sessions
+remained idle. The serialized install/reload completed. See AITP docs/hakimi/README.md.
+
+Read/write efficiency slice (2026-09-09 Asia/Shanghai; locally installed):
+using-aitp entrypoint684->182lines; on-demand recording and CLI-contract
+references preserve detailed rules. Existing enter/check/note-save descriptions
+are synchronized, contract0.2/version0.9.0 unchanged. No runtime/schema/CLI/
+Skill-visibility change. Final ledger191passed; final plugin reload16:14:48UTC
+on Sep8 verified65files after all217sessions were idle. Independent reads can
+batch; dependent writes and complete check reports/exit status remain protected.
+Two fresh mode-off read tests reduced model requests12->8 and13->9, but Chain
+needed an assisted2-request correction separating standing direction from paused
+Goal execution; not an unassisted correctness or causal speedup claim.
+Isolated synthetic save/retry/working-Note/scoped-query acceptance passed with
+exactly1Entry/1Note, no duplicates or scope leakage. All974 real-store Markdown
+files unchanged. Approval wait remains a major host/supervision cost; no write-
+speedup claim. Detailed results: AITP docs/research-memory.zh-CN.md, efficiency
+acceptance section; private Hakimi .tmp/aitp-lean-read-write-20260909 reports.
+
+Authorized navigation application (2026-09-08): user confirmed the narrow
+ordinary-file exception; GW Topic navigation now separates four explicit
+directions with dated Note entrances. Original identity/Research Goal and all
+other 973 canonical Markdown files across the three stores remain unchanged;
+no records added. Whole-store check is byte-identical before/after (exit1,
+73 errors/201 warnings), and scoped enter preserves each line's own Note.
+This is not a new CLI command or human scientific/Goal-alignment decision.
+Mode-off public-file/CLI recovery and no-op maintenance were tested; automatic
+host Skill discovery remains unavailable. No runtime/schema/harness change,
+new-template positive save, full-recall or efficiency claim. Earlier pending
+permission/installation statements below are historical observations.
+
+Topic-map/writing follow-up (2026-09-08; locally installed/reloaded at 14:46 UTC,
+new real-session acceptance pending): on-demand guidance separates a stable Topic
+map from scoped current records and pinned long-form derivations. Existing
+theory-template/enter descriptions are synchronized; no runtime, CLI, schema,
+authority or Hakimi harness change. A scoped regression covers old Topic links
+and rejects prose-inferred membership. Topic-update and Note-show remain
+unavailable; real GW Topic editing awaits resolution of canonical-write authority.
+Earlier installation/test reports below describe earlier slices only.
+This slice: 190 ledger tests passed (36.38s), Skill validation and scoped diff
+checks passed. All 210 sessions were idle before installation; 63 installed
+files match source. A fresh mode-off navigation test failed automatic entry
+discovery: host Skill visibility requires active Research Mode, and bare aitp
+is absent from PATH. With installed file/CLI locations supplied, the same
+read-only session recovered distinct QSGW lines and evidence limits with one
+check and no writes. This assisted result does not prove automatic discovery;
+changing host Skill visibility is outside this docs-only Hakimi slice.
+A second fresh mode-off test recovered the recorded phase-bound derivation and
+its scientific limits. Given permission for justified synthesis, it chose no
+write because the existing Note covers the evidence. Both sessions ended idle;
+this does not exercise a new-template save. Real Topic update still needs the
+explicit canonical-edit exception; its private navigation proposal preserves
+the original identity and Research Goal. No completion or speedup claim.
+
+Companion cold-recall follow-up (2026-09-08; locally reinstalled/reloaded):
+AITP's memory reference and enter description clarify active-only failure
+closure and reuse of current reports/read evidence. A superseded resolver does
+not pass `resolves` to its successor. Session/save verification remains intact;
+no runtime/schema/harness change. Same-line/cross-line CLI regressions cover
+this interpretation. Real NiO/Bi2Se3/Si synthesis repairs are saved and post-save
+verified, preserving 971 old canonical files with no new findings. Independent
+five-direction mode-off first retests completed with mixed costs, and a fresh
+targeted resolver test recovered the active-only edge correctly. An initial Si
+omission prompted another synthesis repair; a second cold retest recovered the
+missing configuration, dataset and historical-status boundaries. No general
+speedup claim. All 189
+companion ledger tests pass; 63 installed files match source after public reload
+with 203 sessions verified idle. No Hakimi runtime/client rebuild or restart.
+The companion note-save guidance delegates formal validation to the public CLI,
+not a new draft parser; temporary save waits do not become research next actions.
+
+<a id="research-memory-guidance"></a>
+AITP research-memory read/write guidance (2026-09-08; locally installed/reloaded):
+the external `using-aitp/SKILL.md` links its bundled
+`references/research-memory.md` for scoped recovery, evidence coverage, and
+low-noise Entry/working/theory Note selection. AITP Note template prompts and
+the existing enter/note-save contract descriptions change; schema stays
+`aitp/adapter-contract-0.2`, version metadata 0.9.0. No AITP runtime/CLI/read
+transport, Method-card, human-decision, or Hakimi harness change. A consumer
+with pinned contract bytes must review the update through its normal plugin
+reload path. This delivery used the existing plugin install/reload API after
+verifying all 198 listed sessions were idle; 62 installed files matched the
+reviewed companion source, without rebuilding the CLI or restarting the server. Keep this
+guidance external, not another context provider, state machine or per-action
+check. Atomic Topic/exact-workstream compare-and-save still applies to Entries
+only, not Notes. The companion CLI regression scenarios are synthetic memory
+journeys, not autonomous model, live-session or scientific acceptance.
+All 187 companion AITP ledger tests pass on rerun. The original Si session used
+openai-relay/gpt-5.6-sol, read the new reference and same-line canonical evidence,
+updated its Question and saved one superseding Working Note. All 969 existing
+canonical files, the other four observed sessions' scientific fields, and all
+Goals/bindings/decisions/committed histories were preserved; no Entry was added.
+Acceptance is partial: Read of the Skill reference needed an unnecessary action,
+Question/snapshot revision confusion caused one failed call, and the new Note
+needs exact citations of state-bearing Entries, not just submission receipts.
+Four relay failures after save prevented the final response and queued citation
+correction. Both test-owned prompts were cancelled with no remaining live action,
+checkpoint or queue, and the original Goal stayed blocked. These findings do not
+establish autonomous conformance, scientific acceptance or an efficiency gain.
+This Hakimi source change remains documentation-only; no client/runtime suite,
+changeset or build was added. Full local evidence: `.tmp/research-memory-acceptance-20260908.md`;
+public boundary: companion AITP `docs/research-memory.zh-CN.md` §8.
+
+Isolation acceptance follow-up (2026-09-07; tests only): independent local
+journals retain identically labelled runs under their original action identities,
+reject foreign delayed observations and preserve isolation after cold replay.
+713 related tests, typecheck and import checks pass. In AITP, two interleaved
+fresh-process CLI cases verify pending drafts, similar workstream names,
+zero-write mismatch, scoped handoffs and exact retries; all 183 ledger tests pass.
+These complement the real Line-switch check; they do not establish simultaneous
+scheduling or full five-subject scientific acceptance. No production change,
+new changeset, reinstall or real scientific record was needed.
+
+<a id="scoped-note-retrieval"></a>
+Scoped Note retrieval (2026-09-07; locally installed, cold reads verified): a real
+read-only Si review chose the first Glob result, a NiO Note, and mistook it for
+the current Working Note. Canonical scoped enter correctly returned the Si Note;
+no AITP projection or ledger corruption was observed. Native maintenance records
+the Note timestamp but not its locator. Existing Research guidance now supplies
+the confirmed workstream for an on-demand `aitp_enter` with `recent: 1`, followed
+by `latest_working_note.source` and exact Read with workstream verification.
+This is conditional retrieval, not another health cycle, a write trigger, a new
+context provider or an ownership inference. Missing scoped Notes do not imply
+an empty Topic. Existing freshness checks suppress this route for unbound,
+degraded or mismatched maintenance. Two new brief/delta regressions first failed,
+then passed; 714 related tests, core typecheck and import checks pass. The
+supervised corrective prompt found the proper old Si Note and its missing
+failure-chain synthesis; this is not an installed or autonomous-behavior gate.
+Public REST/WS/SDK/klient/TUI/Web shapes and AITP CLI/schema/contract/Skills are
+unchanged. No scientific Note or Method-card trial is created by this fix.
+Delivery: CLI 0.21.0 entry/worker/provenance and 521 Web files match the tested
+build; reproducible Web rebuild and installed native PTY pass. After verifying
+196 idle sessions, only the owned service was restarted. Five-session cold reads
+preserve scientific fields, binding, Goal and history; three canonical Entry
+projections remain unchanged. The real Si context includes the new scoped
+guidance. Delivery is verified; independent autonomous Note selection is not.
+
+A separate, explicitly requested Si synthesis then completed
+`BeginResearchAction → note prepare/Read/Edit/save/Read → ConcludeResearchAction`.
+It saved a Working Note under the explicitly bound Si workstream, using
+existing pinned evidence and superseding its
+old agent-created Working Note. Native post-turn maintenance sees the new Note,
+no newer uncovered Entry, and a clean scoped check; both unresolved failures
+remain unresolved. There was no new experiment, Entry, Method card/trial, Goal
+resume or binding change. All pre-existing canonical Entry/Note bytes across
+the three workspaces are unchanged; among five sessions only Si Action/progress
+changed. This verifies supervised synthesis and scope preservation, not an
+automatic distillation trigger, whole-Topic health or scientific completion.
+
+A subsequent supervised source/algebra rebuttal saved one exact-scope result and
+updated the Si Question; all old canonical records and the other four sessions'
+scientific fields remain unchanged. It corrects a missing phase-error term and
+withdraws an unnecessary diagnostic-file interface. Independent synthetic checks
+pass but do not reproduce the actual Si failure. Native checkpoint pre/post checks
+were clean; the model still repeated enter/check before native turn-end maintenance.
+The next narrow fix makes a fresh successful CommitResearchCheckpoint response
+identify the existing show and scoped pre/post verification, not imply scientific
+validity or whole-Topic health. It asks the model to reuse that receipt instead
+of repeating enter/check solely because of the commit, preserving needed evidence
+reads, changed/stale scope, Note saves and required candidate checks. Failed and
+duplicate commits do not claim fresh verification. Seven extended regressions
+first failed then passed; native show/check call counts are unchanged, including
+zero repeated calls for an identical commit. 714 related tests and typecheck/import
+pass. No new hook/state, AITP Skill/rule, transport or canonical change; CLI patch
+recorded. Local CLI/worker/provenance and all 521 Web files match the build;
+reproducible Web and native PTY pass. Only the owned idle server was restarted.
+Five-session cold reads preserve science, scope, Goal and committed records;
+snapshot revisions alone advanced on refresh. Real model non-repetition remains
+unproven. One installed NiO status request completed in about 102 seconds with
+Begin → one shell query → Read → Conclude, no extra model enter/check or new
+canonical record. Only that session's Action/progress changed. This unchanged-job
+no-op does not exercise the new durable-commit response or prove scientific progress.
+
+<a id="focus-intent-disclosure"></a>
+Focus intent disclosure (2026-09-07; locally installed, read-only model replay passed): a real
+Si status returned the old source-allowlist Focus intent after the Question had
+advanced to pre-export diagnostics. Default GetResearchStatus now retains the
+selected Question and Focus revision but omits captured boundedAction, explicitly
+distinguishing it from effectiveNextStep. Full detail is unchanged. No semantic
+staleness inference, revision comparison, state repair, extra hook or AITP read.
+Four new regressions first reproduced the leak, then passed; 815 tests in three
+related files, core typecheck and import checks pass. Source projection on all
+five live session snapshots preserves current Question, next-step priority,
+binding, Goal and original snapshot.
+Public REST/WS/SDK/klient/TUI/Web snapshots and AITP CLI/schema/contract/Skills
+are unchanged; detailed UI focus provenance is not changed by this slice.
+Delivery: CLI 0.21.0 entry/worker/provenance and 521 Web files match the build;
+reproducible Web rebuild and installed native PTY pass. The complete listing
+contained 196 idle sessions; only the owned service was restarted. Five-session
+cold reads and a subsequent real Si status-only prompt preserve scientific
+fields, Focus, bindings, Goal states and committed history; three latest canonical
+Entries also remain unchanged. The original relay model called only default
+GetResearchStatus, received the 29,552-character summary without captured intent,
+and answered with the current pre-export AO diagnostic rather than the old task.
+No new Action, Question edit, remote tool, Goal resumption or AITP save occurred.
+This validates one explicitly requested read-only answer, not autonomous research,
+an isolated causal effect, speed superiority or the five-subject scientific gate.
+
+Saved checkpoint key verification (2026-09-07; locally installed; cold read verified): Hakimi
+compares canonical show.frontmatter.idempotency_key with the captured nonempty
+checkpoint key before advancing its committed cursor. A missing, malformed or
+changed key retains the pending record and receipt; no resave or replacement
+is attempted. Exact retries remain idempotent. The same existing show call is
+used by both verification paths, with no additional CLI call or AITP change.
+Sixteen new regressions cover canonical mismatch, corrupted local key and valid
+retry; 778 related Hakimi tests and six unchanged AITP contract tests pass.
+This is post-save defense, not atomic pre-save key enforcement. The motivating
+Si draft was corrected under supervision before saving; no wrong-key canonical
+save was observed there. AITP 0.9.0/contract-0.2 and all public transports remain
+unchanged. Five-subject and autonomous scientific acceptance remain incomplete.
+Delivery: CLI 0.21.0 entry/worker/provenance and all 521 Web files match the
+tested build; reproducible Web rebuild and installed PTY smoke pass. Only the
+owned idle server was restarted. All five real sessions retained their Lines,
+Questions, bindings, Goal status and commit histories; three latest canonical
+Entries read through AITP show were unchanged. No model prompt or ledger save
+was performed. This cold-read check is not an installed negative-key experiment
+or evidence that the underlying scientific goals are complete.
+
+Line-return focus (2026-09-07; locally installed and replayed): a settled
+Line switch restores its last open/active/blocked Question only when the archived
+period captured the same Topic observation. It uses the Question's current next
+step, not old action state. Unknown/changed scope, closed/deferred/cancelled
+Questions and a latest unfocused period stay unfocused. No AITP writes, binding
+confirmation or Goal resumption; public snapshot shapes are unchanged.
+10 new tests cover scoped focus, cold restore/undo, unknown/changed/returned Topic,
+terminal/deferred Questions and latest-unfocused history. The two related files
+pass 762 tests in one worker; typecheck/import pass. Context is captured inside
+the existing checkpointed period, not inferred from timestamps. Restoration uses
+an existing explicit set-focus op; old switch-op replay semantics are unchanged.
+The internal identity is stripped from public period projections. AITP is unchanged.
+A real NiO query at 03:58 CST completed without a new Entry/Note/card because the
+same job was still RUNNING and no final U evidence appeared; Goal stayed paused.
+Delivery: CLI/worker/provenance and 521 Web files match, reproducible Web build
+and native PTY pass. In the real Heisenberg session, A→B→A restored A's original
+Question without importing it into B. Canonical Entry/Note bytes, all Questions,
+Lines, committed cursor/history, explicit binding and paused Goal were unchanged;
+no model prompt, old Action or automatic scientific continuation was created.
+This validates one real serial switch, not parallel Loops or all five subjects.
+
+Model status disclosure (2026-09-07; locally installed and replayed):
+GetResearchStatus accepts optional summary/full detail, defaulting to summary.
+Only repeated check fingerprint arrays and historical receipts are compacted;
+scientific state, actual blockers, exact pending IDs/revisions/binding and draft
+paths remain intact. Full returns the old output byte-for-byte. A pure Agent-tool
+presenter owns this disclosure; there is no new state, service, hook or AITP read.
+REST/WS/SDK/klient/TUI/Web snapshots and AITP contracts are unchanged. Seven new
+regressions first failed, then passed; 18 targeted status/synthesis/handoff tests,
+core typecheck and import checks pass. A real snapshot at revision 1604 measured
+234,426 full versus 45,577 summary characters, below the 50,000 truncation threshold.
+That does not bound arbitrary scientific prose or prove improved model behavior.
+Delivery passed: CLI/worker/provenance and 521 Web files match, reproducible Web
+build and native PTY passed; six unchanged AITP adapter-contract tests passed.
+Only the owned idle server was restarted. The real model returned a complete
+45,577-character summary with all 37 check errors still disclosed, read the
+original observation and updated the current Question to include its evidence,
+assessment, remaining needed evidence and bounded next action. No new Action,
+Entry/Note, remote query, binding change or Goal resumption. This supervised
+follow-up explicitly requested synthesis; it does not prove automatic synthesis.
+Original NiO scientific acceptance remains incomplete: no new terminal/U evidence.
+
+Non-agent creator mapping (2026-09-07; locally installed and replayed):
+a real tool-authority NiO observation passed prepare/save but failed commit.
+The candidate and authority matched: AITP always writes created_by and defaults
+an omitted value to agent:unknown; Hakimi incorrectly expected absence for
+non-agent authority. The saved-record comparison now uses that exact default.
+Prepare intent is unchanged; missing/arbitrary saved creators, wrong authority
+and kind still fail closed with receipts retained. Four regressions were red;
+15 provenance/prepare tests and six AITP adapter-contract tests pass. No AITP
+CLI/schema/default or public transport change. The real Entry/pending receipt
+was accepted on an unchanged-record retry: checkpoint
+`8e4a88a3-559e-4571-9b4f-3c8cf29e1265`, Entry
+`entry-c1cfbff094b84b63a881342d32b532c4`, at 03:31 CST. The real recovery
+used only GetResearchStatus, aitp_show and CommitResearchCheckpoint; no new save,
+Action, remote query, Goal resumption or binding change. Canonical show and both
+evidence pins were independently checked. The calculation's terminal state and
+physical U remain unverified by this recovery.
+
+Observed pre-fix real-session gaps: GetResearchStatus produced 198,063 characters and
+was truncated. Full check receipts are repeated in latest/history projections.
+The Question became persistence=committed but retained its pre-observation
+assessment and empty evidenceRefs; model-side synthesis did not run despite the
+existing commit reminder. Do not count this as a fully updated research Board.
+The status disclosure and supervised synthesis follow-up above address these
+specific observations; they preserve complete receipts, blockers, public Research
+snapshots and AITP ownership. Unprompted model synthesis remains unproven.
+
+Post-record review ordering (2026-09-07; locally installed):
+two real sessions performed unrelated harvesting after a new record. The existing
+exact-plugin Skill handoff now asks for touched-evidence applicability first;
+ineligible evidence ends without extra enter/check, marker searches or a new Action.
+Actual harvesting still follows the external Skill's checks and scope. No trigger
+classifier, new injection, permission or AITP contract change. One regression was
+red before the fix; three handoff tests and core typecheck/import checks pass.
+CLI 0.21.0 entry/worker/provenance and 521 Web files match; the reproducible Web
+build and native PTY pass. Only the owned idle server was restarted. The real NiO
+recovery ended with an explicit no-op and no harvesting/extra checks after commit.
+That supervised prompt also requested no-op-first behavior, so it does not isolate
+the handoff's causal effect or prove general model conformance.
+Separately, the real paused-Goal theory
+audit has completed its Action, scoped result save/commit and Question update,
+without resuming the Goal. Its local algebra result is not full-project completion.
+
+Paused Goal reminder (2026-09-07; locally installed): a real bounded theory-audit
+request incorrectly resumed its paused Goal before doing checkpoint recovery.
+The existing reminder told the model to resume for any work on that objective.
+It now distinguishes ordinary bounded requests from explicitly resuming
+autonomous pursuit. The controlled prompt was cancelled and the Goal is paused;
+only the prepared draft changed, with no new canonical save or scientific result.
+The reminder regression failed before the fix; all 22 Goal-injection tests pass,
+including bounded work with an unchanged paused Goal and no continuation.
+No lifecycle, permission, transport or AITP contract changed. CLI 0.21.0 was
+rebuilt, packed and reinstalled; entry/worker/provenance and 521 Web files match.
+Canonical Web rebuild, native PTY, typecheck and import checks pass. Only the
+controlled idle server was restarted; a real bounded theory retry is active.
+The real retry kept its Goal paused through save/commit of the old unreviewed
+observation and a successful new bounded derivation Action. Independent theory
+validation is still running. Prompt wording is not hard semantic enforcement.
+
+Theory Physics 0.2.5 follow-up (2026-09-07; locally installed): a real diagnosis
+returned three roughly 50 KB historical searches before following its existing
+receipt, and guessed a dataset under the run directory. The existing routing
+reference now starts from recorded evidence locations and closes on a named
+missing observable when further history cannot distinguish causes. This is
+model guidance, not a gate, fixed tool budget or proven behavioral improvement.
+That 0.2.4 request ended before installation. All three owned loaded sessions
+were idle; the existing plugin API installed 0.2.5, and six managed files match
+source. AITP remains 0.9.0; no server restart or CLI rebuild. A subsequent Si
+correction fixed the missing source pin and inaccurate stderr-capture wording:
+54 excerpted source lines independently matched; one scoped observation was saved
+and committed, and the Question updated. Old records and the failed calculation
+were not rewritten or resolved. Distillation no-opped without harvesting. This
+supervised request still required correction of a placeholder ref and a changed
+draft idempotency key before saving, and took about15m20s; autonomous efficiency
+is not established. A separate NiO query at04:52 CST took about79s, reported
+RUNNING/no U, and made no ledger writes, scans, Question or binding changes.
+Both sessions retained separate workstream histories. Eighteen targeted isolation
+regressions passed in1.59s, including late refresh/save and cold-restore cases;
+these are software tests, not five-subject scientific acceptance.
+Skill validation and the existing plugin installation/discovery/reference test
+pass (one selected test, 33 unrelated skipped); six unchanged AITP contract tests
+pass. These verify packaging/compatibility, not model behavior. Reviewed with
+gen-changesets: this independently versioned plugin-only follow-up adds no CLI
+or SDK bundle change, so no additional npm changeset or full rebuild is needed.
+AITP Skills/runtime/CLI/contracts/fixtures and decision semantics are unchanged.
+
+Theory Physics 0.2.4 guidance (2026-09-07; previous local delivery): real receipt-only
+query attempts exposed ambiguous Run instructions, and a subsequent MPI log
+query returned about57KB dominated by repeated rank errors. The existing
+handbook now distinguishes querying from recording an observation and guides
+bounded causal-log/iteration inspection; the operator keeps raw logs but
+avoids duplicating them in the parent's context. Plugin manifest/marketplace
+versions agree, installation/discovery/reference/profile tests and Skill
+validation pass. A follow-up real review unnecessarily requested whole-Topic
+health and marker scans; guidance now assesses the touched Entry first, before
+candidate harvesting. The managed manifest, Skill, references and operator matched
+the installed 0.2.4 revision after installation through the existing plugin API. The controlled
+process was restarted only after its request ended; no behavioral benefit is
+yet proven. AITP Skill/runtime/CLI/contract/fixtures and all scientific
+authority boundaries remain unchanged. The fresh theory retry still performed
+unnecessary post-commit discovery before scientific work: installed handbook
+guidance alone has not solved this. The existing exact Skill handoff needs a
+focused follow-up, not new candidate semantics. Five-subject acceptance is open.
+
+Missing-Run guidance (2026-09-07; locally installed): the real
+Si retry twice supplied an old Action ID as a retained Run, but neither currentRun
+nor the closed Action contained a Run. Rejection now explains that an ordinary
+bounded query should omit observed_run_action_id and use saved job evidence.
+It creates no Run and changes no admission, scope, permission, error code or
+public schema. The production-executor persistence test now covers both legacy
+receipt-only and structured-Run submissions: one red case became green, and five
+focused cases plus core typecheck/import checks pass. The exact owned prompt was
+cancelled after the repeated error; its committed Entry remains, and the owned
+idle server shut down normally. No remote job was queried, changed or cancelled.
+The CLI was rebuilt from apps/kimi-code, packed and reinstalled as0.21.0 without
+global configuration changes. Installed entry/worker/provenance and521 Web files
+match the build; native PTY passes. The same real session's next bounded query is
+separate acceptance, not proved by the error-message regression.
+
+Pending-record prompt follow-up (2026-09-07; locally installed):
+real-model acceptance selected the correct evidence tool but copied an older
+Research revision. The injected instruction requested the current value without
+providing it. Pending-record attention now includes exact checkpoint/revision
+arguments and directs a status refresh after state changes, without a new hook,
+tool, schema, permission or revision-only reinjection. Two focused tests failed
+before the fix; service/ops/presenter now pass 777 tests with one worker. The
+controlled failed prompt was cancelled and its test server shut down normally;
+no remote job or canonical record changed in that attempt. Real persistence
+and scientific acceptance remain open. This follow-up was then built, packed
+and installed as 0.21.0; entry/worker/provenance and 521 Web files match, the
+canonical Web rebuild and native PTY pass. Presenter tests were rerun: 33 passed.
+A new controlled process completed original-scope persistence in the real Si
+session: `entry-d20fae138e384d289709d4ecbfff14ac` was saved and committed under
+`qsgw-headwing`, independently read through AITP `show`, and the pending checkpoint
+cleared. Native pre/post scoped checks are clean; Goal alignment remains unchanged.
+The Entry records historical submission only, not numerical success. The bounded
+current-job query and five-subject scientific acceptance remain open. Two upstream
+provider failures recovered through existing retries; no second prompt was queued.
+Old processes are not hot-reloaded.
+
+Confirmed-conclusion phase recovery (2026-09-07; locally installed):
+a real submission remained local after its ownership decision returned to
+`gap_analysis` and the original Line's first workstream binding was confirmed.
+The shared adoption check now accepts `idle`, `gap_analysis` and `evaluating`
+as well as `state_updated`, only for the same concluded Action and fresh original
+context. It preserves the human resolution and selected phase. It does not
+grant work permissions, resolve alignment, duplicate progress or write AITP.
+Three focused regressions failed before the fix; service/ops now pass 744 tests
+with one worker, including normal prepare/save/commit and cold restore. Core
+typecheck and import checks pass. Fixture persistence is not real scientific
+acceptance. REST/WS/SDK/klient/TUI/Web schemas and AITP 0.9.0/contract-0.2 are
+unchanged. Counterpart edits are additive handoff notes only; earlier dirty
+changes are preserved. No commit, push or restart of another live process.
+
+Delivery: built and packed as CLI 0.21.0 with the patch changeset unconsumed.
+Installed entry/worker/provenance and all 521 Web files match the build;
+`build:web-assets -- --check` and native PTY pass. Installation skipped lifecycle
+scripts to avoid legacy-command migration; only this package's node-pty install
+script was run afterwards, with no unrelated global rebuild. A controlled new
+loopback server cold-restored the real retained-submission session: the original
+pending checkpoint was proposed, with the same Action, Line, Question and binding;
+`gap_analysis` and unresolved Goal alignment were preserved. No model request or
+canonical write was part of that cold-restore check. A subsequent bounded real
+model turn is a separate acceptance step, not established by this receipt.
+The unchanged AITP ledger suite passes 181 tests. Older source-only delivery
+labels below describe their historical slices, not this current installation.
+
 Local installation receipt (2026-09-06): the working tree, including the
 multi-session overview and earlier retained-conclusion/checkpoint-evidence/Run
 observation follow-ups below, was rebuilt, packed and installed as 0.21.0 under

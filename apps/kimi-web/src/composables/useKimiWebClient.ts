@@ -17,6 +17,8 @@ import { mergeWorkspaces } from '../lib/mergeWorkspaces';
 import { workspaceRootKey } from '../lib/rootKey';
 import { mergeSnapshotMessages } from '../lib/snapshotMessages';
 import { mergeSnapshotSubagents } from '../lib/taskMerge';
+import { buildResearchAgentTree } from '../lib/researchAgentTree';
+import type { AgentRelationship } from '../api/types';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
 import {
   loadUnread,
@@ -287,6 +289,7 @@ interface QueuedPrompt {
 }
 
 export interface ExtendedState extends KimiClientState {
+  agentRelationshipsBySession: Record<string, AgentRelationship[]>;
   connected: boolean;
   /** The initial deep-link session for `?remote=1`, or null in the full local UI. */
   remoteSessionId: string | null;
@@ -397,6 +400,7 @@ export interface ExtendedState extends KimiClientState {
 }
 
 const rawState: ExtendedState = reactive({
+  agentRelationshipsBySession: {},
   ...createInitialState(),
   connected: false,
   remoteSessionId: null,
@@ -619,6 +623,7 @@ function forgetSession(sessionId: string): void {
   delete rawState.approvalsBySession[sessionId];
   delete rawState.questionsBySession[sessionId];
   delete rawState.tasksBySession[sessionId];
+  delete rawState.agentRelationshipsBySession[sessionId];
   delete rawState.goalBySession[sessionId];
   delete rawState.goalVersionBySession[sessionId];
   delete rawState.researchBySession[sessionId];
@@ -1536,6 +1541,7 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
     // (their member rows otherwise only exist from non-replayed WS events).
     // loadTasksForSession's keepLiveSubagents preserves these across REST
     // reloads; the roster stays authoritative until then.
+    rawState.agentRelationshipsBySession[sessionId] = snap.agentRelationships ?? [];
     rawState.tasksBySession = {
       ...rawState.tasksBySession,
       [sessionId]: mergeSnapshotSubagents(
@@ -2014,6 +2020,9 @@ export function toUiTask(task: AppTask): TaskItem {
     thinkingEffort: task.thinkingEffort,
     runInBackground: task.runInBackground,
     parentToolCallId: task.parentToolCallId,
+    taskScope: task.taskScope,
+    agentId: task.agentId,
+    parentAgentId: task.parentAgentId,
   };
 }
 
@@ -2132,6 +2141,9 @@ const tasks = computed<TaskItem[]>(() => {
 });
 
 const swarms = computed<SwarmGroup[]>(() => buildSwarmGroups(activeAppTasks.value));
+const researchAgents = computed(() => buildResearchAgentTree(
+  rawState.agentRelationshipsBySession[rawState.activeSessionId ?? ''] ?? [], activeAppTasks.value,
+));
 // Foreground/background subagents keyed by their spawning tool call id — used by
 // the inline AgentSwarm tool card to stream each subagent's live progress.
 const swarmMembersByToolCallId = computed<Map<string, SwarmMember[]>>(() =>
@@ -2924,6 +2936,7 @@ export function useKimiWebClient() {
 
     turns,
     tasks,
+    researchAgents,
     /** Live `AppTask[]` for the active session — the subagent detail panel
      *  sources a subagent's streaming `outputLines` from here. */
     activeAppTasks,

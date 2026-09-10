@@ -7,7 +7,9 @@
  * loop to orienting at turn start, notes the admitted turn boundary on the
  * research period (one `loopCount` increment per interactive or autonomous
  * Research turn), and refreshes the read-only AITP current-state
- * projection after admitted turns that changed research state. Typed main-agent
+ * projection after admitted turns when the scoped receipt is absent or expired.
+ * Local UI revisions do not invalidate memory; actual save attempts do. The
+ * short receipt lifetime bounds reuse, not external-file consistency. Typed main-agent
  * user turns carry an interactive lease; entry during a live user turn performs
  * the same local boundary once when admission becomes available, before the next
  * ordinary context-injection step. Post-guard Goal continuations carry an
@@ -22,7 +24,7 @@ import { createDecorator } from '#/_base/di/instantiation';
 import { IEventBus } from '#/app/event/eventBus';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import type { TurnEndedEvent, TurnStartedEvent } from '#/agent/loop/turnEvents';
-import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
+import { ISessionAitpLifecycleCoordinator, isMaintenanceReceiptRecent } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
@@ -44,8 +46,6 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
   declare readonly _serviceBrand: undefined;
 
   private lastTurnId: number | null = null;
-  private turnStartRevision: number | null = null;
-  private turnStartActionId: string | null = null;
   private boundaryNoted = false;
 
   constructor(
@@ -77,8 +77,6 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
     if (this.lastTurnId === event.turnId) return;
     this.lastTurnId = event.turnId;
     this.boundaryNoted = false;
-    this.turnStartRevision = null;
-    this.turnStartActionId = null;
     this.noteAdmittedBoundary();
   }
 
@@ -87,16 +85,12 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
     this.boundaryNoted = true;
     this.research.noteLoopBoundary();
 
-    const snapshot = this.research.getSnapshot();
-    this.turnStartRevision = snapshot.revision;
-    this.turnStartActionId = snapshot.currentAction?.actionId ?? null;
-
-    if (snapshot.phase !== 'idle') return;
-
-    try {
-      this.research.setPhase('orienting', 'turn.started auto-advance');
-    } catch {
-      return;
+    if (this.research.getSnapshot().phase === 'idle') {
+      try {
+        this.research.setPhase('orienting', 'turn.started auto-advance');
+      } catch {
+        return;
+      }
     }
   }
 
@@ -104,15 +98,18 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
     if (this.lastTurnId !== event.turnId) return;
     this.lastTurnId = null;
     if (!this.mode.isActive || this.mode.loopStatus !== 'active') return;
-    if (this.maintenance === undefined || this.turnStartRevision === null) return;
+    if (this.maintenance === undefined || !this.boundaryNoted) return;
 
     const snapshot = this.research.getSnapshot();
-    const researchChanged = snapshot.revision !== this.turnStartRevision ||
-      (snapshot.currentAction?.actionId ?? null) !== this.turnStartActionId;
-    this.turnStartRevision = null;
-    this.turnStartActionId = null;
-    if (!researchChanged) return;
     if (snapshot.currentLineSlug === undefined) return;
+    const receipt = this.maintenance.snapshot();
+    const binding = snapshot.currentWorkstreamBinding?.binding;
+    if (
+      receipt !== undefined && isMaintenanceReceiptRecent(receipt) &&
+      snapshot.currentWorkstreamBinding?.status === 'bound' &&
+      binding !== undefined && snapshot.program !== undefined &&
+      isMaintenanceReceiptAligned({ receipt, binding, program: snapshot.program })
+    ) return;
     void this.refreshTurnEndMaintenance(snapshot.currentLineSlug);
   }
 

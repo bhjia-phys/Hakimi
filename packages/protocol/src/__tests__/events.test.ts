@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   GOAL_MUTATION_MAX_AT,
   agentEventSchema,
+  agentTaskInfoSchema,
   assistantDeltaEventSchema,
   eventSchema,
   goalMutationSchema,
@@ -23,6 +24,15 @@ const _assertEvent: _AssertEventNonNever = true;
 
 type _AssertToolInputDisplayNonNever = ToolInputDisplay extends never ? never : true;
 const _assertDisplay: _AssertToolInputDisplayNonNever = true;
+
+it('preserves optional task ownership through the event schema', () => {
+  const task = { taskId: 'agent-1', kind: 'agent', description: 'Inspect',
+    status: 'running', startedAt: 1, endedAt: null, taskScope: 'direction-a' };
+  expect(agentTaskInfoSchema.parse(task).taskScope).toBe('direction-a');
+  expect(agentTaskInfoSchema.parse({ ...task, parentAgentId: 'coordinator-a' }).parentAgentId).toBe('coordinator-a');
+  expect(agentTaskInfoSchema.safeParse({ ...task, parentAgentId: 42 }).success).toBe(false);
+  expect(agentTaskInfoSchema.safeParse({ ...task, taskScope: 42 }).success).toBe(false);
+});
 
 const packageRoot = fileURLToPath(new URL('../..', import.meta.url));
 const sdkPackageName = ['@moonshot-ai', 'kimi-code-sdk'].join('/');

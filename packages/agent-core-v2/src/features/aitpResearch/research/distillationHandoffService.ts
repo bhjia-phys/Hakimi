@@ -3,8 +3,9 @@
  *
  * Resolves the exact AITP plugin Skill through `sessionSkillCatalog`, applies
  * the existing model-invocation gates through `skillVisibility`, records the
- * activation through `agentSkill`, and returns one same-turn steer for only
- * the touched Entry. It also records one monotonic, non-checkpointed receipt
+ * activation through `agentSkill` only when a name collision requires exact
+ * loading. Normally returns a compact same-turn routing reminder, leaving full
+ * Skill activation to a relevant candidate. It records a non-checkpointed receipt
  * for the latest committed cursor so public Research snapshots can distinguish
  * a requested review from an unavailable handoff. The receipt is observational
  * only: it owns no scheduler, retry, trigger, Method-card, or decision state.
@@ -15,6 +16,7 @@ import { Service } from '#/_base/di/service';
 import { IAgentSkillService } from '#/agent/skill/skill';
 import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
 import { executeResolvedModelSkill } from '#/agent/tools/skill/skillTool';
+import { isInlineSkillType } from '#/app/skillCatalog/types';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { ISessionSkillCatalog } from '#/session/sessionSkillCatalog/skillCatalog';
 import { IWireService } from '#/wire/wire';
@@ -59,6 +61,38 @@ export class AitpDistillationHandoffService
         return this.finish(input, {
           status: 'unavailable',
           reason: 'The external AITP distilling-methods Skill is unavailable.',
+        });
+      }
+      if (
+        !this.visibility.isSkillVisible(skill)
+        || skill.metadata.disableModelInvocation === true
+        || !isInlineSkillType(skill.metadata.type)
+      ) {
+        return this.finish(input, {
+          status: 'unavailable',
+          reason: 'The external AITP distilling-methods Skill is not model-invocable.',
+        });
+      }
+      // A plain Skill call resolves by name. Defer loading only when that name
+      // still refers to the exact plugin definition, not a workspace shadow.
+      if (this.skillCatalog.catalog.getSkill(skill.name) === skill) {
+        return this.finish(input, {
+          status: 'scheduled',
+          delivery: {
+            kind: 'steer',
+            message: {
+              role: 'user',
+              content: [{ type: 'text', text: [
+                `AITP saved Entry ${input.entryId} (checkpoint ${input.checkpointId}).`,
+                'Consider only the already-read touched evidence for a reusable method or an existing card trial.',
+                `Available Skill: ${skill.name}. ${skill.description}`,
+                'If relevant or uncertain, invoke that Skill before candidate review or card work; its full rules remain authoritative.',
+                'Otherwise this reminder is a no-op: no extra enter/check, marker search, new Research action, or ledger write.',
+                'This is a routing reminder, not a Skill activation, approved card, or publication permission.',
+              ].join(' ') }],
+              toolCalls: [],
+            },
+          },
         });
       }
       const result = await executeResolvedModelSkill(
@@ -121,5 +155,8 @@ function renderBoundedReviewArgs(input: DistillationHandoffInput): string {
     `from Hakimi checkpoint ${input.checkpointId}.`,
     'Treat this as one bounded best-effort review of touched evidence.',
     'Apply the Skill triggers and provenance rules exactly; no eligible trigger is a no-op.',
+    'Assess the already-read touched Entry before harvesting candidates.',
+    'If it supplies no eligible candidate or trial evidence under the Skill, finish this review without extra enter/check calls, marker searches, or a new Research action.',
+    'If candidate harvesting is warranted, follow the external Skill including its required checks and scope; this handoff does not replace those rules.',
   ].join(' ');
 }

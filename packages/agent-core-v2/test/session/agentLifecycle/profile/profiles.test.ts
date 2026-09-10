@@ -22,6 +22,10 @@ function profile(name: string) {
 }
 
 describe('builtin agent profiles', () => {
+  it.each(['coder', 'explore'])('does not force %s to expand a short handoff', (name) => {
+    expect(profile(name).summaryPolicy).toBeUndefined();
+  });
+
   it('wires capability tools into the default profile', () => {
     const agent = profile('agent');
     expect(agent.tools).toEqual(expect.arrayContaining([

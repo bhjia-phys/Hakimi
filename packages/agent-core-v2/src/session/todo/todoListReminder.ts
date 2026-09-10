@@ -7,6 +7,7 @@
  */
 
 import type { ContextMessage } from '#/agent/contextMemory/types';
+import { wrapSystemReminder } from '#/agent/systemReminder/systemReminder';
 
 import { TODO_LIST_TOOL_NAME, type TodoItem } from './todoItem';
 
@@ -28,6 +29,7 @@ interface TodoListReminderTurnCounts {
 
 export function todoListStaleReminder(input: TodoListReminderInput): string | undefined {
   if (!input.active) return undefined;
+  if (!input.todos.some((todo) => todo.status !== 'done')) return undefined;
 
   const counts = getTodoListReminderTurnCounts(input.history);
   if (
@@ -37,7 +39,12 @@ export function todoListStaleReminder(input: TodoListReminderInput): string | un
     return undefined;
   }
 
-  return renderTodoListReminder(input.todos);
+  const reminder = renderTodoListReminder(input.todos);
+  const previous = input.history.findLast(isTodoListReminder);
+  if (previous?.content.some((part) => part.type === 'text' && part.text === wrapSystemReminder(reminder))) {
+    return undefined;
+  }
+  return reminder;
 }
 
 function getTodoListReminderTurnCounts(

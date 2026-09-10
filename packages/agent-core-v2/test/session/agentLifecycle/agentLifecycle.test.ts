@@ -550,7 +550,7 @@ describe('AgentLifecycleService', () => {
     const child = await svc.create({
       agentId: 'child',
       forkedFrom: 'main',
-      labels: { swarmItem: 'swarm-item-1' },
+      labels: { swarmItem: 'swarm-item-1', taskScope: 'direction-a' },
     });
 
     expect(child.id).toBe('child');
@@ -559,7 +559,7 @@ describe('AgentLifecycleService', () => {
       type: 'sub',
       parentAgentId: 'main',
       forkedFrom: 'main',
-      labels: { swarmItem: 'swarm-item-1' },
+      labels: { swarmItem: 'swarm-item-1', taskScope: 'direction-a' },
     });
   });
 

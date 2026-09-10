@@ -9,10 +9,27 @@
 import { describe, expect, it } from 'vitest';
 
 import { agentResearchContract } from '../src/contract/agent/research.js';
+import { agentTaskInfoSchema } from '../src/contract/agent/schemas.js';
 import { pluginManifestSchema } from '../src/contract/global/plugins.js';
 import { createSessionOptionsSchema } from '../src/contract/session/lifecycle.js';
 
 type McpTimeoutField = 'startupTimeoutMs' | 'toolTimeoutMs';
+
+describe('agent task ownership wire contract', () => {
+  const task = { kind: 'agent', taskId: 'task-a', agentId: 'agent-a',
+    description: 'Review one result', status: 'completed', startedAt: 1, endedAt: 2 };
+  it('retains parent and scope across a JSON wire roundtrip', () => {
+    const owned = { ...task, parentAgentId: 'coordinator', taskScope: 'research-line:algebra' };
+    expect(agentTaskInfoSchema.parse(JSON.parse(JSON.stringify(owned)))).toEqual(owned);
+  });
+  it('does not invent ownership for legacy tasks', () => {
+    expect(agentTaskInfoSchema.parse(task)).toEqual(task);
+  });
+  it('rejects malformed ownership instead of silently dropping it', () => {
+    expect(agentTaskInfoSchema.safeParse({ ...task, parentAgentId: 1 }).success).toBe(false);
+    expect(agentTaskInfoSchema.safeParse({ ...task, taskScope: [] }).success).toBe(false);
+  });
+});
 
 const timeoutCases = [
   {

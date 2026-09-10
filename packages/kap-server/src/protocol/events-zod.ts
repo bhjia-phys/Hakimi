@@ -491,6 +491,8 @@ export const processTaskInfoSchema = taskInfoBaseSchema.extend({
 export const agentTaskInfoSchema = taskInfoBaseSchema.extend({
   kind: z.literal('agent'),
   agentId: z.string().optional(),
+  taskScope: z.string().optional(),
+  parentAgentId: z.string().optional(),
   subagentType: z.string().optional(),
   model: z.string().optional(),
   thinkingEffort: z.string().optional(),

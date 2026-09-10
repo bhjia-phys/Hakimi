@@ -10,11 +10,17 @@ import type { AgentMeta } from '#/session/sessionMetadata/sessionMetadata';
 
 export function subagentLabels(
   parentAgentId: string,
-  options: { readonly swarmItem?: string } = {},
+  options: { readonly swarmItem?: string; readonly taskScope?: string; readonly goalDependencies?: readonly string[] } = {},
 ): Readonly<Record<string, string>> {
   const labels: Record<string, string> = { parentAgentId };
+  if (options.goalDependencies !== undefined) {
+    labels['goalDependencies'] = JSON.stringify(options.goalDependencies);
+  }
   if (options.swarmItem !== undefined) {
     labels['swarmItem'] = options.swarmItem;
+  }
+  if (options.taskScope !== undefined) {
+    labels['taskScope'] = options.taskScope;
   }
   return labels;
 }
@@ -43,6 +49,23 @@ export function isSubagentMeta(meta: AgentMeta | undefined): boolean {
 export function subagentParentAgentId(meta: AgentMeta | undefined): string | undefined {
   if (meta === undefined) return undefined;
   return firstNonEmpty(meta.labels?.['parentAgentId'], meta.parentAgentId ?? undefined);
+}
+
+export function subagentTaskScope(meta: AgentMeta | undefined): string | undefined {
+  return firstNonEmpty(meta?.labels?.['taskScope']);
+}
+
+export function subagentGoalDependencies(meta: AgentMeta | undefined): readonly string[] | undefined {
+  const raw = meta?.labels?.['goalDependencies'];
+  if (raw === undefined) return undefined;
+  try {
+    const value: unknown = JSON.parse(raw);
+    return Array.isArray(value) && value.length <= 32 &&
+      value.every(id => typeof id === 'string' && id.trim().length > 0 && id.length <= 200)
+      ? [...value] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function subagentSwarmItem(meta: AgentMeta | undefined): string | undefined {

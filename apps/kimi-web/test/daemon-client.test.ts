@@ -67,6 +67,8 @@ describe('task mapper', () => {
         created_at: '2026-01-01T00:00:00.000Z',
         agent_id: 'agent-1',
         subagent_type: 'reviewer',
+        task_scope: 'direction-a',
+        parent_agent_id: 'coordinator-a',
         model: 'runtime-model',
         thinking_effort: 'high',
         run_in_background: true,
@@ -75,6 +77,8 @@ describe('task mapper', () => {
       id: 'task-1',
       agentId: 'agent-1',
       subagentType: 'reviewer',
+      taskScope: 'direction-a',
+      parentAgentId: 'coordinator-a',
       model: 'runtime-model',
       thinkingEffort: 'high',
       runInBackground: true,
@@ -91,6 +95,7 @@ describe('task mapper', () => {
       created_at: '2026-01-01T00:00:00.000Z',
     });
     expect(task.runInBackground).toBeUndefined();
+    expect(task.taskScope).toBeUndefined();
   });
 });
 
@@ -679,6 +684,29 @@ describe('DaemonKimiWebApi.getSessionGoal', () => {
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
       'http://daemon.test/api/v1/sessions/sess_42/goal',
     );
+  });
+});
+
+describe('DaemonKimiWebApi snapshot agent relationships', () => {
+  beforeEach(() => vi.stubGlobal('fetch', vi.fn()));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([true, false])('maps persisted relationships without inventing legacy ownership: %s', async (present) => {
+    vi.mocked(fetch).mockResolvedValue(envelope({
+      as_of_seq: 1, epoch: 'epoch-test',
+      session: { id: 'sess_1', metadata: {}, agent_config: {}, usage: {} },
+      messages: { items: [], has_more: false }, in_flight_turn: null,
+      pending_approvals: [], pending_questions: [], subagents: [],
+      agent_relationships: present ? [
+        { agent_id: 'child-a', parent_agent_id: 'coordinator-a', task_scope: 'direction-a' },
+        { agent_id: 'legacy' },
+      ] : undefined,
+    }));
+    const result = await createApi().getSessionSnapshot('sess_1');
+    expect(result.agentRelationships).toEqual(present ? [
+      { agentId: 'child-a', parentAgentId: 'coordinator-a', taskScope: 'direction-a' },
+      { agentId: 'legacy', parentAgentId: undefined, taskScope: undefined },
+    ] : undefined);
   });
 });
 

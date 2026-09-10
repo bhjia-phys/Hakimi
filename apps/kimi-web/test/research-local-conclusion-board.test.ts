@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ResearchStatusSnapshot } from '../src/api/types';
-import { buildResearchBoardCompactSlots } from '../src/lib/researchBoardPresentation';
+import { buildResearchBoardCompactSlots, selectResearchLineOverview } from '../src/lib/researchBoardPresentation';
 import { localConclusion } from './fixtures/local-conclusion';
 
 function snapshot(): ResearchStatusSnapshot {
@@ -69,9 +69,37 @@ describe('scientific purpose while a job runs', () => {
       current: { source: 'action', text: state.currentAction!.purpose },
     });
   });
+
+  it('does not borrow a foreign action progress report or its next step', () => {
+    const state = runningSnapshot();
+    state.currentAction!.lineSlug = 'another-line';
+    state.latestProgress = { ...localConclusion.progress,
+      headline: 'FOREIGN_RESULT', nextAction: 'FOREIGN_NEXT' };
+    const before = structuredClone(state);
+    const slots = buildResearchBoardCompactSlots(state);
+    expect(JSON.stringify(slots.find((slot) => slot.kind === 'cycle'))).not.toContain('FOREIGN_RESULT');
+    expect(JSON.stringify(slots.find((slot) => slot.kind === 'next')) ?? '').not.toContain('FOREIGN_NEXT');
+    expect(state).toEqual(before);
+  });
 });
 
 describe('retained local conclusion Board', () => {
+  it('browses another Line without moving execution or exposing another Line question', () => {
+    const state = snapshot();
+    state.currentLineSlug = 'gw';
+    state.lines = ['gw', 'crpa'].map((slug) => ({ slug, title: slug, status: 'active', createdAt: 1, revision: 1 }));
+    state.questions = ['gw', 'crpa'].map((lineSlug) => ({
+      id: lineSlug, lineSlug, wording: lineSlug, priority: 1, neededEvidence: [],
+      evidenceRefs: [], falsifierRefs: [], workflow: 'active', epistemic: 'candidate',
+      persistence: 'working', revision: 1,
+    }));
+    const before = structuredClone(state);
+    const view = selectResearchLineOverview(state, 'crpa');
+    expect(view?.executionLineSlug).toBe('gw');
+    expect(view?.questions.map((question) => question.id)).toEqual(['crpa']);
+    expect(selectResearchLineOverview(state, 'missing')).toBeUndefined();
+    expect(state).toEqual(before);
+  });
   it('uses the projected Question next step without inventing a Focus', () => {
     const state: ResearchStatusSnapshot = {
       ...snapshot(), localConclusion: undefined, currentAction: undefined, latestProgress: undefined,
@@ -96,11 +124,11 @@ describe('retained local conclusion Board', () => {
     expect(state).toEqual(before);
   });
 
-  it('shows the result, terminal action, ownership next step and no false AITP commit', () => {
+  it('keeps unsaved ownership in attention without replacing the scientific next step', () => {
     const slots = buildResearchBoardCompactSlots(snapshot());
     expect(slots).toHaveLength(4);
     expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
-      stage: 'confirm_ownership', mode: 'ready', loopStatus: 'active',
+      stage: 'next_ready', mode: 'ready', loopStatus: 'active',
       planningPolicy: 'collaborative', actionStatus: 'completed',
       current: { source: 'local_conclusion', text: localConclusion.progress.headline },
     });
@@ -109,11 +137,22 @@ describe('retained local conclusion Board', () => {
       text: expect.stringContaining('not recorded in AITP'),
     });
     expect(slots.find((slot) => slot.kind === 'next')).toMatchObject({
-      source: 'aitp_maintenance', freshness: 'blocked',
-      text: expect.stringContaining('Research Manager'),
-      derivedFrom: { actionId: 'primitive-audit' },
+      source: 'progress', text: localConclusion.progress.nextAction,
     });
-    expect(JSON.stringify(slots)).not.toContain('Validate a narrowly scoped correction');
+    expect(JSON.stringify(slots)).not.toContain('In Research Manager');
+  });
+
+  it('does not replace a projected scientific step with local conclusion adoption', () => {
+    const state = snapshot();
+    state.effectiveNextStep = {
+      text: 'Inspect the existing result before selecting the next experiment.',
+      source: 'question', freshness: 'current', observedAt: 9, derivedFrom: {},
+    };
+    const before = structuredClone(state);
+    const slots = buildResearchBoardCompactSlots(state);
+    expect(slots.find((slot) => slot.kind === 'next')).toMatchObject(state.effectiveNextStep);
+    expect(slots.find((slot) => slot.kind === 'attention')).toMatchObject({ source: 'local_conclusion' });
+    expect(state).toEqual(before);
   });
 
   it('does not present a foreign Line result as the current science', () => {
@@ -125,9 +164,28 @@ describe('retained local conclusion Board', () => {
     expect(slots.find((slot) => slot.kind === 'cycle')).not.toMatchObject({
       current: { text: localConclusion.progress.headline },
     });
-    expect(slots.find((slot) => slot.kind === 'next')).toMatchObject({
-      freshness: 'blocked', derivedFrom: { lineSlug: 'original' },
-    });
+    expect(slots.find((slot) => slot.kind === 'next')).toBeUndefined();
+    expect(slots.find((slot) => slot.kind === 'attention')?.source).not.toBe('local_conclusion');
+  });
+
+  it.each(['unscoped', 'conflicting-question'])('does not guess local conclusion ownership with multiple Lines (%s)', (kind) => {
+    const state = snapshot();
+    state.currentLineSlug = 'gw';
+    state.lines = ['gw', 'crpa'].map((slug) => ({ slug, title: slug, status: 'active', createdAt: 1, revision: 1 }));
+    state.questions = [{ id: 'crpa-q', lineSlug: 'crpa', wording: 'Other problem', priority: 1,
+      neededEvidence: [], evidenceRefs: [], falsifierRefs: [], workflow: 'active',
+      epistemic: 'candidate', persistence: 'working', revision: 1 }];
+    state.localConclusion = { ...localConclusion, action: { ...localConclusion.action,
+      lineSlug: kind === 'unscoped' ? undefined : 'gw',
+      questionId: kind === 'unscoped' ? undefined : 'crpa-q',
+    } };
+    state.currentAction = state.localConclusion.action;
+    const before = structuredClone(state);
+    const slots = buildResearchBoardCompactSlots(state);
+    expect(slots.find((slot) => slot.kind === 'cycle')?.current?.source).not.toBe('local_conclusion');
+    expect(slots.find((slot) => slot.kind === 'attention')?.source).not.toBe('local_conclusion');
+    expect(JSON.stringify(slots)).not.toContain(localConclusion.progress.headline);
+    expect(state).toEqual(before);
   });
 
   it('keeps an unresolved human decision ahead of ownership adoption', () => {

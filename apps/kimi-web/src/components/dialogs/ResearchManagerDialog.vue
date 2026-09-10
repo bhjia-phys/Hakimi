@@ -30,7 +30,7 @@ import {
   type ResearchManagerDraftTarget,
 } from '../../lib/researchManagerCommand';
 import { researchLineWorkstreamBindingCommand } from '../../lib/researchCommand';
-import { presentResearchWorkstreamBinding } from '../../lib/researchBoardPresentation';
+import { presentResearchDecisionDependency, presentResearchWorkstreamBinding } from '../../lib/researchBoardPresentation';
 import Badge from '../ui/Badge.vue';
 import Banner from '../ui/Banner.vue';
 import Button from '../ui/Button.vue';
@@ -50,6 +50,7 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { required: true });
 const emit = defineEmits<{ command: [request: ResearchManagerCommandRequest] }>();
 const { locale, t } = useI18n();
+const decisionDependency = computed(() => presentResearchDecisionDependency(props.snapshot?.humanGate));
 
 type Section = 'line' | 'question' | 'plan' | 'science' | 'checkpoint';
 type EditorMode = 'create' | 'edit';
@@ -1488,6 +1489,9 @@ function acknowledgeAlert(fingerprint: string): void {
                 {{ snapshot.humanGate.prompt }}
               </Banner>
               <div v-else class="manager-empty">{{ t('research.manager.noHumanGate') }}</div>
+              <p v-if="decisionDependency?.status === 'pending'" class="manager-empty">
+                {{ t('research.decisionDependency.' + decisionDependency.scope, { goals: decisionDependency.goalIds.join(' · ') }) }}
+              </p>
               <Field :label="t('research.manager.resolution')" control-id="research-manager-decision-resolution">
                 <Textarea
                   id="research-manager-decision-resolution"

@@ -77,9 +77,9 @@ let disposables: DisposableStore;
 let wire: IWireService;
 let eventBus: IEventBus;
 
-function buildHost(key: string): IWireService {
+function buildHost(key: string, storage = new InMemoryStorageService()): IWireService {
   const ix = disposables.add(new TestInstantiationService());
-  ix.stub(IFileSystemStorageService, new InMemoryStorageService());
+  ix.stub(IFileSystemStorageService, storage);
   ix.set(IAppendLogStore, new SyncDescriptor(AppendLogStore));
   ix.set(IEventBus, new SyncDescriptor(EventBusService));
   eventBus = ix.get(IEventBus);
@@ -968,6 +968,41 @@ describe('aitpResearch ops (wire-backed)', () => {
   });
 
   describe('ResearchModel scientific state ops', () => {
+    it('characterizes stale independent writers diverging from cold replay without losing committed evidence', async () => {
+      const storage = new InMemoryStorageService();
+      const first = buildHost('shared-writer-reproduction', storage);
+      await first.restore();
+      const stale = buildHost('shared-writer-reproduction', storage);
+      await stale.restore();
+      const begin = (actionId: string, createdAt: number) => researchBeginAction({
+        actionId, kind: 'derivation', purpose: 'Check a bounded limiting case.',
+        expectedEvidence: ['A checked limit'], stopCondition: 'Report the result.',
+        allowedToolKinds: [], requiresHumanApproval: false, createdAt,
+      });
+      first.dispatch(begin('first-action', 100));
+      await first.flush();
+      stale.dispatch(begin('stale-writer-action', 200));
+      stale.dispatch(researchCompleteAction({
+        actionId: 'stale-writer-action', status: 'completed', completedAt: 300,
+      }));
+      stale.dispatch(researchCommitCheckpoint({
+        checkpointId: 'saved-checkpoint', entryId: 'saved-entry', committedAt: 400,
+      }));
+      await stale.flush();
+      expect(stale.getModel(ResearchModel).current.currentAction).toMatchObject({
+        actionId: 'stale-writer-action', status: 'completed',
+      });
+
+      const restored = buildHost('shared-writer-reproduction', storage);
+      await restored.restore();
+      expect(restored.getModel(ResearchModel).current.currentAction).toMatchObject({
+        actionId: 'first-action', status: 'in_progress',
+      });
+      expect(restored.getModel(ResearchCursorModel).cursor).toMatchObject({
+        checkpointId: 'saved-checkpoint', entryId: 'saved-entry',
+      });
+    });
+
     it('setPhase transitions idle→orienting and records state change', () => {
       wire.dispatch(researchSetPhase({ phase: 'orienting', reason: 'start', changedAt: 100 }));
       const state = wire.getModel(ResearchModel).current;
@@ -1352,7 +1387,7 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current).toBe(before);
     });
 
-    it('clears scientific foreground state when switching lines', () => {
+    it('preserves a live action and run when switching lines', () => {
       wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
       wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
       wire.dispatch(researchPlanAction({
@@ -1367,8 +1402,9 @@ describe('aitpResearch ops (wire-backed)', () => {
       wire.dispatch(researchSwitchLine({ lineSlug: 'main', expectedRevision: 0 }));
 
       expect(wire.getModel(ResearchModel).current).toMatchObject({
-        phase: 'idle', currentAction: null, currentRun: null, latestProgress: null,
-        recentStateChange: null, humanGate: null, focus: null,
+        phase: 'action_executing', currentAction: { actionId: 'a1', status: 'in_progress' },
+        currentRun: { actionId: 'a1', jobId: 'j', schedulerState: 'running' },
+        latestProgress: null, humanGate: null, focus: null,
       });
     });
 
@@ -1674,6 +1710,25 @@ describe('aitpResearch ops (wire-backed)', () => {
   });
 
   describe('ResearchModel program and period layers', () => {
+    it('captures period identity from observed Program, never from a later same-named Topic', () => {
+      wire.dispatch(researchStartPeriod({ id: 'legacy', lineSlug: 'main', startedAt: 1 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'A', goalText: 'Goal A', goalSource: 'TOPIC.md', establishedAt: 2,
+      }));
+      expect(wire.getModel(ResearchModel).current.period?.programIdentity).toBeUndefined();
+      wire.dispatch(researchStartPeriod({ id: 'known', lineSlug: 'alt', startedAt: 3 }));
+      expect(wire.getModel(ResearchModel).current.period?.programIdentity).toEqual({ topicId: 'topic-a', observedRevision: 1 });
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-b', title: 'B', goalText: 'Goal B', goalSource: 'TOPIC.md', establishedAt: 4,
+      }));
+      wire.dispatch(researchStartPeriod({ id: 'other-topic', lineSlug: 'main', startedAt: 5 }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.periodHistory.map((period) => period.programIdentity)).toEqual([
+        undefined, { topicId: 'topic-a', observedRevision: 1 },
+      ]);
+      expect(state.period?.programIdentity).toEqual({ topicId: 'topic-b', observedRevision: 2 });
+    });
+
     it('starts with no program, no period, and an empty period history', () => {
       const state = wire.getModel(ResearchModel).current;
       expect(state.program).toBeNull();

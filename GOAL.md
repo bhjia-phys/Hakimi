@@ -75,7 +75,7 @@ goal 注入只在 turn / continuation 边界做，不在每个 model step 都做
 
 paused 和 blocked goal 的注入更轻：
 
-- paused：提醒模型目标存在但当前不应自治推进，除非用户明确要求继续。
+- paused：提醒模型目标存在但当前不应自治推进。用户可在保持暂停时要求一次有界问答、检查或恢复；只有明确要求恢复目标的自主推进才 resume。
 - blocked：提醒模型目标被阻塞且当前不自治推进，除非用户要求处理或恢复。
 
 ### Continuation prompt
@@ -207,7 +207,7 @@ resume 会清除旧停止原因，表示开始新的尝试。paused/blocked goal
 
 ### 暂停、阻塞和取消后的提示
 
-paused goal 的上下文提示应说明目标存在但当前不应继续做，除非用户明确要求继续。
+paused goal 的上下文提示应区分一次有界用户请求与恢复自主推进。前者即使与原目标相关，也保持 goal 暂停；只有用户明确要求恢复自主推进才调用 `UpdateGoal active`。用户明确要求不改 Goal 时必须保留状态。这是模型指引，不是对自然语言授权的 runtime 分类或新权限。
 
 blocked goal 的上下文提示应说明目标被阻塞且当前不自治推进，可以在用户要求时帮助解阻，否则正常处理当前请求。
 

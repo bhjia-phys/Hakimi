@@ -45,10 +45,17 @@ const MAIN_AGENT_ID = 'main';
 
 export class SubagentRosterTracker {
   private readonly bySession = new Map<string, Map<string, SnapshotSubagent>>();
+  private readonly runs = new Map<string, string>();
+  private readonly seen = new Set<string>();
+  private readonly reused = new Set<string>();
 
   apply(sessionId: string, event: Event): void {
+    const key = 'subagentId' in event ? JSON.stringify([sessionId, event.subagentId]) : '';
     switch (event.type) {
       case 'subagent.spawned': {
+        if (this.seen.has(key)) this.reused.add(key);
+        this.seen.add(key);
+        this.runs.delete(key);
         // Background subagents persist in the main agent's background-task
         // store and come back through REST `/tasks` after a refresh (keyed by
         // task id) — tracking them here too would duplicate the row (keyed by
@@ -62,6 +69,7 @@ export class SubagentRosterTracker {
         }
         roster.set(event.subagentId, {
           id: event.subagentId,
+          agent_id: event.subagentId,
           session_id: sessionId,
           kind: 'subagent',
           description: event.description ?? event.subagentName ?? 'Sub Agent',
@@ -69,6 +77,7 @@ export class SubagentRosterTracker {
           subagent_phase: 'queued',
           subagent_type: event.subagentName,
           parent_tool_call_id: event.parentToolCallId === '' ? undefined : event.parentToolCallId,
+          parent_agent_id: event.parentAgentId ?? event.callerAgentId,
           swarm_index: event.swarmIndex,
           run_in_background: event.runInBackground,
           model: event.model,
@@ -80,6 +89,8 @@ export class SubagentRosterTracker {
       case 'subagent.started': {
         const entry = this.bySession.get(sessionId)?.get(event.subagentId);
         if (!entry) return;
+        if (event.runId !== undefined) this.runs.set(key, event.runId);
+        entry.run_id = event.runId;
         entry.subagent_phase = 'working';
         entry.suspended_reason = undefined;
         // Keep an existing started_at: a resumed (previously suspended)
@@ -97,6 +108,7 @@ export class SubagentRosterTracker {
       case 'subagent.completed': {
         const entry = this.bySession.get(sessionId)?.get(event.subagentId);
         if (!entry) return;
+        if (!this.matchesRun(key, event.runId)) return;
         entry.subagent_phase = 'completed';
         entry.status = 'completed';
         entry.completed_at = new Date().toISOString();
@@ -106,6 +118,7 @@ export class SubagentRosterTracker {
       case 'subagent.failed': {
         const entry = this.bySession.get(sessionId)?.get(event.subagentId);
         if (!entry) return;
+        if (!this.matchesRun(key, event.runId)) return;
         entry.subagent_phase = 'failed';
         entry.status = 'failed';
         entry.completed_at = new Date().toISOString();
@@ -120,6 +133,14 @@ export class SubagentRosterTracker {
         // background spawn emits the same event, but those were never tracked
         // here, so the delete is a no-op for them.
         const info = event.info;
+        if (info.kind === 'agent' && info.agentId !== undefined && info.parentAgentId !== undefined) {
+          const entry = this.bySession.get(sessionId)?.get(info.agentId);
+          if (entry !== undefined) entry.parent_agent_id = info.parentAgentId;
+        }
+        if (info.kind === 'agent' && info.agentId !== undefined && info.taskScope !== undefined) {
+          const entry = this.bySession.get(sessionId)?.get(info.agentId);
+          if (entry !== undefined) entry.task_scope = info.taskScope;
+        }
         if (info.kind === 'agent' && info.detached === true && info.agentId !== undefined) {
           this.bySession.get(sessionId)?.delete(info.agentId);
         }
@@ -164,6 +185,12 @@ export class SubagentRosterTracker {
   }
 
   /** Fresh copies — callers must not mutate the tracked entries. */
+  private matchesRun(key: string, runId: string | undefined): boolean {
+    const current = this.runs.get(key);
+    return current !== undefined || runId !== undefined
+      ? current === runId : !this.reused.has(key);
+  }
+
   get(sessionId: string): SnapshotSubagent[] {
     const roster = this.bySession.get(sessionId);
     if (!roster) return [];

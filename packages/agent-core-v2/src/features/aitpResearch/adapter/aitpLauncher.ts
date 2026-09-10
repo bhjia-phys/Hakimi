@@ -321,8 +321,15 @@ export class AitpLauncher {
     return this.runValidated(args, [0], parseNotePrepareResult, options?.signal);
   }
 
-  async noteSave(draftPath: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpNoteSaveResult>> {
-    return this.runValidated(['note', 'save', draftPath, '--json'], [0], parseNoteSaveResult, options?.signal);
+  async noteSave(draftPath: string, options?: {
+    readonly signal?: AbortSignal;
+    readonly expectedTopic?: string;
+    readonly exactWorkstream?: string;
+  }): Promise<AitpLaunchResult<AitpNoteSaveResult>> {
+    const args = ['note', 'save', draftPath, '--json'];
+    if (options?.expectedTopic !== undefined) args.push('--expected-topic', options.expectedTopic);
+    if (options?.exactWorkstream !== undefined) args.push('--exact-workstream', options.exactWorkstream);
+    return this.runValidated(args, [0], parseNoteSaveResult, options?.signal);
   }
 
   private async runValidated<T>(

@@ -75,11 +75,13 @@ export interface SubagentSpawnedEvent {
 export interface SubagentStartedEvent {
   readonly type: 'subagent.started';
   readonly subagentId: string;
+  readonly runId?: string;
 }
 
 export interface SubagentCompletedEvent {
   readonly type: 'subagent.completed';
   readonly subagentId: string;
+  readonly runId?: string;
   readonly resultSummary: string;
   readonly usage?: TokenUsage;
   readonly contextTokens?: number;
@@ -88,6 +90,7 @@ export interface SubagentCompletedEvent {
 export interface SubagentFailedEvent {
   readonly type: 'subagent.failed';
   readonly subagentId: string;
+  readonly runId?: string;
   readonly error: string;
 }
 
@@ -193,7 +196,7 @@ export async function mirrorAgentRun(
       errorCode: outcome.errorCode,
     });
   };
-  eventBus?.publish({ type: 'subagent.started', subagentId: run.agentId });
+  eventBus?.publish({ type: 'subagent.started', subagentId: run.agentId, runId });
   const started: AgentRunStartedEvent = {
     runId,
     childAgentId: run.agentId,
@@ -235,6 +238,7 @@ export async function mirrorAgentRun(
     eventBus?.publish({
       type: 'subagent.completed',
       subagentId: run.agentId,
+      runId,
       resultSummary: result.summary,
       usage: result.usage,
       contextTokens,
@@ -249,6 +253,7 @@ export async function mirrorAgentRun(
       eventBus?.publish({
         type: 'subagent.failed',
         subagentId: run.agentId,
+        runId,
         error: errorMessage(error),
       });
     }

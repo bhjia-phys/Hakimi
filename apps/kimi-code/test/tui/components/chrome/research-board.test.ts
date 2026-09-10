@@ -115,11 +115,42 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('action completed');
     expect(output).toContain('ready · collaborative · continuation held');
     expect(output).toContain('retained locally, not recorded in AITP');
-    expect(output).toContain('/research adopt-conclusion primitive-audit <lineSlug>');
-    expect(output).not.toContain('Validate the corrected primitive');
+    expect(output).not.toContain('/research adopt-conclusion primitive-audit <lineSlug>');
+    expect(output).toContain('Validate the corrected primitive');
     expect(output).not.toContain('action in progress');
     expect(output.match(/Attention:/gu)).toHaveLength(1);
   });
+  it.each(['other-line', undefined])('does not attribute foreign or unscoped legacy progress to the selected Line (%s)', (lineSlug) => {
+    const action: NonNullable<ResearchStatusSnapshot['currentAction']> = {
+      actionId: 'foreign-result', lineSlug, kind: 'experiment', status: 'completed',
+      purpose: 'Foreign purpose', expectedEvidence: [], stopCondition: 'Done',
+      allowedToolKinds: [], requiresHumanApproval: false, createdAt: 1, completedAt: 2,
+    };
+    const progress: NonNullable<ResearchStatusSnapshot['latestProgress']> = {
+      headline: 'Foreign headline', motivation: 'Foreign motivation', workPerformed: 'Foreign work',
+      result: 'Foreign result', mainlineImpact: 'Foreign impact', uncertainties: ['Foreign uncertainty'],
+      nextAction: 'Foreign next action', recordedAt: 2,
+    };
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      lines: ['test-line', 'other-line'].map((slug) => ({ slug, title: slug, status: 'active', createdAt: 1, revision: 1 })),
+      currentAction: action, latestProgress: progress,
+      localConclusion: { action, progress, candidate: {
+        sourceActionId: action.actionId, progressRecordedAt: 2, entryKind: 'result',
+        authority: 'agent', provenance: 'agent_verification', rationale: 'Foreign result',
+      } },
+    }));
+    for (const expanded of [false, true]) {
+      board.setExpanded(expanded);
+      const output = stripAnsi(board.render(180).join('\n'));
+      expect(output).toContain('Next: Run experiment A');
+      expect(output).not.toContain('Foreign headline');
+      expect(output).not.toContain('Foreign uncertainty');
+      expect(output).not.toContain('Foreign next action');
+      expect(output).not.toContain('Record ownership needs confirmation');
+    }
+  });
+
   it('is empty when no snapshot', () => {
     const board = new ResearchBoardComponent();
     expect(board.isEmpty()).toBe(true);
@@ -1086,11 +1117,12 @@ describe('ResearchBoardComponent', () => {
     expect(output).not.toContain('Plan not established');
     expect(output).not.toContain('6 Research turns');
     expect(output).toContain('Current cycle: frame / hypothesis · The newer reciprocal-space cause is localized');
-    expect(output).toContain('Action/phase recovery required');
+    expect(output).toContain('Recorded action state');
     expect(output).toContain('+2 more');
     expect(output).toContain('The newer reciprocal-space cause is localized');
     expect(output).not.toContain('Commit an obsolete file set.');
-    expect(output).toContain('Next: Recover action action-stale: it is in_progress while the Research phase is gap_analysis; conclude or abandon it before starting another action.');
+    expect(output).toContain('Next: Run experiment A');
+    expect(output).not.toContain('conclude or abandon it before');
 
     board.setExpanded(true);
     const expanded = board.render(180).map(stripAnsi).join('\n');
@@ -1384,6 +1416,9 @@ describe('ResearchBoardComponent', () => {
     board.setSnapshot(
       makeSnapshot({
         phase: 'state_updated',
+        currentLineSlug: 'line-0',
+        currentQuestion: undefined,
+        currentFocus: undefined,
         latestProgress: {
           headline: 'Result confirmed',
           motivation: 'Verify prediction',
@@ -1396,6 +1431,7 @@ describe('ResearchBoardComponent', () => {
         },
         currentAction: {
           actionId: 'a1',
+          lineSlug: 'line-0',
           kind: 'simulation',
           purpose: 'Final check',
           expectedEvidence: ['e1', 'e2'],
@@ -2036,7 +2072,7 @@ describe('ResearchBoardComponent', () => {
     expect(compact).not.toContain('Other Line next');
   });
 
-  it('renders a normalized recovered action as evidence-resolution work', () => {
+  it('keeps recovered action maintenance separate from the scientific next step', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(makeSnapshot({
       lines: [{ slug: 'test-line', title: 'Current Line', status: 'active', createdAt: 1, revision: 1 }],
@@ -2063,9 +2099,10 @@ describe('ResearchBoardComponent', () => {
     }));
 
     const output = board.render(180).map(stripAnsi).join('\n');
-    expect(output).toContain('action recovery required');
-    expect(output).toContain('Action/phase recovery required');
-    expect(output).toContain('Resolve recovered action action-recovered from its recorded evidence.');
+    expect(output).toContain('legacy action state');
+    expect(output).toContain('Recorded action state');
+    expect(output).not.toContain('Resolve recovered action action-recovered from its recorded evidence.');
+    expect(output).toContain('Next: Run experiment A');
   });
 
   it('renders both planning layers and their exact action bindings', () => {

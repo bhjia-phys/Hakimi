@@ -89,15 +89,45 @@ describe('GoalInjection content', () => {
     expect(await readGoalReminder(async () => undefined)).toBeUndefined();
   });
 
-  it('tells the model not to work on a paused goal unless the user asks', async () => {
+  it('keeps task instructions once, emits compact usage, and restores the full reminder after compaction', async () => {
+    await goals.createGoal({ objective: 'Test a candidate symmetry', completionCriterion: 'Report a checked residual' });
+    await goals.setBudgetLimits({ budgetLimits: { turnBudget: 4 } }, 'model');
+    await injectDynamic(injector, true);
+    const initialLength = context.get().length;
+    await injectDynamic(injector, true);
+    expect(context.get()).toHaveLength(initialLength);
+    await goals.incrementTurn();
+    await goals.incrementTurn();
+    await goals.incrementTurn();
+    await injectDynamic(injector, true);
+    expect(lastGoalReminder(context)).toContain('Goal usage update: 3 continuation turns');
+    expect(lastGoalReminder(context)).toContain('nearing a budget');
+    expect(lastGoalReminder(context)).not.toContain('<untrusted_objective>');
+    expect(JSON.stringify(context.get()).match(/<untrusted_objective>/g)).toHaveLength(1);
+    context.applyCompaction({ summary: 'The candidate remains unresolved.',
+      compactedCount: context.get().length, tokensBefore: 3000, tokensAfter: 20,
+      keptUserMessageCount: 0, keptHeadUserMessageCount: 0 });
+    await injectDynamic(injector, false);
+    expect(lastGoalReminder(context)).toContain('<untrusted_objective>\nTest a candidate symmetry');
+    expect(lastGoalReminder(context)).toContain('Report a checked residual');
+    expect(lastGoalReminder(context)).toContain('turns 3/4');
+    await goals.pauseGoal({ reason: 'Researcher paused' });
+    await injectDynamic(injector, false);
+    expect(lastGoalReminder(context)).toContain('currently paused (Researcher paused)');
+  });
+
+  it('distinguishes a bounded user request from resuming autonomous goal pursuit', async () => {
     const text = (await readGoalReminder(async (goals) => {
       await goals.createGoal({ objective: 'work' });
       await goals.pauseGoal();
     }))!;
     expect(text).toContain('currently paused');
     expect(text).toContain('<untrusted_objective>\nwork\n</untrusted_objective>');
-    expect(text).toContain('Do not work on it unless the user explicitly asks');
+    expect(text).toContain('bounded user request');
+    expect(text).toContain('keep the goal paused');
+    expect(text).toContain('explicitly asks to resume autonomous goal pursuit');
     expect(text).toContain('UpdateGoal with `active`');
+    expect(text).not.toContain('If the user does ask you to work on it, call UpdateGoal');
   });
 
   it('includes the reason for a paused goal when one exists', async () => {
@@ -314,6 +344,26 @@ describe('GoalInjection integration', () => {
       await expect(flushedGoalReminderRecords(ctx, persistence)).resolves.toHaveLength(1);
     });
 
+    it('allows a bounded lookup while preserving the paused goal and not continuing automatically', async () => {
+      await registerLookupTool(ctx, profile);
+      const goal = await goals.createGoal({ objective: 'Investigate the lookup result' });
+      await goals.pauseGoal({ reason: 'Paused after agent resume' });
+      const before = goals.getGoal().goal;
+
+      ctx.mockNextResponse(lookupCall());
+      await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Check one value; keep the Goal paused.' }] });
+      await ctx.untilApproval(true);
+      const toolCallEvents = ctx.untilToolCall({ content: 'one observed value', output: 'one observed value' });
+      ctx.mockNextResponse({ type: 'text', text: 'One value checked. The broader goal is still paused.' });
+      await toolCallEvents;
+      await ctx.untilTurnEnd();
+
+      expect(ctx.llmCalls).toHaveLength(2);
+      expect(goals.getGoal().goal).toEqual(before);
+      expect(goals.getGoal().goal).toMatchObject({ goalId: goal.goalId, status: 'paused' });
+      expect(await flushedGoalReminderRecords(ctx, persistence)).toHaveLength(1);
+    });
+
     it('injects one goal reminder per turn boundary, not per step', async () => {
       await registerLookupTool(ctx, profile);
       profile.update({ activeToolNames: ['Lookup', 'UpdateGoal'] });
@@ -345,6 +395,9 @@ describe('GoalInjection integration', () => {
       });
 
       expect(await flushedGoalReminderRecords(ctx, persistence)).toHaveLength(2);
+      const lastRequest = JSON.stringify(ctx.llmCalls.at(-1));
+      expect(lastRequest.match(/<untrusted_objective>/g)).toHaveLength(1);
+      expect(lastRequest).toContain('Goal usage update:');
     });
 
     it('requests a final model response when a continuation completes the goal', async () => {

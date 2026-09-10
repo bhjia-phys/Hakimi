@@ -114,6 +114,7 @@ import { readLegacyStatus, toLegacyPhase } from '../../../services/legacyStatus/
 import type { TranscriptService } from '../../../services/transcript/transcriptService';
 import { InFlightTurnTracker } from './inFlightTurnTracker';
 import { SubagentRosterTracker } from './subagentRosterTracker';
+import { SubagentHistory } from './subagentHistory';
 import {
   type EventEnvelope,
   type JournalLogger,
@@ -180,6 +181,7 @@ interface SessionState {
   readonly journal: SessionEventJournal;
   readonly tracker: InFlightTurnTracker;
   readonly roster: SubagentRosterTracker;
+  readonly subagentHistory?: SubagentHistory;
   /**
    * The session's work aggregate is owned by the core's `ISessionActivityView`
    * — this is only the latest `turn_ended`-caused state, buffered so the
@@ -733,7 +735,9 @@ export class SessionEventBroadcaster {
       seq: state.journal.seq,
       epoch: state.journal.epoch,
       inFlightTurn: state.tracker.get(sessionId),
-      subagents: state.roster.get(sessionId),
+      subagents: [...new Map([
+        ...(state.subagentHistory?.get() ?? []), ...state.roster.get(sessionId),
+      ].map(row => [row.agent_id ?? row.id, row])).values()],
     };
   }
 
@@ -793,9 +797,11 @@ export class SessionEventBroadcaster {
     const session = getLiveSessionById(this.opts.core.accessor, sessionId);
     if (session === undefined) return undefined;
 
+    const subagentHistory = new SubagentHistory(sessionId);
     const journal = await SessionEventJournal.open(
       sessionJournalPath(this.opts.eventsDir, sessionId),
       this.opts.logger,
+      envelope => subagentHistory.apply(envelope),
     );
     if (this.closed) {
       await journal.close();
@@ -804,6 +810,7 @@ export class SessionEventBroadcaster {
     const state: SessionState = {
       sessionId,
       journal,
+      subagentHistory,
       tracker: new InFlightTurnTracker(),
       roster: new SubagentRosterTracker(),
       tail: [],
@@ -1372,6 +1379,7 @@ export class SessionEventBroadcaster {
       const seq = journal.nextSeq();
       envelope = this.buildEnvelope(seq, sessionId, event, { epoch: journal.epoch });
       journal.append(seq, envelope);
+      state.subagentHistory?.apply(envelope);
       tail.push({ seq, envelope });
       while (tail.length > this.maxBufferSize) tail.shift();
     }

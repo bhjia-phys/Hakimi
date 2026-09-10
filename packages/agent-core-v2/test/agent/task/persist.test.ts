@@ -94,6 +94,24 @@ describe('AgentTaskPersistence', () => {
     expect(await persistence.readTask('bash-missing0')).toBeUndefined();
   });
 
+  it('preserves independent agent ownership through cold reads and late completion', async () => {
+    const a: AgentTaskInfo = {
+      taskId: 'agent-11111111', kind: 'agent', agentId: 'child-a',
+      description: 'Same display title', taskScope: 'direction-a',
+      status: 'running', startedAt: 1, endedAt: null,
+    };
+    const b: AgentTaskInfo = {
+      ...a, taskId: 'agent-22222222', agentId: 'child-b', taskScope: 'direction-b',
+    };
+    await persistence.writeTask(a);
+    await persistence.writeTask(b);
+    await persistence.writeTask({ ...b, status: 'completed', endedAt: 2 });
+    await persistence.writeTask({ ...a, status: 'completed', endedAt: 3 });
+    const restored = new AgentTaskPersistence(sessionDir, SESSION_SCOPE, docs, bytes);
+    expect(await restored.readTask(a.taskId)).toMatchObject({ taskScope: 'direction-a', endedAt: 3 });
+    expect(await restored.readTask(b.taskId)).toMatchObject({ taskScope: 'direction-b', endedAt: 2 });
+  });
+
   it('overwrites on subsequent write', async () => {
     await persistence.writeTask(sample({ status: 'running' }));
     await persistence.writeTask(

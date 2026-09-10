@@ -617,6 +617,7 @@ export const researchStateChangeSchema = z.object({
 export type ResearchStateChange = z.infer<typeof researchStateChangeSchema>;
 
 export const researchHumanGateSchema = z.object({
+  dependentGoalIds: z.array(z.string().min(1).max(200)).min(1).max(32).optional(),
   gateId: z.string(),
   kind: researchHumanGateKindSchema,
   actionId: z.string().optional(),

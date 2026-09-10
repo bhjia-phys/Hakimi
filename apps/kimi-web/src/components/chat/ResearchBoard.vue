@@ -16,8 +16,10 @@ import {
   isResearchCheckpointHistorical,
   presentResearchAlertClassification,
   presentResearchAitpAdapterCapabilities,
+  presentResearchDecisionDependency,
   presentResearchWorkstreamBinding,
   selectResearchBoardExpandedRecord,
+  selectResearchLineOverview,
   type ResearchBoardAttentionSlot,
   type ResearchBoardCycleSlot,
   type ResearchBoardNextSlot,
@@ -28,9 +30,12 @@ import Banner from '../ui/Banner.vue';
 import Button from '../ui/Button.vue';
 import Card from '../ui/Card.vue';
 import Icon from '../ui/Icon.vue';
+import Select from '../ui/Select.vue';
+import type { ResearchAgentRow } from '../../lib/researchAgentTree';
 
 const props = defineProps<{
   snapshot: ResearchStatusSnapshot;
+  agents?: ResearchAgentRow[];
   forceExpanded?: number;
 }>();
 const emit = defineEmits<{
@@ -39,7 +44,25 @@ const emit = defineEmits<{
   clearAlignment: [];
 }>();
 const { locale, t } = useI18n();
+const decisionDependency = computed(() => presentResearchDecisionDependency(
+  props.snapshot.humanGate,
+  (props.snapshot.researchGoal ?? props.snapshot.goalSummary)?.goalId,
+));
+const decisionDependencyText = computed(() => {
+  const dependency = decisionDependency.value;
+  if (!dependency) return '';
+  return t(`research.decisionDependency.${dependency.status === 'resolved' ? 'resolved' : dependency.scope}`, {
+    goals: dependency.goalIds.join(' · '),
+  });
+});
 const expanded = ref(false);
+const browseLineSlug = ref('');
+const visibleAgents = computed(() => (props.agents ?? []).filter((agent) =>
+  !browseLineSlug.value || agent.taskScope === `research-line:${browseLineSlug.value}`));
+const browseOverview = computed(() => selectResearchLineOverview(props.snapshot, browseLineSlug.value));
+watch(() => props.snapshot.lines, () => {
+  if (browseLineSlug.value && !browseOverview.value) browseLineSlug.value = '';
+});
 const instanceId = useId();
 const detailsId = instanceId + '-research-details';
 const detailsHeadingId = instanceId + '-research-details-heading';
@@ -79,6 +102,7 @@ const pendingCheckpointQuestion = computed(() => {
 watch(
   () => props.forceExpanded,
   () => {
+    browseLineSlug.value = '';
     expanded.value = true;
   },
 );
@@ -397,7 +421,7 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
             size="sm"
             :aria-expanded="expanded"
             :aria-controls="detailsId"
-            @click="expanded = !expanded"
+            @click="browseLineSlug = ''; expanded = !expanded"
           >
             <Icon :name="expanded ? 'chevron-up' : 'chevron-down'" size="sm" />
             {{ expanded ? t('research.collapse') : t('research.expand') }}
@@ -407,7 +431,45 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
       </div>
     </template>
 
-    <div v-show="!expanded" class="research-compact" :aria-label="t('research.compactSummary')">
+    <div v-if="snapshot.lines.length > 1" class="research-compact-row">
+      <span class="research-slot-label">{{ t('research.browseLine') }}</span>
+      <Select v-model="browseLineSlug" size="sm" :aria-label="t('research.browseLine')">
+        <option value="">{{ t('research.executionOverview') }}</option>
+        <option v-for="line in snapshot.lines" :key="line.slug" :value="line.slug">{{ line.title }}</option>
+      </Select>
+    </div>
+    <details v-if="visibleAgents.length" class="research-agent-tree">
+      <summary>{{ t('research.agentTree', { count: visibleAgents.length }) }}</summary>
+      <ul>
+        <li v-for="agent in visibleAgents" :key="agent.agentId"
+          :style="{ paddingInlineStart: `calc(var(--space-4) * ${Math.min(agent.depth, 6)})` }">
+          <div class="research-agent-heading">
+            <span>{{ agent.description }}</span>
+            <Badge :variant="agent.status === 'running' ? 'info' : agent.status === 'failed' ? 'warning' : 'neutral'">
+              {{ t('research.agentState.' + agent.status) }}
+            </Badge>
+          </div>
+          <div class="research-agent-identity"><template v-if="agent.description !== agent.agentId">{{ agent.agentId }} · </template>{{ agent.taskScope ?? t('research.agentUnscoped') }}</div>
+          <div v-if="agent.uncertain" class="research-agent-identity">{{ t('research.agentRelationshipUnknown') }}</div>
+        </li>
+      </ul>
+    </details>
+    <section v-if="browseOverview" class="research-compact" :aria-label="t('research.browseLine')">
+      <Banner variant="info">{{ t('research.browseOnly', { line: browseOverview.executionLineSlug ?? '—' }) }}</Banner>
+      <div class="research-compact-row">
+        <span class="research-slot-label">{{ browseOverview.line.title }}</span>
+        <span class="research-slot-value">{{ browseOverview.line.assessment || browseOverview.line.objective || '—' }}</span>
+      </div>
+      <div v-for="question in browseOverview.questions" :key="question.id" class="research-compact-row">
+        <span class="research-slot-label">{{ question.wording }}</span>
+        <span class="research-slot-value">{{ question.assessment || question.nextBoundedAction || '—' }}</span>
+      </div>
+      <div class="research-compact-row">
+        <span class="research-slot-label">AITP {{ t('research.workstream') }}</span>
+        <span class="research-slot-value">{{ browseOverview.binding?.workstream ?? '—' }}</span>
+      </div>
+    </section>
+    <div v-show="!expanded && !browseOverview" class="research-compact" :aria-label="t('research.compactSummary')">
       <div class="research-compact-row">
         <span class="research-slot-label">{{ t('research.project') }}</span>
         <span class="research-slot-value">
@@ -455,6 +517,7 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
         <span class="research-attention-value">
           <strong>{{ attentionTitle }}</strong>
           <span>{{ attentionText }}</span>
+          <span v-if="attentionSlot.source === 'human_gate'" class="research-muted">{{ decisionDependencyText }}</span>
         </span>
         <Badge v-if="attentionSlot.additionalCount > 0" size="sm" variant="warning">
           {{ t('research.moreAttention', { count: attentionSlot.additionalCount }) }}
@@ -478,7 +541,7 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
     </div>
 
     <div
-      v-show="expanded"
+      v-show="expanded && !browseOverview"
       :id="detailsId"
       class="research-expanded"
       :aria-labelledby="detailsHeadingId"
@@ -1066,6 +1129,10 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
             <span class="research-notice-copy">
               <strong>{{ t('research.humanGate') }}</strong>
               <span>{{ snapshot.humanGate.prompt }}</span>
+              <span class="research-muted">{{ decisionDependencyText }}</span>
+              <span v-if="decisionDependency?.status === 'resolved' && decisionDependency.goalIds.length" class="research-muted">
+                {{ t('research.decisionDependency.recordedGoals', { goals: decisionDependency.goalIds.join(' · ') }) }}
+              </span>
               <span class="research-muted">
                 {{ t('research.humanGateKind.' + snapshot.humanGate.kind) }}
                 ·
@@ -1569,6 +1636,14 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
 </template>
 
 <style scoped>
+.research-agent-tree { padding: var(--space-3); border-bottom: 1px solid var(--color-border); }
+.research-agent-tree summary { cursor: pointer; font-size: var(--text-sm); color: var(--color-text-muted); }
+.research-agent-tree summary:focus-visible { outline: var(--p-focus-ring); }
+.research-agent-tree ul { list-style: none; padding: 0; margin: var(--space-2) 0 0; }
+.research-agent-tree li { padding-block: var(--space-2); }
+.research-agent-heading { display: flex; align-items: start; justify-content: space-between; gap: var(--space-2); font-size: var(--text-sm); }
+.research-agent-heading > span { overflow-wrap: anywhere; }
+.research-agent-identity { font-size: var(--text-xs); color: var(--color-text-muted); overflow-wrap: anywhere; }
 .research-board {
   container: research-board / inline-size;
 }

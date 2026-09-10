@@ -1,5 +1,164 @@
 # Hakimi
 
+Current delivery status (2026-09-10): the verified CLI 0.21.0 core and Web package
+are installed locally with AITP 0.10.0 / adapter contract 0.3. A new synthetic
+daily session reports ready with Python 3.12 and no Goal; installed main, search
+worker and Web assets match the isolated package. The finite G1–G7 delivery is
+complete: task-dependency source has passed finite Agent/nested/Swarm model
+checks, and compaction recovery passed after two preserved upstream failures.
+The updated package was installed and restarted after 225 sessions were confirmed
+idle; a new synthetic session loads AITP 0.10.0/contract 0.3 ready with no Goal.
+Legacy plan reminders now
+compare their displayed meaning rather than revision counters (42 targeted tests
+pass); that reminder change is also installed. Context and cross-end coverage
+and explicit old/new Note history recall are recorded in the
+[acceptance report](docs/aitp/lean-harness-live-acceptance.zh-CN.md).
+This does not establish production scientific correctness, universal recall or
+OS isolation. Older dated pending notes below are historical.
+
+Web source now recognizes adapter contract 0.3 for checkpoint-write capability;
+unknown versions remain unavailable. Canonical assets and isolated browser checks
+now pass. Board and Manager explain explicit versus unknown Goal dependencies;
+resolved decisions remain history. These changes are locally installed.
+
+Research guidance now condenses repeated planning/recording instructions while
+retaining scope, no-delta/no-write, recovery and explicit human-answer boundaries.
+This prompt update is part of the daily installed build.
+Decision-tool receipts no longer prescribe a new Action to resume independent work.
+CreateGoal/GetGoal now expose the existing Goal ID so explicit decision dependencies
+can be declared without guessing; isolated live dependency/independent-Goal acceptance passed.
+
+Research collaborator completion/failure can now be recovered from the existing
+durable event journal after a server restart. The projection reuses the journal
+open pass; unfinished historical agents are not revived as running. A real
+isolated nested A/B session passed cold REST and Web recovery; it is now installed,
+while the remaining acceptance cases are still pending.
+Started/completed/failed events now carry the existing mirror runId, allowing
+server projections to reject an earlier execution's late result after agent reuse.
+Legacy reused agents without execution identity remain uncertain. Web live events
+now match runId, seeded from optional snapshot run_id on reconnect. Actual isolated
+agent reuse and subsequent cold REST/Web recovery passed; the same implementation is installed.
+
+Foreground Line summaries now exclude progress and recent-change text owned by
+a retained Action on another Line, including next-step derivation. Switching
+back restores that projection; raw historical records are unchanged.
+
+Long-term planning uses scoped AITP Notes without a Goal, Plan activation, or
+Action ceremony. A direct Note draft is not invalidated by Question edits and
+does not reread the Question's entire evidence list. AITP still validates the
+draft's actual references and atomic Topic/workstream preconditions. Legacy
+Plan v2 APIs retain their original contract; they are not the normal planning path.
+
+Memory refresh now reuses an aligned, ready scoped receipt for less than 30 seconds,
+independently of local UI revisions. Adapter save attempts invalidate this cache;
+explicit refresh remains available for known external changes. This is bounded
+read reuse, not a filesystem watcher or a replacement for atomic save checks.
+Final installed-session acceptance is still pending.
+
+Unrecorded local conclusions no longer lock Line browsing. Their original
+evidence/context are retained across switching and restore, without automatic
+adoption into the newly selected workstream. This implementation is installed.
+
+Line switching now retains live actions and recorded runs instead of requiring
+completion or cancellation. Foreground action/run projections stay Line-scoped;
+late run results retain their original identity. This is installed code, not proof
+of all multi-direction acceptance cases.
+
+A pending checkpoint no longer locks foreground Line selection. Browsing retains
+its captured ownership (or legacy unknown ownership), never retargets its save,
+and late old-scope observations do not prepare a record for the new Line.
+Live-action/run and in-flight Note switching remain under review.
+
+Pending human decisions no longer prevent switching Research Lines, and switching
+retains the decision rather than clearing it. Goal dependencies remain effective;
+unknown legacy dependencies are not inferred or resolved. Existing in-flight
+write/live-action switching restrictions are still being disentangled.
+
+Human decisions can name dependent Goal IDs. Only those Goals are held; missing
+legacy dependencies remain unknown and conservative, never auto-resolved. This
+Goal dependency judgment also drives the Board's stop conditions; decisions for
+other Goals remain visible attention, not a stop condition for this Goal.
+This does not grant execution permissions. Task-level dependency and Board refinements
+are still in progress; Goal-level changes are installed, task-level support is not complete.
+
+AITP adapter source supports contract-0.3 atomic Note saves using captured
+Topic/workstream scope. Legacy reads remain supported; scoped Note writes do not
+silently downgrade to older contracts. Paired installation passed; full acceptance remains pending.
+
+Research organization no longer grants permission to run ordinary tools: reads,
+shell commands and delegation do not require an Action/phase lease. Existing tool
+permissions and workspace protections still apply; Research Mode grants no extra
+Git, filesystem or remote-execution authority.
+
+Context efficiency fix: builtin coder/explore agents no longer start an
+extra model turn merely because a handoff is shorter than 200 characters. Explicit
+custom-profile summary policies remain supported. Isolated installed-session tests
+have exercised nested Research delegation; full acceptance remains incomplete.
+
+Resuming an existing Agent no longer requires a new Research Action. The Agent tool
+retains ownership, idle-state and immutable task-scope checks, and restores a known
+owned cold agent through the existing lifecycle replay. Unknown/foreign identities
+are rejected before materialization; ordinary permissions still apply.
+
+Task records now retain optional parent-agent identity through REST, WebSocket
+roster snapshots and Web task data. This is display provenance, not permission;
+missing legacy parentage remains unknown. Session snapshots expose persisted
+`agent_relationships` independently of live task status, including after a server
+restart. The Board now combines these relationships with current session tasks in
+a collapsed collaborator tree; browsing a Line filters the tree without changing
+execution ownership. Missing task status stays unknown. Component-level light/dark
+checks and an isolated installed Web two-Line/nested-agent browse test passed.
+This does not certify all recovery/write scenarios or replace the daily installation.
+
+Klient task parsing and SDK public agent-task types also retain optional
+`taskScope` / `parentAgentId`; old tasks need neither field. This is provenance,
+not an AITP binding or execution permission.
+
+Source-only collaboration work (2026-09-09): the Agent tool accepts an optional
+`task_scope` ownership label, inherits a caller's saved label for new agents,
+and rejects changing it on resume. Task records, REST/WS and Web data preserve it.
+This grants no permissions or AITP binding. Agent result headers identify runtime
+ownership/status; child summaries report findings, not authoritative task metadata.
+Task completion does not certify scientific correctness.
+Main-agent Research delegation can use `research-line:<existing slug>` without a
+new Action; unknown Lines are rejected and normal tool permissions still apply.
+Nested cross-direction validation, task-tree projection and end-to-end acceptance remain
+in progress; see [the implementation plan](docs/aitp/research-mode-lean-harness-plan.zh-CN.md).
+
+Source-only: the four native AITP read tools now use existing low-risk default approval. Explicit deny/ask rules and Research/adapter guards remain; writes are excluded. Real GW routing and isolated source-server no-approval reads passed; release installation and overall acceptance remain incomplete. See the [acceptance log](docs/aitp/lean-harness-live-acceptance.zh-CN.md).
+
+Single-line follow-up: `GetResearchStatus` and `ReadResearchCheckpointEvidence` use low-risk default approval, preserving explicit deny/ask rules, checkpoint freshness and path restrictions. This change is locally installed; status reads and a three-file evidence batch passed without approval after reloading the isolated test service. User sessions were not restarted. Research mutations retain normal permissions. Follow-ups clarify that simple actions must not reuse another action's generated minimal plan as a Research Plan binding, and accept equivalent workspace-absolute paths for the exact prepared draft without granting writes to other drafts. These follow-ups are installed and loaded in the isolated service: a new simple action started successfully, while absolute draft access still awaits live retesting. See [single-line acceptance](docs/aitp/crpa-single-line-live-acceptance.zh-CN.md).
+
+Source-only Todo reminder refinement: the shared main-agent list is no longer automatically injected into delegated agents; empty/completed or already-reminded unchanged lists produce no repeated reminder. Explicit Todo access and permissions are unchanged.
+
+Native AITP read guidance now recommends fresh-report reuse and explicit workstream scope rather than mandatory start/end calls. Findings constrain affected evidence, not independent research; post-save verification and exit-2 uncertainty remain. This description-only follow-up is not yet installed; raw report sizes and live relay retries remain under investigation.
+
+Source follow-up: native enter/check JSON now places existing summary fields before large arrays. Oversized results retain the complete original fields in the existing persisted output file; this changes field order, not schemas or findings. Real-report replay shows counts and the latest Working Note pointer in the 2,000-character preview. Total report size is unchanged; live efficiency acceptance is pending.
+
+Plan reminders in source now follow mode/path changes and context loss, rather than periodically repeating full instructions. Request tests cover unchanged turns and compaction recovery; Plan execution/review guards are unchanged. Not yet installed.
+
+Source-only maintenance refinement: automatic orientation alone no longer triggers an AITP refresh. Post-commit distillation normally sends a compact relevance reminder, loading the full external Skill only on demand; a shadowed Skill name retains exact plugin loading. This is not automatic card approval or publication, and live acceptance is pending.
+
+Source-only cross-Line browsing: `GetResearchStatus({line_slug: "existing-line"})` returns a read-only scoped overview without switching execution focus or moving task/checkpoint ownership. Web Board now has a local browse selector and foreign-progress filtering; isolated browser interaction/light-dark checks and reproducibility of 521 release assets pass. Other client integration and real-task acceptance remain unfinished. Not installed.
+
+Research Mode simplification and request-context deduplication: [bounded implementation plan](docs/aitp/research-mode-lean-harness-plan.zh-CN.md). Authorized work in progress, not a completed capability.
+
+Latest source-only redesign supersedes the observation-only scope below: Research actions and capability labels no longer authorize ordinary tools; normal permission checks remain. Entry/Note draft preparation no longer requires an Action. Research guidance now treats planning as proportional, recording as durable-change-driven, and memory outages as local persistence concerns rather than Goal stops. The authorized AITP 0.10.0/contract-0.3 atomic Note Topic/workstream save is implemented; targeted draft-ownership, retry and indeterminate-receipt tests pass. The isolated source service supports it, but daily installation and full end-to-end acceptance remain pending; do not treat the current source as a delivered release.
+
+The current source deduplicates unchanged Research reminders across turns and separates full Goal instructions from compact usage updates. Research context retains scope and continuation information without repeating the Goal objective. Request-chain and recovery tests cover this slice; it has not yet been reinstalled or fully accepted.
+
+Pending-evidence notices now refresh when their candidate appears, changes identity or disappears, without reinjecting for revision-only changes. This latest source fix has targeted tests; installed acceptance is still pending. Reminder updates do not create execution gates or resolve human decisions.
+
+Visible human-decision text and resolution changes also refresh without requiring a Goal or phase transition; decisions belonging to an unrelated action stay outside the current context. This is reminder synchronization, not a change to Goal dependency or approval semantics.
+
+Adapter-degraded alerts now describe affected persistence without claiming that independent work or generic Goal continuation/completion is disabled. Unsaved findings and explicit workstream ownership still require proper recovery; real human decisions are unchanged.
+
+Selecting a Research Line no longer requires an idle phase when no live work or unresolved ownership is present. Existing pending-save, live-action/run and unresolved-human-decision protections remain; phase labels alone are not a reason to manufacture or conclude an action. This latest source fix awaits installed replay.
+
+Source-only TUI follow-up: compact scientific Next no longer forces local-conclusion adoption or historical Action/phase recovery. Record maintenance remains visible separately and expanded details preserve recorded provenance. This does not resolve a human decision or change a running Goal.
+
+Source-only observation simplification: ordinary file/literature reads and existing task status/output queries no longer require a Research action or phase. Single literal scheduler queries and log reads, optionally over SSH, also bypass Research action checks. Normal execution permissions still apply; general Bash scripts, writes, unknown MCP tools and canonical persistence gain no observation privileges. This is not OS isolation; live acceptance remains unfinished.
+
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
 </p>
@@ -40,7 +199,7 @@ A question becomes research only when an action can change what should be believ
 
 - **Research surfaces:** TUI and Web provide a Research Board and Research Manager for following and steering active work.
 - **Research structure:** Research Lines, Questions, and Focus make the current unknown, assumptions, and priorities visible.
-- **Bounded actions:** `BeginResearchAction` and `ConcludeResearchAction` frame scientific work with an outcome, limitations, a next step, and one explicit durability assessment. No durable delta performs no ledger persistence; a bound durable delta emits one typed pending candidate for the existing AITP commit barrier. An unbound result closes the Action and remains a local conclusion, not an AITP record, until the researcher explicitly confirms its ownership.
+- **Bounded actions:** `BeginResearchAction` and `ConcludeResearchAction` frame scientific work with an outcome, limitations, a next step, and one explicit durability assessment. No durable delta performs no ledger persistence; a bound durable delta emits one typed pending candidate for the existing AITP commit barrier. An unbound result closes the Action and remains a local conclusion, not an AITP record, until the researcher explicitly confirms its ownership. Explicit recovery through `ProposeResearchCheckpoint` requires that retained conclusion ID, `confirmed_by=user`, and a freshly read current Research revision together; ordinary checkpoint proposals remain unchanged.
 - **Science-first progress:** progress is organized around evidence and uncertainty rather than tool activity or transcript volume.
 - **Review and human control:** human gates and alerts support explicit judgment, while typed child-evidence review keeps delegated work inspectable.
 - **External-compute observations:** Hakimi can record structured observations about externally run HPC work while keeping scheduler state separate from scientific evidence. It does not schedule jobs, poll them to completion, or certify success. Goal is the sole owner of cross-turn continuation.
@@ -48,6 +207,8 @@ A question becomes research only when an action can change what should be believ
 ## Theory-physics discipline
 
 The optional `theory-physics` domain pack is the upper-layer handbook for sustained theoretical-physics research. It supports discussing uncertainty, retrieving relevant recorded evidence, and carrying out owned literature or derivation work before a candidate is clear. A scientific loop may span several bounded Actions and turns; a Goal is optional, a local reviewed plan serves a complex Action, and Research Plan guides milestone strategy. Existing AITP knowledge can be read on demand without a new durable delta. Durable records and conditional method review remain governed by the external `using-aitp` and `distilling-methods` skills, not a second Hakimi protocol.
+
+Theory Physics 0.2.5 is locally installed: existing-job queries stay separate from new calculations or build audits, and receipts do not become structured Runs. Failure diagnosis follows recorded evidence locations before wider searches, preserves causal logs and measurements, and names missing observables when inconclusive. Touched-Entry review checks applicability before optional harvesting. Plugin installation/discovery and managed-file verification pass. A real unchanged-job query completed without ledger writes or extra scans; a supervised Si evidence correction reached scoped save/commit and Question update without a new calculation or Method card. The correction still needed draft repair and lengthy model responses; faster or autonomous behavior and five-subject acceptance remain unproven. No new gate, tool, scheduler or AITP rule.
 
 An ordinary one-off physics answer does not need Research Mode. The pack is a discipline, not an oracle: it is not a literature database, physics-correctness service, scheduler, second runtime, ledger, or background autonomous loop. The researcher remains responsible for conventions, significance, and final scientific judgment; AITP remains the protocol authority.
 
@@ -58,6 +219,74 @@ Hakimi can help construct arguments, calculations, code, searches, and tests. No
 Human review and reproducible verification are part of the research loop, not a final cosmetic step. When the evidence is insufficient or conflicts, the honest result is uncertainty, a blocked question, or a smaller discriminating check.
 
 ## Research Mode and AITP
+
+AITP research-memory guidance (2026-09-08; locally installed/reloaded):
+the external `using-aitp` Skill adds an on-demand guide for scoped synthesis plus
+uncovered evidence, low-noise Entry/Note writes, and preserved history. Note
+template prompts and existing contract descriptions change; runtime, CLI and
+schemas do not. The original Si session read the new guide, recovered same-line
+evidence and saved one Working Note, leaving old records and other scopes intact.
+Acceptance is partial: instruction-read admission, revision ambiguity and more
+precise Entry citations remain open; relay failures prevented the queued citation
+correction. No harness change or autonomous-efficiency claim is implied. See
+[handoff](docs/aitp/README.md#research-memory-guidance) for delivery boundaries.
+
+Scoped Note retrieval follow-up (2026-09-07; locally installed, cold reads verified):
+when needed Note content has no scoped locator, existing Research guidance points
+to a single `aitp_enter` using the confirmed workstream, then the exact returned
+Working Note path. File-list order is not research ownership. This adds no health
+cycle, write trigger or public schema. Five-session cold reads preserve research
+state and scope; real context delivery is verified, not autonomous selection.
+An explicitly requested Si stage synthesis also saved a scoped Working Note from
+existing evidence without changing other subjects or declaring the failure solved.
+Subsequent supervised rebuttal saved one scope-correct diagnostic result; synthetic
+checks do not reproduce the Si failure. A success-only checkpoint response now
+identifies completed native verification to avoid repeating it, while preserving
+needed evidence reads and separate Note/candidate checks. Targeted regressions
+pass; local CLI/Web/PTY delivery and five-session cold reads are verified.
+Whether real model behavior stops repeating checks remains unproven.
+See the [handoff](docs/aitp/README.md#scoped-note-retrieval).
+
+Focus disclosure follow-up (2026-09-07; locally installed, read-only model replay passed): the
+default `GetResearchStatus` summary keeps the selected Question and Focus revision
+but omits captured `boundedAction` text that may describe an old task. Current
+guidance remains `effectiveNextStep`; full diagnostics and public snapshots retain
+the original Focus. This does not rewrite intent, compare unrelated revisions,
+change scientific state, or resume a Goal. Five-session cold reads and one real
+status-only answer preserve scope and records; broader model behavior is not
+guaranteed. See the [handoff](docs/aitp/README.md#focus-intent-disclosure).
+
+Line-return focus (2026-09-07; locally installed and replayed): a settled
+Line switch restores its last open/active/blocked Question only when the archived
+period captured the same Topic observation. It uses the Question's current next
+step, not old action state. Unknown/changed scope, closed/deferred/cancelled
+Questions and a latest unfocused period stay unfocused. No AITP writes, binding
+confirmation or Goal resumption; public snapshot shapes are unchanged.
+
+Research status disclosure (2026-09-07; locally installed and replayed): `GetResearchStatus`
+summarizes repeated check receipts by default; `detail="full"` preserves the
+complete diagnostic output. Scientific fields, blockers, recovery identity and
+public Research snapshots are unchanged. On one real snapshot, output shrank
+from 234,426 to 45,577 characters; this is a size measurement, not a speed or
+scientific-quality claim. The real tool returned the complete summary; a supervised
+Question-synthesis follow-up added the original evidence and remaining gaps without
+resaving or resuming the Goal. Automatic synthesis is not guaranteed.
+
+Non-agent checkpoint recovery follow-up (2026-09-07; locally installed and replayed):
+Hakimi now compares the saved creator to AITP's actual `agent:unknown` default
+when prepare omitted it, instead of expecting the required field to be absent.
+15 provenance/prepare tests pass; this does not change record authority or relax
+other identity checks. The original NiO observation was accepted on retry without
+another save, a new Action, or resuming the paused Goal. This repairs persistence,
+not scientific validity or completion of the NiO calculation.
+
+Paused Goal guidance (2026-09-07; locally installed): a bounded question, status check or recovery request can proceed without resuming autonomous Goal continuation. Only an explicit request to resume autonomous pursuit should activate the Goal. One real theory audit now completed its Action, evidence record and Question update with the Goal still paused; this is model guidance, not a runtime intent classifier or general behavioral guarantee.
+
+Post-record review follow-up (locally installed): the existing external-Skill handoff now asks the model to assess the touched evidence before candidate harvesting. An ineligible result should end without extra scans or checks; genuine harvesting still follows all AITP Skill rules. Three handoff tests and CLI/Web/PTY delivery checks pass. One supervised NiO recovery ended with no harvesting or extra checks; this is not general conformance evidence. Oversized status output and stale Question synthesis remain follow-ups in the [handoff](docs/aitp/README.md).
+
+Pending-record prompt follow-up (locally installed, 2026-09-07): evidence-read guidance supplies the exact current checkpoint/revision rather than asking the model to recover numbers from old conversation history. State changes still require refresh; ordinary research receives no additional revision-only context updates. The installed follow-up also explains how to query old submissions without inventing a structured Run; permissions and identity checks are unchanged. Real scientific acceptance remains open; see the [handoff](docs/aitp/README.md).
+
+Recovery follow-up (2026-09-07; locally installed): a concluded result with unchanged, explicitly confirmed original ownership can continue into the existing checkpoint flow after a human decision returns to planning, evaluation or idle. No second acceptance or duplicate conclusion is needed; human decisions, scientific evidence and the chosen return phase remain unchanged. A real session cold-restored into its original pending checkpoint; canonical save and scientific acceptance are separate. See the [current handoff](docs/aitp/README.md).
 
 Locally reinstalled follow-up (2026-09-06, uncommitted source): a standalone **Research On/Off** button is
 always available in the top toolbar, replacing the Composer Mode-menu entry.
@@ -110,13 +339,13 @@ Delegated operators do not own the shared AITP lifecycle: restoring or undoing a
 
 After a settled conclusion, the next explicit `BeginResearchAction` can start directly from `state_updated`; no extra phase-setting, Focus edit, or duplicate progress report is required. A pending checkpoint, live action/run, unresolved human gate, or stale plan still prevents replacement. This repairs action continuation, not scientific judgment or automatic Goal scheduling.
 
-For a retained unbound result, the Board shows the actual outcome instead of leaving completed work labelled running. Fresh agent conclusions recover automatically after the original Line's first explicit workstream confirmation; ambiguous ownership still needs explicit recovery. The pending checkpoint can inspect one existing evidence file through `ReadResearchCheckpointEvidence`, without Bash hashing. After persistence, a new observation Action can explicitly retain the same external Run with `observed_run_action_id`, preserving its submission identity. AITP save, scientific decisions, normal tool permissions and Goal lifecycle remain separate. These follow-ups are not yet installed and add no scheduler or automatic job submission. See [recovery details](docs/en/guides/research-mode.md#retained-local-conclusions).
+For a retained unbound result, the Board shows the actual outcome instead of leaving completed work labelled running. Fresh agent conclusions recover automatically after the original Line's first explicit workstream confirmation; ambiguous ownership still needs explicit recovery. The pending checkpoint can inspect one existing evidence file through `ReadResearchCheckpointEvidence`, without Bash hashing. After persistence, a new observation Action can explicitly retain the same external Run with `observed_run_action_id`, preserving its submission identity. AITP save, scientific decisions, normal tool permissions and Goal lifecycle remain separate. These recovery changes are locally installed as CLI 0.21.0; real Si submission persistence and a fresh bounded query have run. Retained structured-Run recovery is regression-tested, not yet demonstrated by that receipt-only session. No scheduler or automatic job submission is added. See [recovery details](docs/en/guides/research-mode.md#retained-local-conclusions).
 
 The retained-result fix was installed from commit `06b8524102df` and verified by closing an existing real Heisenberg Action without repeating its calculation, followed by cold restore. This does not yet establish bound AITP persistence or automatic Goal research; [the acceptance record](docs/aitp/theory-physics-collaborator-program.md#1923-本地结论交付与原会话恢复验收) distinguishes those remaining checks and a model attribution error.
 
 The run-observation recovery fix is delivered and locally installed: a closed Action can record a fresh observation of its existing external job without reopening the Action or changing its conclusion. This grants no polling or new-work permission. The [bounded recovery slice](docs/aitp/theory-physics-collaborator-program.md#retained-run-recovery) records the installed CLI restart and WebSocket checks; these are fixture tests, not scientific or Goal-continuation acceptance.
 
-Research Mode is discoverable by default, but every new session starts inactive. For sustained work, `theory-physics` can guide the model to call `EnterAITPMode`, wait for authoritative probe status, and perform a bounded action; inactive sessions perform zero AITP I/O. The Research Board and model context distinguish the Hakimi Goal, the observed AITP Program (including its top-level **Research goal**), and the Local Research Loop. Hakimi observes that top-level goal only through AITP `enter`; it never writes `TOPIC.md` or an AITP Topic. A Goal-to-Program alignment is a local, checkpointed binding that the user explicitly confirms rather than a text-similarity inference. In active Research Mode, a missing, stale, or explicitly conflicting binding holds Goal completion and automatic continuation; an inactive Goal is unaffected. Entering Research Mode does not schedule model turns—Goal alone owns cross-turn continuation, while Plan is only a short-lived action overlay. Interactive Research still works without a Goal. The compact TUI/Web Board uses four slots—Project, Current cycle, Attention, and Next—and labels the legacy period counter as Research turns; healthy AITP/provenance stays in expanded detail. A settled `state_updated` cycle can switch Lines directly, archiving the old period and returning to `idle` without an AITP write; live work, pending persistence, unresolved human gates and other non-idle phases still block switching. Another Line's alerts never appear as current attention. The default Goal engine exposes derived `idle`/`deciding`/`enqueued`/`running`/`held`/`waiting` continuation state, so an active Goal held by Research policy is shown as `active · continuation held` with its owner and reason instead of being confused with a paused Goal. Legacy snapshots without that optional field are labelled unavailable, and multi-Line Board state remains scoped to the selected Line. Every admitted Research turn performs one deterministic local reconciliation before model context is injected, so mechanically recoverable Line/Action/phase/period/cursor drift is repaired before the answer; this does not run another AITP maintenance cycle or infer scientific outcomes. A historical checkpoint is discarded automatically only when Hakimi can prove that no save receipt, committed Entry, or committed-history trace exists and its captured Question or Program binding is stale; any ambiguous checkpoint remains blocked for explicit recovery. Replay repairs only deterministic Action/phase structure: the same Action remains live, blocks Goal completion, and is routed to evidence-based resolution on the next interactive Research turn without being auto-completed or auto-abandoned.
+Research Mode is discoverable by default, but every new session starts inactive. For sustained work, `theory-physics` can guide the model to call `EnterAITPMode`, wait for authoritative probe status, and perform a bounded action; inactive sessions perform zero AITP I/O. The Research Board and model context distinguish the Hakimi Goal, the observed AITP Program (including its top-level **Research goal**), and the Local Research Loop. Hakimi observes that top-level goal only through AITP `enter`; it never writes `TOPIC.md` or an AITP Topic. A Goal-to-Program alignment is a local, checkpointed binding that the user explicitly confirms rather than a text-similarity inference. In the current lightweight source redesign, a missing, stale, or conflicting binding limits the associated memory operation, not independent Goal completion or continuation. Unresolved human decisions remain protected. Entering Research Mode does not schedule model turns—Goal alone owns cross-turn continuation, while Plan is only a short-lived action overlay. Interactive Research still works without a Goal. The compact TUI/Web Board uses four slots—Project, Current cycle, Attention, and Next—and labels the legacy period counter as Research turns; healthy AITP/provenance stays in expanded detail. A settled `state_updated` cycle can switch Lines directly, archiving the old period and returning to `idle` without an AITP write; live work, pending persistence, unresolved human gates and other non-idle phases still block switching. Another Line's alerts never appear as current attention. The default Goal engine exposes derived `idle`/`deciding`/`enqueued`/`running`/`held`/`waiting` continuation state, so an active Goal held by Research policy is shown as `active · continuation held` with its owner and reason instead of being confused with a paused Goal. Legacy snapshots without that optional field are labelled unavailable, and multi-Line Board state remains scoped to the selected Line. Every admitted Research turn performs one deterministic local reconciliation before model context is injected, so mechanically recoverable Line/Action/phase/period/cursor drift is repaired before the answer; this does not run another AITP maintenance cycle or infer scientific outcomes. A historical checkpoint is discarded automatically only when Hakimi can prove that no save receipt, committed Entry, or committed-history trace exists and its captured Question or Program binding is stale; any ambiguous checkpoint remains blocked for explicit recovery. Replay repairs only deterministic Action/phase structure: historical actions remain unchanged until evidence-based reconciliation, but do not block independent tools or Goal completion. Completing a Research Plan does not require flushing pending memory, and never commits that memory or completes the Goal.
 
 In the paragraph above, “Plan” means the short-lived Action-local Plan/Todo. The revisioned Research Plan is the multi-turn scientific strategy; it may evolve with evidence but still does not own continuation or complete the Goal. A reviewed local Action Plan can execute without creating a Goal or full Research Plan. If a draft or active Research Plan already exists, a planned action must bind its active milestone as well as the reviewed local plan; partial or stale bindings still fail closed. A simple check may also explicitly bind the active milestone without a detailed local Action Plan. Omitting that association remains valid; it is never inferred. The fix is clean-installed and verified through the installed CLI's REST/WS surface and process restart; this software fixture is not real-model scientific acceptance. See the [milestone-binding evidence](docs/aitp/theory-physics-collaborator-program.md#simple-action-milestone).
 
@@ -146,7 +375,7 @@ The optional Theory Physics plugin includes a `calculation-operator` agent profi
 
 Theory Physics 0.2.3 exposes delegation guidance directly in the calling researcher's available-agent description: pass the whole task's remaining time and reserve parent review/closeout, then request one saved packet with a brief return or one inline packet. The specialist's detailed instructions remain separate; the caller need not read its full prompt to see these essentials. Requested packet saving and evidence-backed failure reporting remain required: an unattempted write is not proof of a missing tool, and a failed handoff does not erase a numerical result. These are instructions, not a runtime deadline or a guarantee that a model will follow them.
 
-The checkpoint barrier also compares the saved Entry's kind, authority and creator with the concluded candidate before accepting it. A mismatch retains the saved record and receipt for review, leaves the checkpoint pending, and prevents the post-commit distillation handoff. This is a post-save identity check, not a semantic validation or an atomic pre-save authority guarantee.
+The checkpoint barrier also compares the saved Entry's kind, authority and creator with the concluded candidate before accepting it. A mismatch retains the saved record and receipt for review, leaves the checkpoint pending, and prevents the post-commit distillation handoff. This is a post-save identity check, not a semantic validation or an atomic pre-save authority guarantee. A 2026-09-07 follow-up also verifies the saved idempotency key against the checkpoint using the same canonical `show`; a mismatch must not be bypassed by resaving or editing canonical metadata. This follow-up is regression-tested and locally installed as CLI 0.21.0; cold reads preserve the five real sessions' scope and commit histories without resaving. It changes neither AITP's atomic Topic/workstream contract nor human decisions, and does not establish scientific completion.
 
 ## Install from source
 

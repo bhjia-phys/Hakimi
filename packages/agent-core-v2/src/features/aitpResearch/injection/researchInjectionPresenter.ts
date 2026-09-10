@@ -7,7 +7,7 @@
  * injected into the model context, and `resolveResearchVerbosity` decides,
  * against the previous `InjectionDisclosure`, whether a turn needs a Brief
  * re-statement, a Delta update, or nothing (no semantic change → undefined, so
- * no duplicate text is appended). Brief mode (new turn, prior disclosure
+ * no duplicate text is appended). Brief mode (prior disclosure
  * missing, or a semantic change in program / Research Goal / phase / progress
  * / action / run / next step / attention) emits a trimmed scientific summary
  * — the durable AITP goal, the Hakimi Research Goal projection, current
@@ -15,9 +15,9 @@
  * single effective next step, the pending human gate, and only the attention
  * the model must handle. Delta mode (a deferred refresh with only an attention
  * change) emits just that attention. The disclosure carries semantic
- * fingerprints so the next step can deduplicate reliably. No AITP entry / hash
- * / revision / checkpoint id, receipt, checkpoint history, or finding detail
- * leaks.
+ * fingerprints so the next step can deduplicate reliably. Pending-record
+ * attention includes exact checkpoint/revision arguments needed for its tools;
+ * it does not include full receipts, checkpoint history or finding details.
  * Scope-agnostic.
  */
 
@@ -47,6 +47,7 @@ export interface InjectionDisclosure {
   readonly workstreamBindingFingerprint?: string;
   readonly currentQuestionFingerprint?: string;
   readonly currentActionId?: string;
+  readonly humanGateFingerprint?: string;
   readonly currentRunFingerprint?: string;
   readonly researchPlanFingerprint?: string;
   readonly researchPlanV2Fingerprint?: string;
@@ -72,6 +73,7 @@ export function renderResearchInjection(
     workstreamBindingFingerprint: workstreamBindingFingerprint(snapshot),
     currentQuestionFingerprint: currentQuestionFingerprint(snapshot),
     currentActionId: action?.actionId,
+    humanGateFingerprint: humanGateFingerprint(snapshot, action),
     currentRunFingerprint: runFingerprint(run),
     researchPlanFingerprint: researchPlanFingerprint(snapshot.researchPlan),
     researchPlanV2Fingerprint: researchPlanV2Fingerprint(snapshot.researchPlanV2),
@@ -88,7 +90,7 @@ export function renderResearchInjection(
 }
 
 /**
- * Decide whether the current snapshot needs another injection. A new turn or a
+ * Decide whether the current snapshot needs another injection. A
  * missing prior disclosure re-arms a full Brief; otherwise only a semantic
  * change in the research state or the attention the model must handle produces
  * output — no change returns undefined so nothing is appended twice.
@@ -100,7 +102,6 @@ export function resolveResearchVerbosity(
   },
   snapshot: ResearchStatusSnapshot,
 ): InjectionVerbosity | undefined {
-  if (context.isNewTurn) return 'brief';
   const last = context.lastDisclosure;
   const action = currentLineAction(snapshot);
   const run = currentLineRun(snapshot, action);
@@ -113,6 +114,7 @@ export function resolveResearchVerbosity(
   if (workstreamBindingFingerprint(snapshot) !== last.workstreamBindingFingerprint) return 'brief';
   if (currentQuestionFingerprint(snapshot) !== last.currentQuestionFingerprint) return 'brief';
   if (action?.actionId !== last.currentActionId) return 'brief';
+  if (humanGateFingerprint(snapshot, action) !== last.humanGateFingerprint) return 'brief';
   if (runFingerprint(run) !== last.currentRunFingerprint) return 'brief';
   if (researchPlanFingerprint(snapshot.researchPlan) !== last.researchPlanFingerprint) return 'brief';
   if (researchPlanV2Fingerprint(snapshot.researchPlanV2) !== last.researchPlanV2Fingerprint) return 'brief';
@@ -186,11 +188,7 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
 
   const researchGoal = snapshot.researchGoal ?? snapshot.goalSummary;
   if (researchGoal !== undefined) {
-    lines.push(`Hakimi Research Goal: ${researchGoal.objective}`);
-    lines.push(`  status: ${researchGoal.status}`);
-    if (researchGoal.completionCriterion !== undefined) {
-      lines.push(`  Completion criterion: ${researchGoal.completionCriterion}`);
-    }
+    lines.push(`Hakimi Goal status: ${researchGoal.status} (objective and completion criterion are supplied by the Goal reminder)`);
     if (researchGoal.continuation !== undefined) {
       lines.push(`  Continuation: ${researchGoal.continuation.state}` +
         (researchGoal.continuation.reason === undefined ? '' : ` — ${researchGoal.continuation.reason}`));
@@ -275,15 +273,25 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
 
   lines.push('');
   lines.push('### Research state guidance');
-  appendGuidance(lines, snapshot, action);
+  lines.push('For independent delegation, Agent(task_scope="research-line:<existing Line slug>") captures task ownership without a new Research Action. Keep scope on resume; use a new agent for another direction. This does not confirm an AITP workstream, grant permissions, or answer a pending human decision. Return evidence and limitations to the main agent for synthesis.');
+  appendGuidance(lines, snapshot);
 
   return lines.join('\n');
+}
+
+function humanGateFingerprint(
+  snapshot: ResearchStatusSnapshot,
+  action: ResearchActionSpec | undefined,
+): string | undefined {
+  const gate = currentLineHumanGate(snapshot, action);
+  return gate === undefined ? undefined : renderHumanGateBlock(gate);
 }
 
 function renderDelta(snapshot: ResearchStatusSnapshot): string {
   const lines: string[] = [
     `## AITP Research Mode (update)`,
     `Phase: ${snapshot.phase} · Loop: ${snapshot.loopStatus}`,
+    'This replaces the previous Research attention summary; omitted memory notices are no longer current. It does not resolve human decisions or validate scientific results.',
   ];
   appendAttention(lines, snapshot);
   return lines.join('\n');
@@ -308,18 +316,19 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
     );
   }
 
-  const candidate = snapshot.pendingCheckpoint?.commitCandidate;
-  if (candidate !== undefined) {
+  const checkpoint = snapshot.pendingCheckpoint;
+  const candidate = checkpoint?.commitCandidate;
+  if (checkpoint !== undefined && candidate !== undefined) {
     lines.push(
       `Durable commit candidate: ${candidate.entryKind} / ${candidate.authority} / ${candidate.provenance}. ` +
       (snapshot.mode === 'degraded'
         ? 'Retained locally, not yet committed to AITP. Resume this candidate after AITP is ready; do not repeat the conclusion or relabel it no_durable_delta.'
-        : 'Continue the existing prepare, fill, save, show/check, and checkpoint barrier; do not record the conclusion again. For existing evidence files use ReadResearchCheckpointEvidence with this checkpoint_id and current expected_revision, not Bash hashing or a new Action.'),
+        : `Continue the existing prepare, fill, save, show/check, and checkpoint barrier; do not record the conclusion again. For existing evidence files use ReadResearchCheckpointEvidence (checkpoint_id=${checkpoint.checkpointId}, expected_revision=${snapshot.revision}), not Bash hashing or a new Action. If Research state changes, refresh GetResearchStatus before retrying; never guess the revision.`),
     );
   }
 
   if (snapshot.mode === 'degraded' && snapshot.localConclusion === undefined) {
-    lines.push('Provisional research: user-directed bounded Actions may continue with their existing scope and tool permissions. AITP writes, automatic Goal continuation and completion remain blocked; do not claim recorded state is freshly verified or turn adapter repair into a repeated prerequisite for exploration.');
+    lines.push('AITP is unavailable: retain unsaved findings locally and do not claim they were recorded or freshly verified. Independent research continues under normal permissions; memory availability does not control Goal continuation or completion. Retry affected persistence after recovery, without repeating the scientific work.');
   }
 
   const receipt = snapshot.aitpMaintenance;
@@ -327,11 +336,12 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
   const maintainedWorkstream = maintainedScope(snapshot);
   if (maintainedWorkstream !== undefined) {
     lines.push(`Native AITP maintenance: enter/check completed for the confirmed current workstream ${maintainedWorkstream}. Reuse this recorded read result for orientation unless new external changes or stale evidence require refresh; it is not a claim of perpetual health. Loading a Skill, compaction, or a phase change alone does not require another enter/check. Preserve required checkpoint and Note pre/post-save verification and inspect the evidence you rely on.`);
+    lines.push(`For needed Note content without a scoped locator, use aitp_enter(${JSON.stringify({ workstream: maintainedWorkstream, recent: 1 })}) → latest_working_note.source → Read the exact Note and verify its workstreams; not Glob order or another Line's Note. This is on-demand retrieval, not a health cycle or write trigger. A missing scoped Note is not evidence of an empty Topic.`);
   }
   if (receipt.status === 'degraded') {
     lines.push(receipt.degradedReason === 'workstream_unbound'
       ? 'AITP maintenance: degraded — no explicit Line-to-workstream binding is available.'
-      : 'AITP maintenance: degraded — restore a ready adapter before canonical persistence or automatic Goal continuation.');
+      : 'AITP maintenance: degraded — restore a ready adapter before canonical persistence; independent research remains available.');
     return;
   }
   const issues = maintenanceIssues(receipt);
@@ -406,7 +416,7 @@ function renderResearchPlanV2Digest(plan: ResearchPlanV2): string {
     candidate.milestoneId === plan.currentMilestoneId,
   );
   return [
-    `Research Plan v2 (${plan.status}, version ${plan.revision}): ${plan.objective}`,
+    `Research Plan v2 (${plan.status}): ${plan.objective}`,
     `  Current milestone: ${milestone?.title ?? plan.currentMilestoneId}`,
     `  Milestone evidence: ${milestone?.evidenceRequirements.join('; ') || 'none listed'}`,
     `  Stop conditions: ${plan.stopConditions.join('; ')}`,
@@ -435,7 +445,9 @@ function renderHumanGateBlock(gate: ResearchHumanGate): string {
   if (resolved && gate.resolution !== undefined) {
     lines.push(`  Resolution: ${gate.resolution}`);
   } else {
-    lines.push('  The research loop is paused pending this decision.');
+    lines.push(gate.dependentGoalIds === undefined
+      ? '  Goal dependency is unknown; automatic continuation is conservatively held. Independent ordinary work remains available.'
+      : `  Only dependent Goals wait: ${gate.dependentGoalIds.join(', ')}. Independent work can continue.`);
   }
   return lines.join('\n');
 }
@@ -443,18 +455,10 @@ function renderHumanGateBlock(gate: ResearchHumanGate): string {
 function appendGuidance(
   lines: string[],
   snapshot: ResearchStatusSnapshot,
-  action: ResearchActionSpec | undefined,
 ): void {
   const planningPolicy = snapshot.planningPolicy;
-  if (
-    action !== undefined &&
-    snapshot.effectiveNextStep?.source === 'research_action' &&
-    snapshot.effectiveNextStep.freshness === 'blocked' &&
-    snapshot.effectiveNextStep.derivedFrom.actionId === action.actionId
-  ) {
-    lines.push(
-      `- Recovery owns this turn: inspect the already-recorded evidence for action ${action.actionId}, continue only missing in-scope work, then call ConcludeResearchAction once with completed or abandoned. Do not start another action and do not ask the user merely to repair Research bookkeeping; ask only if a genuinely scientific or authorization decision remains.`,
-    );
+  if (snapshot.lines.length > 1) {
+    lines.push('- To inspect another existing direction, call GetResearchStatus with line_slug. This is browsing only: it does not switch execution focus or move tasks, checkpoints or AITP record ownership. Do not switch lines merely to read their questions.');
   }
   if (planningPolicy === 'collaborative') {
     lines.push(
@@ -462,35 +466,40 @@ function appendGuidance(
     );
   } else {
     lines.push(
-      '- Planning policy is dreaming. Once the Goal, scope, and completion criterion are clear, continue the project through Goal-owned Research turns without per-step confirmation. For unresolved choices, select only reversible, low-cost, in-scope defaults and record every chosen default in Research Plan v2 assumptions. Never dream through expensive or irreversible work, scientific-convention ambiguity, Goal or scope changes, or an AITP/human gate; use RequestResearchDecision for those non-delegable choices.',
+      '- Planning policy is dreaming. Once the Goal, scope, and completion criterion are clear, continue without per-step confirmation. Choose reversible, low-cost, in-scope defaults and retain consequential assumptions in the plan. Ask for genuinely non-delegable scientific choices or new authority; memory warnings are not human decisions.',
     );
   }
   lines.push(
-    '- Research planning policy and tool permission mode are orthogonal. auto removes routine tool-risk prompts and may suppress AskUserQuestion, but it cannot grant a Research capability, answer RequestResearchDecision or an AITP human gate, confirm Goal-to-Program meaning, widen scope, or bypass an action stop condition.',
+    '- Research planning policy and tool permissions are independent. auto does not answer human scientific decisions, widen scope or authorize extra resources. Research actions, phases and memory warnings do not grant or revoke ordinary tool permissions.',
   );
   lines.push(
-    '- Treat the active Goal objective, completion criterion, scope, confirmed Program relation, current Plan decisions, and prior explicit human direction as already supplied. Never ask the user to restate or re-approve them; continue autonomously when they determine a reversible, low-cost, in-scope next step.',
+    '- Reuse the supplied Goal, scope, plan and explicit human direction; never ask the user to restate or re-approve them. Continue with reversible, low-cost, in-scope steps.',
   );
   lines.push(
-    '- Prefer the simplest sufficient explanation or experiment and the cheapest decisive evidence first; do not escalate to remote, long-running, or multi-branch work until a smaller local check shows it is necessary.',
+    '- Prefer the simplest sufficient explanation and cheapest decisive evidence; use remote or multi-branch work when the question needs it, not as a ritual.',
   );
   lines.push(
-    '- Every bounded research action: declare it with BeginResearchAction (purpose, expected evidence, stop condition), perform only that work, then call ConcludeResearchAction once with the physical result, next step, and one explicit durability assessment. Do not repeat the same conclusion through RecordResearchProgress.',
+    '- Work directly under normal tool permissions: read, derive, search literature, edit, test or inspect existing jobs as the scientific question requires. A Research action is optional context for a coherent attempt, not an execution prerequisite. Do not create a hypothesis, plan or action merely to perform a routine check.',
   );
   lines.push(
-    '- In active Research Mode, allowed_tool_kinds is a runtime capability grant, not prose: use only workspace_read, workspace_write, web_search, web_fetch, shell, task, subagent, scheduler, or tool:<exact-tool-name>. BeginResearchAction and work tools must be in separate tool batches.',
+    '- Follow the active question and revise the plan with new evidence. Pending memory or old action state does not block independent work or justify repeating experiments.',
   );
   lines.push(
-    '- Use planning_level=simple for a small reversible action whose purpose, expected evidence, and stop condition are sufficient. Use planning_level=planned for work needing a reviewed multi-step local Action Plan. Bind its finalized version; if a non-terminal Research Plan exists, also bind its active version and current milestone. Local exploration needs no Goal or full Research Plan; do not invent either just to perform a bounded inquiry.',
+    '- Keep planning proportional: routine checks need no new plan. For a difficult question, state the candidate explanation, smallest discriminating test and what its outcomes would mean; revise the plan as evidence changes. Exploration does not require a Goal or a finalized Research Plan.',
   );
   lines.push(
-    '- Update Research state only on a semantic change; resolve pending human gates with ResolveResearchDecision, and read AITP entries through aitp_show (never Read the Markdown file directly).',
+    '- Update Research state only on a semantic change. ResolveResearchDecision records an explicit human answer; never invent one. Prefer aitp_show for canonical Entries and relationships. Reading is not validation or write authorization.',
+  );
+  if (snapshot.currentRun !== undefined && snapshot.currentRun !== null) {
+    lines.push(
+      '- Query existing jobs using known host/job/path identities under normal permissions. Avoid duplicate submissions. Scheduler completion is not scientific validation.',
+    );
+  }
+  lines.push(
+    '- Follow using-aitp and its native-coordinator versus fallback ownership rule: reuse applicable native enter/check receipts; refresh absent, degraded, out-of-scope or stale memory and relevant external changes. Loading a Skill alone is not a refresh trigger. Retrieve relevant Method cards by their generic marker and inspect their basis. This summary never auto-writes AITP.',
   );
   lines.push(
-    '- Follow the using-aitp Skill, including its native-coordinator versus fallback ownership rule. Reuse a completed, applicable native enter/check receipt rather than repeating session-start maintenance merely to load or re-read the Skill; absent, degraded, out-of-scope or stale receipts and new external changes still require appropriate refresh. Before executing a potentially covered procedure, retrieve applicable Method cards by their generic marker and inspect their pinned basis. This summary is read-only and never auto-writes AITP.',
-  );
-  lines.push(
-    '- A no_durable_delta conclusion is a strict no-op for AITP. A durable_delta conclusion already emits one pending candidate: continue in the same turn when possible with candidate-exact aitp_record_prepare, model-authored draft fill, aitp_record_save, and CommitResearchCheckpoint. For reusable execution evidence, load and follow the external distilling-methods Skill before filling the Entry; that Skill alone decides exact-card trial pins, observation-marker eligibility, triggers, revisions, and human gates. A first successful commit schedules one same-turn best-effort review of only the touched Entry; a duplicate commit or unavailable Skill is a non-blocking no-op. Keep human assertions/decisions in their own human-authority Entry, separate from agent/tool/source verification. Use ProposeResearchCheckpoint only for recovery or a durable boundary outside the normal conclude path.',
+    '- Record durable findings with evidence in the intended AITP workstream without creating an Action merely to record them; no new information means no write. Recover an existing checkpoint instead of duplicating it. Use Notes for derivations/synthesis and distilling-methods for reusable methods, not every observation. Distinguish human statements, agent conclusions and verified evidence; never invent human approval or publication authority.',
   );
 }
 
@@ -597,26 +606,11 @@ function runFingerprint(run: ResearchRunState | undefined): string | undefined {
 }
 
 function researchPlanFingerprint(plan: ResearchPlan | undefined): string | undefined {
-  if (plan === undefined) return undefined;
-  return stableJson({
-    planId: plan.planId,
-    status: plan.status,
-    objective: plan.objective,
-    steps: plan.steps,
-    expectedEvidence: plan.expectedEvidence,
-    stopCondition: plan.stopCondition,
-    resolution: plan.resolution,
-  });
+  return plan === undefined ? undefined : renderResearchPlanDigest(plan);
 }
 
 function researchPlanV2Fingerprint(plan: ResearchPlanV2 | undefined): string | undefined {
-  if (plan === undefined) return undefined;
-  return stableJson({
-    planId: plan.planId,
-    revision: plan.revision,
-    status: plan.status,
-    currentMilestoneId: plan.currentMilestoneId,
-  });
+  return plan === undefined ? undefined : renderResearchPlanV2Digest(plan);
 }
 
 function nextStepFingerprint(nextStep: ResearchEffectiveNextStep | undefined): string | undefined {
@@ -637,11 +631,19 @@ function attentionFingerprint(snapshot: ResearchStatusSnapshot): string | undefi
   const degraded = snapshot.mode === 'degraded' || receipt?.status === 'degraded';
   const issues = receipt === undefined ? [] : maintenanceIssues(receipt);
   const maintainedWorkstream = maintainedScope(snapshot);
-  if (alerts.length === 0 && !degraded && issues.length === 0 && maintainedWorkstream === undefined) return undefined;
+  const checkpoint = snapshot.pendingCheckpoint;
+  const pendingEvidence = checkpoint?.commitCandidate === undefined ? undefined : {
+    checkpointId: checkpoint.checkpointId,
+    entryKind: checkpoint.commitCandidate.entryKind,
+    authority: checkpoint.commitCandidate.authority,
+    provenance: checkpoint.commitCandidate.provenance,
+  };
+  if (alerts.length === 0 && !degraded && issues.length === 0 && maintainedWorkstream === undefined && pendingEvidence === undefined) return undefined;
   return stableJson({
     alerts,
     degraded,
     maintainedWorkstream,
+    pendingEvidence,
     maintenance: receipt === undefined ? undefined : {
       status: receipt.status,
       issues,

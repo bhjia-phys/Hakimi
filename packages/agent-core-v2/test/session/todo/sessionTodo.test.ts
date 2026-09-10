@@ -6,6 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { createServices } from '#/_base/di/test';
+import { DisposableStore } from '#/_base/di/lifecycle';
 
 import type { ServiceIdentifier, ServicesAccessor } from '#/_base/di/instantiation';
 import { IInstantiationService } from '#/_base/di/instantiation';
@@ -262,18 +264,26 @@ describe('SessionTodoService', () => {
     expect(service.getTodos()).toEqual([]);
   });
 
-  it('binds the stale-todo reminder into every created agent', () => {
+  it('binds the shared-list reminder only to the main coordinator', () => {
     const lifecycle = makeLifecycleStub();
-    const service = new SessionTodoService(lifecycle.service);
-    void service;
-
-    const main = makeFakeAgent('main');
-    const sub = makeFakeAgent('agent-1');
-    lifecycle.fireCreate(main.handle);
-    lifecycle.fireCreate(sub.handle);
-
-    expect(main.registeredVariants).toContain(TODO_LIST_REMINDER_VARIANT);
-    expect(sub.registeredVariants).toContain(TODO_LIST_REMINDER_VARIANT);
+    const disposables = new DisposableStore();
+    try {
+      const services = createServices(disposables, { strict: true, additionalServices: (reg) => {
+        reg.defineInstance(IAgentLifecycleService, lifecycle.service);
+        reg.define(ISessionTodoService, SessionTodoService);
+      } });
+      services.get(ISessionTodoService);
+      const main = makeFakeAgent('main');
+      lifecycle.fireCreate(main.handle);
+      expect(main.registeredVariants).toContain(TODO_LIST_REMINDER_VARIANT);
+      for (const id of ['otoc', 'k-complexity', 'symmetry', 'symmetry-check']) {
+        const sub = makeFakeAgent(id);
+        lifecycle.fireCreate(sub.handle);
+        expect(sub.registeredVariants).not.toContain(TODO_LIST_REMINDER_VARIANT);
+      }
+    } finally {
+      disposables.dispose();
+    }
   });
 
   it('rebuilds the list when a todo tools.update_store record is replayed', async () => {

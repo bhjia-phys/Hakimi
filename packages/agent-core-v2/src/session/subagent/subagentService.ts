@@ -8,7 +8,9 @@
  * `onDidFinishAgentRun`) fired around each mirrored run for ledger consumers.
  * The service resolves the target agent from the
  * lifecycle registry and picks its summary policy from the profile catalog;
- * turn driving itself is delegated to a pure helper. Bound at Session scope.
+ * turn driving itself is delegated to a pure helper. Delegation admission reads
+ * persisted target ownership from session metadata immediately before enqueue.
+ * Bound at Session scope.
  */
 
 import { Service } from '#/_base/di/service';
@@ -25,6 +27,10 @@ import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalo
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { createHooks } from '#/hooks';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
+import { subagentGoalDependencies, subagentParentAgentId, subagentTaskScope } from '#/session/agentLifecycle/subagentMetadata';
+import { ISessionMetadata } from '#/session/sessionMetadata/sessionMetadata';
+import { IDelegationAdmission } from '#/agent/tools/agent/delegationContribution';
+import '#/agent/tools/agent/delegationAdmissionService';
 
 import {
   type AgentRunFinishedEvent,
@@ -67,17 +73,29 @@ export class SessionSubagentService extends Service implements ISessionSubagentS
   constructor(
     @IAgentLifecycleService private readonly agentLifecycle: IAgentLifecycleService,
     @ISessionAgentProfileCatalog private readonly catalog: ISessionAgentProfileCatalog,
+    @ISessionMetadata private readonly metadata: ISessionMetadata,
+    @IDelegationAdmission private readonly admission: IDelegationAdmission,
   ) {
     super();
   }
 
-  run(agentId: string, request: AgentRunRequest, opts: RunAgentOptions): Promise<AgentRunHandle> {
+  async run(agentId: string, request: AgentRunRequest, opts: RunAgentOptions): Promise<AgentRunHandle> {
+    opts.signal.throwIfAborted();
+    const meta = (await this.metadata.read()).agents?.[agentId];
     const handle = this.agentLifecycle.get(agentId);
     if (handle === undefined) {
       throw new Error2(ErrorCodes.AGENT_NOT_FOUND, `Agent "${agentId}" does not exist`, {
         details: { agentId },
       });
     }
+    const blocker = this.admission.blocker({
+      callerAgentId: subagentParentAgentId(meta) ?? agentId,
+      resumeAgentId: agentId,
+      taskScope: subagentTaskScope(meta),
+      goalDependencies: subagentGoalDependencies(meta),
+    });
+    if (blocker !== undefined) throw new Error2(ErrorCodes.AGENT_DELEGATION_BLOCKED, blocker);
+    opts.signal.throwIfAborted();
     return runAgentTurn(handle, request, {
       summaryPolicy: opts.summaryPolicy ?? this.summaryPolicyFor(handle),
       signal: opts.signal,

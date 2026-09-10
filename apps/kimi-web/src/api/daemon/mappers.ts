@@ -422,8 +422,11 @@ export function toAppTask(wire: WireTask): AppTask {
     model: wire.model,
     thinkingEffort: wire.thinking_effort,
     subagentPhase: wire.subagent_phase,
+    subagentRunId: wire.run_id,
     subagentType: wire.subagent_type,
     parentToolCallId: wire.parent_tool_call_id,
+    taskScope: wire.task_scope,
+    parentAgentId: wire.parent_agent_id,
     suspendedReason: wire.suspended_reason,
     swarmIndex: wire.swarm_index,
     // Preserve the server's explicit detached/foreground truth. Missing data

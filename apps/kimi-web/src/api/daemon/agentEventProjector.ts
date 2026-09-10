@@ -619,6 +619,7 @@ export interface AgentProjector {
    * snapshot's `session.status` is the authoritative value.
    */
   seedInFlight(sessionId: string, turn: AppInFlightTurn): AppEvent[];
+  seedSubagents(sessionId: string, tasks: readonly AppTask[]): void;
   /** Reset all per-session state (call on re-subscribe / resync). */
   reset(sessionId: string): void;
   /**
@@ -632,6 +633,12 @@ export interface AgentProjector {
 export function createAgentProjector(): AgentProjector {
   const sessions = new Map<string, SessionState>();
   const sideChannelAgents = new Set<string>();
+  function seedSubagents(sessionId: string, tasks: readonly AppTask[]): void {
+    const s = getOrCreate(sessionId);
+    for (const task of tasks) if (task.agentId && task.sessionId === sessionId) {
+      s.subagentMeta.set(task.agentId, { ...task });
+    }
+  }
 
   function getOrCreate(sessionId: string): SessionState {
     let s = sessions.get(sessionId);
@@ -1289,6 +1296,8 @@ export function createAgentProjector(): AgentProjector {
           subagentPhase: 'queued',
           subagentType: typeof p?.subagentName === 'string' ? p.subagentName : undefined,
           parentToolCallId: typeof p?.parentToolCallId === 'string' ? p.parentToolCallId : undefined,
+          parentAgentId: typeof p?.parentAgentId === 'string' ? p.parentAgentId
+            : typeof p?.callerAgentId === 'string' ? p.callerAgentId : undefined,
           swarmIndex: typeof p?.swarmIndex === 'number' ? p.swarmIndex : undefined,
           runInBackground: p?.runInBackground === true,
         };
@@ -1304,6 +1313,7 @@ export function createAgentProjector(): AgentProjector {
 
       case 'subagent.started': {
         const task = patchSubagent(s, sessionId, p?.subagentId, {
+          subagentRunId: typeof p?.runId === 'string' ? p.runId : undefined,
           subagentPhase: 'working',
           status: 'running',
           startedAt: new Date().toISOString(),
@@ -1323,6 +1333,8 @@ export function createAgentProjector(): AgentProjector {
       }
 
       case 'subagent.completed': {
+        const current = s.subagentMeta.get(p?.subagentId ?? '')?.subagentRunId;
+        if ((current !== undefined || p?.runId !== undefined) && current !== p?.runId) break;
         const outputPreview = typeof p?.resultSummary === 'string' ? p.resultSummary : undefined;
         const task = patchSubagent(s, sessionId, p?.subagentId, {
           subagentPhase: 'completed',
@@ -1342,6 +1354,8 @@ export function createAgentProjector(): AgentProjector {
       }
 
       case 'subagent.failed': {
+        const current = s.subagentMeta.get(p?.subagentId ?? '')?.subagentRunId;
+        if ((current !== undefined || p?.runId !== undefined) && current !== p?.runId) break;
         const outputPreview = typeof p?.error === 'string' ? p.error : undefined;
         const task = patchSubagent(s, sessionId, p?.subagentId, {
           subagentPhase: 'failed',
@@ -1427,6 +1441,8 @@ export function createAgentProjector(): AgentProjector {
             const task = patchSubagent(s, sessionId, agentId, {
               description,
               backgroundTaskId: taskId,
+              taskScope: typeof info.taskScope === 'string' ? info.taskScope : undefined,
+              parentAgentId: typeof info.parentAgentId === 'string' ? info.parentAgentId : undefined,
               runInBackground: true,
             });
             if (task) out.push({ type: 'taskCreated', sessionId, task });
@@ -1440,6 +1456,8 @@ export function createAgentProjector(): AgentProjector {
                 id: taskId,
                 sessionId,
                 kind: 'subagent',
+                taskScope: typeof info.taskScope === 'string' ? info.taskScope : undefined,
+                parentAgentId: typeof info.parentAgentId === 'string' ? info.parentAgentId : undefined,
                 description,
                 status: 'running',
                 createdAt: startedAt ?? new Date().toISOString(),
@@ -1605,7 +1623,7 @@ export function createAgentProjector(): AgentProjector {
     return out;
   }
 
-  return { project, bindNextPromptId, seedInFlight, reset, markSideChannelAgent };
+  return { project, bindNextPromptId, seedInFlight, seedSubagents, reset, markSideChannelAgent };
 }
 
 // ---------------------------------------------------------------------------

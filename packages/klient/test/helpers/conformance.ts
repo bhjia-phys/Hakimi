@@ -3,6 +3,9 @@
  * transports are interchangeable. Every transport test file runs the exact
  * same assertions against a real in-process engine; only the `before` setup
  * differs per file.
+ * Skill-sensitive temporary workspaces carry their own .git root marker so
+ * unrelated ancestor repositories (including a host /tmp/.git) cannot change
+ * the tested discovery and watcher scope.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,6 +19,7 @@ import { CommandContribution } from '@moonshot-ai/agent-core-v2/agent/command/co
 import { IFeatureManager } from '@moonshot-ai/agent-core-v2/app/feature/featureManager';
 import { getLiveSessionById } from '@moonshot-ai/agent-core-v2/app/sessionManager/sessionLookup';
 import { IAgentGoalService } from '@moonshot-ai/agent-core-v2/agent/goal/goal';
+import { IAgentTaskService } from '@moonshot-ai/agent-core-v2/agent/task/task';
 import { IAgentLifecycleService } from '@moonshot-ai/agent-core-v2/session/agentLifecycle/agentLifecycle';
 import { ensureMainAgent } from '@moonshot-ai/agent-core-v2/session/agentLifecycle/mainAgent';
 
@@ -67,6 +71,46 @@ export function defineKlientConformance(
 
     afterAll(async () => {
       await target.cleanup();
+    });
+
+    it('preserves multiple task owners and omitted limits across the transport', async () => {
+      const workDir = await mkdtemp(join(tmpdir(), 'klient-task-owners-'));
+      await mkdir(join(workDir, '.git'));
+      const created = await target.klient.global.sessions.create({ workDir });
+      const session = target.klient.session(created.id);
+      try {
+        const live = getLiveSessionById(target.app.accessor, created.id);
+        const main = await ensureMainAgent(live!);
+        const tasks = main.accessor.get(IAgentTaskService);
+        const ids = ['algebra', 'numerics'].map((line, index) => tasks.registerTask({
+          idPrefix: 'agent', kind: 'agent', description: `Transport fixture ${line}`,
+          start: async (sink) => {
+            sink.appendOutput(`Output for ${line}`);
+            await sink.settle({ status: 'completed' });
+          },
+          toInfo: (base) => ({
+            ...base, kind: 'agent', agentId: `child-${line}`,
+            taskScope: `research-line:${line}`,
+            parentAgentId: index === 0 ? 'main' : 'child-algebra',
+          }),
+        }));
+        await Promise.all(ids.map((id) => tasks.wait(id, 1000)));
+        const facade = session.agent('main');
+        const received = await facade.getTasks();
+        expect(received).toHaveLength(2);
+        for (const [index, line] of ['algebra', 'numerics'].entries()) {
+          expect(received.find((task) => task.taskId === ids[index])).toMatchObject({
+            kind: 'agent', status: 'completed', taskScope: `research-line:${line}`,
+            parentAgentId: index === 0 ? 'main' : 'child-algebra',
+          });
+          await expect(facade.getTaskOutput({ taskId: ids[index]! })).resolves.toContain(`Output for ${line}`);
+        }
+        expect(await facade.getTasks({ limit: 1 })).toHaveLength(1);
+        expect(await facade.getTasks({ activeOnly: true })).toEqual([]);
+      } finally {
+        await session.close();
+        await rm(workDir, { recursive: true, force: true });
+      }
     });
 
     it('env() aggregates the host snapshot', async () => {
@@ -151,6 +195,7 @@ export function defineKlientConformance(
 
     it('session skills.list returns the workspace skills as summaries', async () => {
       const workDir = await mkdtemp(join(tmpdir(), 'klient-conf-skills-'));
+      await mkdir(join(workDir, '.git'));
       try {
         await mkdir(join(workDir, '.kimi-code', 'skills', 'conf-skill'), { recursive: true });
         await writeFile(
@@ -382,15 +427,25 @@ export function defineKlientConformance(
     });
 
     it('research local conclusions round-trip without becoming canonical checkpoints', async () => {
+      let lastStepAt = performance.now();
+      const trace = (step: string): void => {
+        const now = performance.now();
+        process.stdout.write(`${JSON.stringify({ scenario: 'local-conclusion', transport, step, elapsedMs: Math.round(now - lastStepAt) })}\n`);
+        lastStepAt = now;
+      };
       const workDir = await mkdtemp(join(tmpdir(), 'klient-local-result-'));
+      await mkdir(join(workDir, '.git'));
       const created = await target.klient.global.sessions.create({ workDir, title: 'Local research result' });
+      trace('session-created');
       try {
         const agent = target.klient.session(created.id).agent('main');
         await agent.aitpMode.enter({ actor: 'user' });
+        trace('mode-entered');
         const action = await agent.research.planAndStartAction({
           kind: 'derivation', purpose: 'Check one limiting case.',
           expectedEvidence: ['Exact identity or counterexample'], stopCondition: 'The comparison is decided.',
         });
+        trace('action-started');
         const conclusion = await agent.research.concludeAction({
           actionId: action.actionId, status: 'completed',
           progress: {
@@ -405,6 +460,7 @@ export function defineKlientConformance(
           },
         });
         expect(conclusion.action.status).toBe('completed');
+        trace('action-concluded');
         expect(conclusion.localConclusion?.candidate.sourceActionId).toBe(action.actionId);
         const snapshot = await agent.research.getSnapshot();
         expect(snapshot.localConclusion).toEqual(conclusion.localConclusion);
@@ -417,8 +473,10 @@ export function defineKlientConformance(
         expect(error.code).toBe(40001);
         expect(error.details).toEqual({ code: 'research.line_not_found' });
         expect((await agent.research.getSnapshot()).localConclusion).toEqual(conclusion.localConclusion);
+        trace('roundtrip-verified');
       } finally {
         await target.klient.session(created.id).close();
+        trace('session-closed');
         await rm(workDir, { recursive: true, force: true });
       }
     });

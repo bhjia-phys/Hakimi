@@ -562,6 +562,7 @@ export interface WireResearchStateChange {
 export interface WireResearchHumanGate {
   gateId: string;
   kind: WireResearchHumanGateKind;
+  dependentGoalIds?: string[];
   actionId?: string;
   questionId?: string;
   prompt: string;
@@ -1035,8 +1036,11 @@ export interface WireTask {
   model?: string;
   thinking_effort?: string;
   subagent_phase?: 'queued' | 'working' | 'suspended' | 'completed' | 'failed';
+  run_id?: string;
   subagent_type?: string;
   parent_tool_call_id?: string;
+  task_scope?: string;
+  parent_agent_id?: string;
   suspended_reason?: string;
   swarm_index?: number;
   run_in_background?: boolean;
@@ -1516,6 +1520,7 @@ export interface WireSessionSnapshot {
   in_flight_turn: WireInFlightTurn | null;
   /** Live subagent roster at the watermark (absent on older servers). */
   subagents?: WireTask[];
+  agent_relationships?: { agent_id: string; parent_agent_id?: string; task_scope?: string }[];
   pending_approvals: WireApprovalRequest[];
   pending_questions: WireQuestionRequest[];
 }

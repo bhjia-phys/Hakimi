@@ -25,6 +25,7 @@ type SessionSwarmTaskBase<T> = {
 };
 
 export type SessionSwarmSpawnTask<T = unknown> = SessionSwarmTaskBase<T> & {
+  readonly goalDependencies?: readonly string[];
   readonly kind: 'spawn';
   readonly resumeAgentId?: undefined;
   readonly binding?: { readonly model: string; readonly thinking?: string };

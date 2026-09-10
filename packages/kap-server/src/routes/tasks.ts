@@ -396,6 +396,12 @@ function toWireTask(
   if (info.kind === 'agent' && info.parentToolCallId !== undefined) {
     base.parent_tool_call_id = info.parentToolCallId;
   }
+  if (info.kind === 'agent' && info.taskScope !== undefined) {
+    base.task_scope = info.taskScope;
+  }
+  if (info.kind === 'agent' && info.parentAgentId !== undefined) {
+    base.parent_agent_id = info.parentAgentId;
+  }
   if (info.kind === 'agent' && info.detached !== undefined) {
     base.run_in_background = info.detached;
   }

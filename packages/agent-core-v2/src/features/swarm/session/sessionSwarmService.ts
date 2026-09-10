@@ -39,6 +39,7 @@ import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle'
 import {
   isSubagentMeta,
   subagentLabels,
+  subagentGoalDependencies,
   subagentParentAgentId,
   subagentSwarmItem,
 } from '#/session/agentLifecycle/subagentMetadata';
@@ -170,13 +171,16 @@ export class SessionSwarmService implements ISessionSwarmService {
       thinking: callerData.thinkingLevel,
     };
     this.modelCatalog.get(binding.model);
+    const goalDependencies = options.goalDependencies ?? subagentGoalDependencies(
+      (await this.metadata.read()).agents?.[callerAgentId],
+    );
     const child = await this.lifecycle.create({
       binding: {
         profile: profile.name,
         model: binding.model,
         thinking: binding.thinking,
       },
-      labels: subagentLabels(callerAgentId, { swarmItem: options.swarmItem }),
+      labels: subagentLabels(callerAgentId, { swarmItem: options.swarmItem, goalDependencies }),
       runtimeId: callerRuntime.runtimeId,
     });
     child.accessor

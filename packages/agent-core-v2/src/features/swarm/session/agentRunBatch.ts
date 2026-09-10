@@ -30,6 +30,7 @@ export interface AgentRunAttemptOptions {
 }
 
 export interface AgentSpawnAttemptOptions extends AgentRunAttemptOptions {
+  readonly goalDependencies?: readonly string[];
   readonly profileName: string;
   readonly swarmItem?: string;
   readonly binding?: { readonly model: string; readonly thinking?: string };
@@ -304,6 +305,7 @@ export class AgentRunBatch<T> {
           profileName: task.profileName,
           swarmItem: task.swarmItem,
           binding: task.binding,
+          goalDependencies: task.goalDependencies,
           ...runOptions,
         };
         handle = await this.launcher.spawn(spawnOptions);
@@ -653,4 +655,3 @@ export function resolveSwarmMaxConcurrency(
   }
   return value;
 }
-

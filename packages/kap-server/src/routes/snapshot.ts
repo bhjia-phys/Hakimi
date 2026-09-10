@@ -168,6 +168,13 @@ async function assembleSnapshot(
     messages: { items, has_more: hasMore },
     in_flight_turn: inFlightTurn,
     subagents: snapState.subagents,
+    agent_relationships: Object.entries(meta.agents ?? {})
+      .filter(([id]) => id !== 'main')
+      .map(([id, agent]) => ({
+        agent_id: id,
+        parent_agent_id: agent.labels?.['parentAgentId'] || agent.parentAgentId || undefined,
+        task_scope: agent.labels?.['taskScope'] || undefined,
+      })),
     pending_approvals: pendingApprovals,
     pending_questions: pendingQuestions,
   };

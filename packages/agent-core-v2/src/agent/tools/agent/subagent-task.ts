@@ -27,6 +27,8 @@ type SubagentCompletion = {
 export type SubagentHandle = {
   readonly agentId: string;
   readonly profileName: string;
+  readonly taskScope?: string;
+  readonly parentAgentId?: string;
   readonly parentToolCallId?: string;
   readonly model?: string;
   readonly thinkingEffort?: string;
@@ -36,6 +38,8 @@ export type SubagentHandle = {
 export interface SubagentTaskInfo extends AgentTaskInfoBase {
   readonly kind: 'agent';
   readonly agentId?: string;
+  readonly taskScope?: string;
+  readonly parentAgentId?: string;
   readonly subagentType?: string;
   readonly parentToolCallId?: string;
   readonly model?: string;
@@ -132,6 +136,8 @@ export class SubagentTask implements AgentTask {
       ...base,
       kind: 'agent',
       agentId: this.agentId,
+      taskScope: this.handle.taskScope,
+      parentAgentId: this.handle.parentAgentId,
       subagentType: this.subagentType,
       parentToolCallId: this.parentToolCallId,
       model: this.model,

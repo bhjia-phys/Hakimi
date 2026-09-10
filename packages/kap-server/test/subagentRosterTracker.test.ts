@@ -27,6 +27,32 @@ function spawn(subagentId: string, extra: Record<string, unknown> = {}): Event {
 }
 
 describe('SubagentRosterTracker', () => {
+  it('keeps a reused live agent running when a previous execution completes late', () => {
+    const t = new SubagentRosterTracker();
+    t.apply(SID, spawn('a'));
+    t.apply(SID, ev({ type: 'subagent.started', subagentId: 'a', runId: 'old' }));
+    t.apply(SID, ev({ type: 'subagent.completed', subagentId: 'a', runId: 'old' }));
+    t.apply(SID, spawn('a'));
+    t.apply(SID, ev({ type: 'subagent.completed', subagentId: 'a', runId: 'old' }));
+    t.apply(SID, ev({ type: 'subagent.started', subagentId: 'a', runId: 'new' }));
+    t.apply(SID, ev({ type: 'subagent.failed', subagentId: 'a', runId: 'old' }));
+    expect(t.get(SID)[0]?.status).toBe('running');
+    t.apply(SID, ev({ type: 'subagent.completed', subagentId: 'a', runId: 'new' }));
+    expect(t.get(SID)[0]?.status).toBe('completed');
+  });
+  it('keeps task ownership in the foreground snapshot without copying it to another session', () => {
+    const t = new SubagentRosterTracker();
+    t.apply(SID, spawn('child-a'));
+    t.apply('session-b', spawn('child-a'));
+    t.apply(SID, ev({ type: 'task.started', info: {
+      kind: 'agent', taskId: 'task-a', agentId: 'child-a', taskScope: 'direction-a',
+      parentAgentId: 'coordinator-a',
+      detached: false, description: 'Inspect', status: 'running', startedAt: 1, endedAt: null,
+    } }));
+    expect(t.get(SID)[0]?.task_scope).toBe('direction-a');
+    expect(t.get(SID)[0]?.parent_agent_id).toBe('coordinator-a');
+    expect(t.get('session-b')[0]?.task_scope).toBeUndefined();
+  });
   it('seeds a roster entry from subagent.spawned with the swarm identity metadata', () => {
     const t = new SubagentRosterTracker();
     t.apply(SID, spawn('agent-1', { swarmIndex: 2, model: 'provider/secondary', thinkingEffort: 'low' }));

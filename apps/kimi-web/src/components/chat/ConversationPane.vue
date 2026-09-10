@@ -16,6 +16,7 @@ import ResearchWorkspaceBar from './ResearchWorkspaceBar.vue';
 import ResearchStarfield from './ResearchStarfield.vue';
 import ResearchOrbitMark from './ResearchOrbitMark.vue';
 import type { ResearchSessionLink } from '../../lib/researchWorkspace';
+import type { ResearchAgentRow } from '../../lib/researchAgentTree';
 import { openDialogCount } from '../../composables/dialogStack';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Icon from '../ui/Icon.vue';
@@ -40,6 +41,7 @@ const props = defineProps<{
   approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
   gitInfo?: { branch: string; ahead: number; behind: number } | null;
   tasks: TaskItem[];
+  researchAgents?: ResearchAgentRow[];
   /** Model-maintained todo list (TodoList tool) — shown as a floating card. */
   todos?: TodoView[];
   goal?: AppGoal | null;
@@ -1381,6 +1383,7 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
         v-if="research && research.mode !== 'inactive' && !sessionLoading"
         :key="sessionId"
         :snapshot="research"
+        :agents="researchAgents"
         :force-expanded="researchExpandSignal"
         :style="{ '--research-dock-height': `${dockHeight}px` }"
         @manage="emit('manageResearch')"

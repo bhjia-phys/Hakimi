@@ -696,6 +696,8 @@ export function reduceAppEvent(
           swarmIndex: event.task.swarmIndex ?? previous.swarmIndex,
           parentToolCallId: event.task.parentToolCallId ?? previous.parentToolCallId,
           subagentType: event.task.subagentType ?? previous.subagentType,
+          taskScope: event.task.taskScope ?? previous.taskScope,
+          parentAgentId: event.task.parentAgentId ?? previous.parentAgentId,
           agentId: event.task.agentId ?? previous.agentId,
           model: event.task.model ?? previous.model,
           thinkingEffort: event.task.thinkingEffort ?? previous.thinkingEffort,

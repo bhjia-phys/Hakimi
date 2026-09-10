@@ -9,6 +9,13 @@ const DEFAULT_APPROVE_TOOLS = new Set([
   'Grep',
   'Glob',
   'ReadMediaFile',
+  // Native ledger reads are bounded by the adapter; write tools remain excluded.
+  'aitp_enter',
+  'aitp_list',
+  'aitp_show',
+  'aitp_check',
+  'GetResearchStatus',
+  'ReadResearchCheckpointEvidence',
   'SetTodoList',
   'TodoList',
   'TaskList',

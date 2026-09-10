@@ -9,6 +9,30 @@ import { toAppGoal } from '../src/api/daemon/mappers';
 import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
 import type { AppTask } from '../src/api/types';
 
+describe('subagent execution identity', () => {
+  it('rejects old terminal events before and after a reused execution starts', () => {
+    const p = createAgentProjector();
+    p.project('subagent.spawned', { subagentId: 'a' }, 's');
+    p.project('subagent.started', { subagentId: 'a', runId: 'old' }, 's');
+    p.project('subagent.spawned', { subagentId: 'a' }, 's');
+    expect(p.project('subagent.completed', { subagentId: 'a', runId: 'old' }, 's')).toEqual([]);
+    p.project('subagent.started', { subagentId: 'a', runId: 'new' }, 's');
+    expect(p.project('subagent.failed', { subagentId: 'a', runId: 'old' }, 's')).toEqual([]);
+    expect(p.project('subagent.completed', { subagentId: 'a' }, 's')).toEqual([]);
+    expect(p.project('subagent.completed', { subagentId: 'a', runId: 'new' }, 's'))
+      .toContainEqual(expect.objectContaining({ type: 'taskCompleted', status: 'completed' }));
+  });
+  it('seeds execution identity at snapshot watermark, including a null main turn', () => {
+    const p = createAgentProjector();
+    p.reset('s');
+    p.seedSubagents('s', [{ id: 'a', agentId: 'a', sessionId: 's', kind: 'subagent',
+      description: 'A', status: 'running', createdAt: '', subagentRunId: 'new' }]);
+    expect(p.project('subagent.completed', { subagentId: 'a', runId: 'old' }, 's')).toEqual([]);
+    expect(p.project('subagent.completed', { subagentId: 'a', runId: 'new' }, 's'))
+      .toContainEqual(expect.objectContaining({ type: 'taskCompleted', status: 'completed' }));
+  });
+});
+
 describe('toAppGoal continuation projection', () => {
   const snapshot = {
     goalId: 'goal_1',
@@ -880,6 +904,7 @@ describe('background subagent task registration', () => {
       {
         info: {
           taskId: 'task-9',
+          taskScope: 'direction-a',
           kind: 'agent',
           detached: true,
           agentId: 'agent-1',
@@ -901,6 +926,7 @@ describe('background subagent task registration', () => {
           description: 'Explore repo',
           runInBackground: true,
           backgroundTaskId: 'task-9',
+          taskScope: 'direction-a',
         }),
       },
     ]);

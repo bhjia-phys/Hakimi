@@ -20,6 +20,7 @@
 import { dirname, isAbsolute, join } from 'pathe';
 
 import { Service } from '#/_base/di/service';
+import { Emitter } from '#/_base/event';
 import { abortable } from '#/_base/utils/abort';
 import { IHostProcessService } from '#/os/interface/hostProcess';
 import { IHostFileSystem } from '#/os/interface/hostFileSystem';
@@ -60,6 +61,7 @@ const MANIFEST_FILE = 'kimi.plugin.json';
 const SUPPORTED_CONTRACTS: ReadonlyMap<string, string> = new Map([
   ['aitp/adapter-contract-0.1', '0.1'],
   ['aitp/adapter-contract-0.2', '0.2'],
+  ['aitp/adapter-contract-0.3', '0.3'],
 ] as const);
 
 interface ContractFile {
@@ -94,6 +96,8 @@ function isOperationCancelled(error: unknown): error is AitpResearchError {
 
 export class SessionAitpAdapterService extends Service implements ISessionAitpAdapter {
   declare readonly _serviceBrand: undefined;
+  private readonly memoryInvalidated = this._register(new Emitter<void>());
+  readonly onDidInvalidateMemory = this.memoryInvalidated.event;
 
   private healthState: AitpAdapterHealth = { phase: 'inactive' };
   private contractIdentity: AitpContractIdentity | null = null;
@@ -202,19 +206,24 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
 
   async recordSave(options: AitpAdapterRecordSaveOptions): Promise<AitpRecordSaveResult> {
     const usesAtomicScope = options.expectedTopic !== undefined || options.exactWorkstream !== undefined;
-    if (usesAtomicScope && this.contractIdentity?.contractVersion !== '0.2') {
+    if (usesAtomicScope && !['0.2', '0.3'].includes(this.contractIdentity?.contractVersion ?? '')) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_ADAPTER_CONTRACT_UNKNOWN,
-        'Checkpoint-bound record save requires AITP adapter-contract-0.2.',
+        'Checkpoint-bound record save requires AITP adapter-contract-0.2 or 0.3.',
       );
     }
-    return this.singleFlight(options, (launcher, signal) =>
-      launcher.recordSave({
-        draftPath: options.draftPath,
-        expectedTopic: options.expectedTopic,
-        exactWorkstream: options.exactWorkstream,
-      }, { signal }),
-    );
+    return this.singleFlight(options, async (launcher, signal) => {
+      this.memoryInvalidated.fire();
+      try {
+        return await launcher.recordSave({
+          draftPath: options.draftPath,
+          expectedTopic: options.expectedTopic,
+          exactWorkstream: options.exactWorkstream,
+        }, { signal });
+      } finally {
+        this.memoryInvalidated.fire();
+      }
+    });
   }
 
   async notePrepare(options: AitpAdapterNotePrepareOptions): Promise<AitpNotePrepareResult> {
@@ -229,9 +238,25 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
   }
 
   async noteSave(options: AitpAdapterNoteSaveOptions): Promise<AitpNoteSaveResult> {
-    return this.singleFlight(options, (launcher, signal) =>
-      launcher.noteSave(options.draftPath, { signal }),
-    );
+    const usesAtomicScope = options.expectedTopic !== undefined || options.exactWorkstream !== undefined;
+    if (usesAtomicScope && this.contractIdentity?.contractVersion !== '0.3') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_ADAPTER_CONTRACT_UNKNOWN,
+        'Scoped Note save requires AITP adapter-contract-0.3.',
+      );
+    }
+    return this.singleFlight(options, async (launcher, signal) => {
+      this.memoryInvalidated.fire();
+      try {
+        return await launcher.noteSave(options.draftPath, {
+          signal,
+          expectedTopic: options.expectedTopic,
+          exactWorkstream: options.exactWorkstream,
+        });
+      } finally {
+        this.memoryInvalidated.fire();
+      }
+    });
   }
 
   private async runProbe(operation: LifecycleOperation): Promise<AitpAdapterHealth> {

@@ -22,7 +22,14 @@ import {
 
 // ── GetResearchStatus ────────────────────────────────────────────────────
 
-export const GetResearchStatusInputSchema = z.object({}).strict();
+export const GetResearchStatusInputSchema = z.object({
+  line_slug: z.string().min(1).optional().describe(
+    'Inspect this existing Research Line without switching execution focus or changing any task/record ownership. Returns a scoped overview, not the session-wide snapshot.',
+  ),
+  detail: z.enum(['summary', 'full']).optional().describe(
+    'Defaults to summary: preserve research facts and recovery identity, summarize check receipts. Use full only for exact receipt/finding diagnostics.',
+  ),
+}).strict();
 export type GetResearchStatusInput = z.infer<typeof GetResearchStatusInputSchema>;
 
 export interface IGetResearchStatusTool extends AgentTool<GetResearchStatusInput> {
@@ -208,8 +215,27 @@ export const ProposeResearchCheckpointInputSchema = z
     line_slug: z.string().optional(),
     assessment: z.string().optional(),
     next_action: z.string().optional(),
+    local_conclusion_id: z.string().min(1).max(200).optional(),
+    confirmed_by: z.literal('user').optional(),
+    expected_revision: z.number().int().positive().optional().describe(
+      'Required together with local_conclusion_id and confirmed_by=user when explicitly adopting a retained local conclusion. Read it from a fresh GetResearchStatus snapshot after the user has confirmed adoption.',
+    ),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    const adopting = input.local_conclusion_id !== undefined ||
+      input.confirmed_by !== undefined || input.expected_revision !== undefined;
+    if (!adopting) return;
+    if (input.local_conclusion_id === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['local_conclusion_id'], message: 'Local conclusion adoption requires local_conclusion_id.' });
+    }
+    if (input.confirmed_by !== 'user') {
+      ctx.addIssue({ code: 'custom', path: ['confirmed_by'], message: 'Local conclusion adoption requires explicit confirmed_by=user.' });
+    }
+    if (input.expected_revision === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['expected_revision'], message: 'Local conclusion adoption requires expected_revision from a fresh Research snapshot.' });
+    }
+  });
 export type ProposeResearchCheckpointInput = z.infer<typeof ProposeResearchCheckpointInputSchema>;
 
 export interface IProposeResearchCheckpointTool
@@ -272,16 +298,18 @@ export const PlanResearchActionInputSchema = z
       .max(20)
       .default([])
       .describe(
-        'Executor-authoritative capabilities in active Research Mode: workspace_read, workspace_write, web_search, web_fetch, shell, task, subagent, or scheduler. Use tool:<exact-tool-name> for one otherwise unclassified plugin or MCP tool. Descriptive labels such as simulation do not grant tool execution.',
+        'Optional legacy metadata describing tools expected for this attempt. These labels neither grant nor restrict tool execution; normal tool permissions remain authoritative. Leave empty when unnecessary.',
       ),
     retry_of_entry_id: z.string().optional(),
     observed_run_action_id: z.string().min(1).optional().describe('For a new observation action only: original actionId of the retained Run. Use the same explicit Question and Line; this does not submit a new job or change its origin.'),
     planning_level: z.enum(['simple', 'planned']).optional().describe(
       'Simple actions use a minimal bounded plan and may explicitly bind the current active Research Plan milestone without a local Action Plan. Planned actions require a finalized local Action Plan; also bind the current Research Plan and milestone when a non-terminal Research Plan exists. A Goal is not required for local exploration.',
     ),
-    research_plan_id: z.string().min(1).max(200).optional(),
-    research_plan_revision: z.number().int().positive().optional(),
-    milestone_id: z.string().min(1).max(200).optional(),
+    research_plan_id: z.string().min(1).max(200).optional().describe(
+      'An existing active Research Plan ID, supplied together with its revision and milestone_id. For simple work without that parent plan, omit all three fields. Never copy a prior actionPlanBinding.planId such as minimal:<actionId>; that is not a Research Plan.',
+    ),
+    research_plan_revision: z.number().int().positive().optional().describe('Current revision of research_plan_id, not the previous Action Plan revision. Omit with research_plan_id when unbound.'),
+    milestone_id: z.string().min(1).max(200).optional().describe('An existing milestone in research_plan_id. Supply all three parent binding fields together, or omit all three.'),
     action_plan_id: z.string().min(1).max(200).optional(),
     action_plan_revision: z.number().int().positive().optional(),
     requires_human_approval: z.boolean().default(false).describe(
@@ -485,6 +513,9 @@ export const IObserveResearchRunTool =
 
 export const RequestResearchDecisionInputSchema = z
   .object({
+    dependent_goal_ids: z.array(z.string().min(1).max(200)).min(1).max(32).optional().describe(
+      'Exact existing Goal IDs whose outcome requires this decision. Do not infer dependency from the current Line or Goal alone. Omit if unknown: unknown legacy dependencies conservatively hold Goal continuation; an explicit list does not block other Goals.',
+    ),
     kind: z.enum(['approval', 'review', 'decision']).describe(
       'Classify genuinely non-delegable human input. The resulting Research gate remains human-owned in every permission mode, including auto.',
     ),

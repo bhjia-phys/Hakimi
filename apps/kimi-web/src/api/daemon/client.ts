@@ -678,6 +678,11 @@ export class DaemonKimiWebApi implements KimiWebApi {
         pendingQuestions: data.pending_questions.map(toAppQuestionRequest),
         // Older servers omit the roster entirely; treat as an empty roster.
         subagents: (data.subagents ?? []).map(toAppTask),
+        agentRelationships: data.agent_relationships?.map((node) => ({
+          agentId: node.agent_id,
+          parentAgentId: node.parent_agent_id,
+          taskScope: node.task_scope,
+        })),
       };
       traceKeyEvent('session:snapshot:accepted', {
         sessionId,
@@ -1713,9 +1718,11 @@ export class DaemonKimiWebApi implements KimiWebApi {
         );
         if (snapshot.inFlightTurn === null) {
           projector.reset(sessionId);
+          projector.seedSubagents(sessionId, snapshot.subagents ?? []);
           return;
         }
         const appEvents = projector.seedInFlight(sessionId, snapshot.inFlightTurn);
+        projector.seedSubagents(sessionId, snapshot.subagents ?? []);
         for (const appEvent of appEvents) {
           handlers.onEvent(appEvent, { sessionId, seq: snapshot.asOfSeq });
         }
