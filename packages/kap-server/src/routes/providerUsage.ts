@@ -13,6 +13,7 @@
 
 import {
   IProviderUsageService,
+  type MeteredProviderUsage,
   type ProviderUsageResult,
   type Scope,
 } from '@moonshot-ai/agent-core-v2';
@@ -22,6 +23,10 @@ import { defineRoute } from '../middleware/defineRoute';
 import {
   providerUsageQuerySchema,
   providerUsageResponseSchema,
+  type ProviderMeteredBalance,
+  type ProviderMeteredBalanceResult,
+  type ProviderMeteredPeriod,
+  type ProviderMeteredUsage,
   type ProviderUsageItem,
   type ProviderUsageResponse,
   type ProviderUsageRow,
@@ -93,6 +98,7 @@ function toProviderUsageItem(result: ProviderUsageResult): ProviderUsageItem {
               monthly_used_cents: result.extraUsage.monthlyUsedCents,
               currency: result.extraUsage.currency,
             },
+      metered_usage: toWireMeteredUsage(result.meteredUsage),
     };
   }
   if (result.kind === 'error') {
@@ -126,5 +132,71 @@ function toWireUsageRow(row: DomainUsageRow): ProviderUsageRow {
     used: row.used,
     limit: row.limit,
     reset_at: row.resetAt,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Metered usage projection — core `MeteredProviderUsage` → snake_case.
+//
+// Every field is mapped explicitly — never spread — so a future field on the
+// domain type (including any credential-adjacent context) cannot leak onto the
+// wire by accident. `estimated_cost` stays a high-precision CNY decimal string
+// (or `null`) — the route performs no rounding or unit conversion, and the
+// independent account `balance` is projected separately from Kimi `extra_usage`.
+// ---------------------------------------------------------------------------
+
+type MeteredPeriod = MeteredProviderUsage['today'];
+type MeteredBalance = MeteredProviderUsage['balance'];
+
+function toWireMeteredUsage(metered: MeteredProviderUsage | undefined): ProviderMeteredUsage | undefined {
+  if (metered === undefined) return undefined;
+  return {
+    source: metered.source,
+    cost_source: metered.costSource,
+    currency: metered.currency,
+    timezone: metered.timezone,
+    tracking_started_at: metered.trackingStartedAt,
+    degraded: metered.degraded,
+    today: toWireMeteredPeriod(metered.today),
+    month: toWireMeteredPeriod(metered.month),
+    balance: toWireMeteredBalance(metered.balance),
+  };
+}
+
+function toWireMeteredPeriod(period: MeteredPeriod): ProviderMeteredPeriod {
+  return {
+    start_at: period.startAt,
+    end_at: period.endAt,
+    request_count: period.requestCount,
+    measured_request_count: period.measuredRequestCount,
+    pending_request_count: period.pendingRequestCount,
+    missing_usage_request_count: period.missingUsageRequestCount,
+    unpriced_request_count: period.unpricedRequestCount,
+    input_tokens: period.inputTokens,
+    output_tokens: period.outputTokens,
+    cache_read_tokens: period.cacheReadTokens,
+    total_tokens: period.totalTokens,
+    estimated_cost: period.estimatedCost,
+    is_partial: period.isPartial,
+  };
+}
+
+function toWireMeteredBalance(balance: MeteredBalance): ProviderMeteredBalanceResult {
+  if (balance.kind === 'ok') {
+    return {
+      kind: 'ok',
+      is_available: balance.isAvailable,
+      balances: balance.balances.map((entry): ProviderMeteredBalance => ({
+        currency: entry.currency,
+        total: entry.total,
+        granted: entry.granted,
+        topped_up: entry.toppedUp,
+      })),
+    };
+  }
+  return {
+    kind: 'error',
+    message: balance.message,
+    status: balance.status,
   };
 }

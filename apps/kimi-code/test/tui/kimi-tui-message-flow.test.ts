@@ -13,7 +13,7 @@ import type {
   ApprovalResponse,
   Event,
   GoalSnapshot,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
   Session,
   SkillSummary,
 } from '@bhjia-phys/hakimi-sdk';
@@ -4283,23 +4283,45 @@ command = "vim"
     expect(expanded).toContain('Keep the src/tui compaction notes.');
   });
 
+  it('keeps Todo rows visible alongside Research mode and after disabling it', async () => {
+    const { driver } = await makeDriver();
+    const sendQueued = vi.fn();
+    driver.streamingUI.setTodoList([
+      { title: 'Investigate evidence', status: 'in_progress' },
+      { title: 'Write closeout', status: 'pending' },
+      { title: 'Review results', status: 'pending' },
+      { title: 'Check references', status: 'pending' },
+      { title: 'Summarize findings', status: 'pending' },
+      { title: 'Archive notes', status: 'pending' },
+    ]);
+
+    for (const enabled of [false, true, false]) {
+      driver.sessionEventHandler.handleEvent(
+        {
+          type: 'research_mode.updated',
+          agentId: 'main',
+          sessionId: 'ses-1',
+          snapshot: { enabled, skillsAvailable: true },
+        } as Event,
+        sendQueued,
+      );
+      const rendered = driver.state.todoPanelContainer.render(120).map(stripSgr).join('\n');
+      expect(rendered).toContain('● Investigate evidence');
+      expect(rendered).toContain('○ Write closeout');
+      expect(rendered).not.toContain('Archive notes');
+      expect(rendered.includes('AITP Skills visible')).toBe(enabled);
+
+      expect(driver.state.editor.onToggleTodoExpand?.()).toBe(true);
+      const expanded = driver.state.todoPanelContainer.render(120).map(stripSgr).join('\n');
+      expect(expanded).toContain('○ Archive notes');
+      expect(expanded.includes('AITP Skills visible')).toBe(enabled);
+      expect(driver.state.editor.onToggleTodoExpand?.()).toBe(true);
+    }
+  });
+
   it('syncs Ctrl+O expansion state to the visible Research Board', async () => {
     const { driver } = await makeDriver();
-    const snapshot: ResearchStatusSnapshot = {
-          mode: 'ready',
-          loopStatus: 'active',
-          planningPolicy: 'collaborative',
-      questions: [],
-      lines: [],
-      openQuestionCount: 0,
-      activeQuestionCount: 0,
-      blockedQuestionCount: 0,
-      alerts: [],
-      lineWorkstreamBindings: [],
-      aitpHealth: { phase: 'ready' },
-      phase: 'action_executing',
-      revision: 1,
-    };
+    const snapshot: ResearchModeSnapshot = { enabled: true, skillsAvailable: true };
     driver.state.researchBoard.setSnapshot(snapshot);
     expect(driver.state.researchBoard.isExpanded()).toBe(false);
 

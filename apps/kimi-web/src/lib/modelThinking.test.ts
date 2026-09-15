@@ -8,6 +8,7 @@ import {
 import type { ExtendedState } from '../composables/useKimiWebClient';
 import {
   commitLevel,
+  defaultThinkingEffortState,
   defaultThinkingLevelFor,
   effectiveThinkingLevel,
   effortLabel,
@@ -104,6 +105,50 @@ describe('modelThinking', () => {
   const alwaysOnModel = model({ capabilities: ['always_thinking'] });
   const maxOnlyModel = model({ capabilities: ['always_thinking'], supportEfforts: ['max'], defaultEffort: 'max' });
   const unsupportedModel = model({ capabilities: [] });
+
+  describe('defaultThinkingEffortState', () => {
+    it('shows the model default without creating a saved preference', () => {
+      expect(defaultThinkingEffortState(effortModel, undefined)).toEqual({
+        efforts: ['low', 'high', 'max'], value: 'high', unsupported: false,
+      });
+      expect(defaultThinkingEffortState(model({
+        capabilities: ['thinking'], supportEfforts: ['low', 'medium', 'high'],
+      }), undefined).value).toBe('medium');
+    });
+
+    it.each(['low', 'high', 'max'])('keeps the explicit %s effort, including the highest tier', (effort) => {
+      expect(defaultThinkingEffortState(effortModel, effort)).toEqual({
+        efforts: ['low', 'high', 'max'], value: effort, unsupported: false,
+      });
+    });
+
+    it('uses the declared efforts for always-on models without on/off options', () => {
+      expect(defaultThinkingEffortState(maxOnlyModel, undefined)).toEqual({
+        efforts: ['max'], value: 'max', unsupported: false,
+      });
+    });
+
+    it.each([undefined, booleanModel, alwaysOnModel, unsupportedModel, model({
+      capabilities: [], supportEfforts: ['low', 'high'],
+    })])('offers no effort for an unavailable or non-effort model: %j', (target) => {
+      expect(defaultThinkingEffortState(target, undefined)).toEqual({
+        efforts: [], value: undefined, unsupported: false,
+      });
+      expect(defaultThinkingEffortState(target, 'max')).toEqual({
+        efforts: [], value: 'max', unsupported: true,
+      });
+    });
+
+    it('marks a stale effort after a model change without coercing it to the new default', () => {
+      expect(defaultThinkingEffortState(effortModel, 'low').unsupported).toBe(false);
+      expect(defaultThinkingEffortState(maxOnlyModel, 'low')).toEqual({
+        efforts: ['max'], value: 'low', unsupported: true,
+      });
+      expect(defaultThinkingEffortState(effortModel, 'ultra')).toEqual({
+        efforts: ['low', 'high', 'max'], value: 'ultra', unsupported: true,
+      });
+    });
+  });
 
   describe('thinkingLevelForModelSwitch', () => {
     it('pre-selects the target model default effort on a switch', () => {

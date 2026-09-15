@@ -56,9 +56,9 @@ onUnmounted(() => {
     clearTimeout(undoFallbackTimer);
     undoFallbackTimer = null;
   }
-  if (unsupportedOpenTimer !== null) {
-    clearTimeout(unsupportedOpenTimer);
-    unsupportedOpenTimer = null;
+  if (attachmentOpenFailedTimer !== null) {
+    clearTimeout(attachmentOpenFailedTimer);
+    attachmentOpenFailedTimer = null;
   }
 });
 
@@ -238,7 +238,7 @@ const activeToolProgress = computed<{
 } | null>(() => {
   const progress = turnProgressSnapshot.value;
   if (progress === null) return null;
-  const toolCallId = activeTurnProgressToolId(props.turns, props.turnActive);
+  const toolCallId = activeTurnProgressToolId(props.turns, props.turnActive, props.tasks);
   return toolCallId === null ? null : { toolCallId, progress };
 });
 
@@ -540,27 +540,28 @@ function userAttachmentMedia(att: TurnAttachment): ToolMedia {
   return { kind: att.kind === 'video' ? 'video' : 'image', url: att.url, path: att.name, fileId: att.fileId };
 }
 
-// Transient "can't open this type" hint after clicking a file chip of a
-// non-previewable type. Mirrors the copiedTurn timer pattern; cleared on unmount.
-const unsupportedOpenName = ref<string | null>(null);
-let unsupportedOpenTimer: ReturnType<typeof setTimeout> | null = null;
+// Transient "couldn't open this file" hint after a file-chip click fails
+// (non-previewable types fall back to a download — see openFileAttachment).
+// Mirrors the copiedTurn timer pattern; cleared on unmount.
+const attachmentOpenFailedName = ref<string | null>(null);
+let attachmentOpenFailedTimer: ReturnType<typeof setTimeout> | null = null;
 
 function onAttachmentClick(att: TurnAttachment): void {
   if (att.kind === 'image' || att.kind === 'video') {
     emit('openMedia', userAttachmentMedia(att));
     return;
   }
-  // Generic files open in a new tab, but only whitelisted inert types —
-  // anything else gets the unsupported hint instead of an active-document
-  // preview (see openFileAttachment).
+  // Generic files preview in a new tab when the type is whitelisted-inert,
+  // otherwise the original file downloads — a 'failed' result (the byte fetch
+  // itself failed) gets the transient hint instead of silence.
   if (att.fileId === undefined) return;
   void openFileAttachment(att.fileId, att.name, att.mediaType).then((result) => {
-    if (result !== 'unsupported') return;
-    unsupportedOpenName.value = att.name ?? att.fileId ?? '';
-    if (unsupportedOpenTimer !== null) clearTimeout(unsupportedOpenTimer);
-    unsupportedOpenTimer = setTimeout(() => {
-      unsupportedOpenTimer = null;
-      unsupportedOpenName.value = null;
+    if (result !== 'failed') return;
+    attachmentOpenFailedName.value = att.name ?? att.fileId ?? '';
+    if (attachmentOpenFailedTimer !== null) clearTimeout(attachmentOpenFailedTimer);
+    attachmentOpenFailedTimer = setTimeout(() => {
+      attachmentOpenFailedTimer = null;
+      attachmentOpenFailedName.value = null;
     }, 2400);
   });
 }
@@ -889,9 +890,9 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
     </div>
   </div>
 
-  <!-- Transient hint after clicking a file chip whose type can't be opened. -->
-  <div v-if="unsupportedOpenName !== null" class="open-unsupported" role="status">
-    {{ t('composer.attachmentOpenUnsupported', { name: unsupportedOpenName }) }}
+  <!-- Transient hint after a file-chip click fails to open or download. -->
+  <div v-if="attachmentOpenFailedName !== null" class="open-unsupported" role="status">
+    {{ t('composer.attachmentOpenFailed', { name: attachmentOpenFailedName }) }}
   </div>
 </template>
 

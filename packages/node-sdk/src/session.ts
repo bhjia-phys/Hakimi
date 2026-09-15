@@ -32,7 +32,7 @@ import type {
   ReloadSummary,
   ResearchCommand,
   ResearchCommandResponse,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
   ResumeGoalInput,
   ResumedSessionState,
   ResumedSessionSummary,
@@ -557,17 +557,14 @@ export class Session {
   // rejects with `not_implemented` from the base RPC client.
 
   /** Read the current research-mode snapshot for this session's main agent. */
-  async getResearch(): Promise<ResearchStatusSnapshot> {
+  async getResearch(): Promise<ResearchModeSnapshot> {
     this.ensureOpen();
     return this.rpc.getResearch({ sessionId: this.id });
   }
 
   /**
-   * Submit one research steering command (mode on/off, pause/resume, question
-   * create/edit, focus, line switch, reopen/defer/block/close, Goal alignment,
-   * human decision resolve, typed evidence review, run observation, alert
-   * acknowledgement, checkpoint propose/commit). Resolves with the post-command
-   * snapshot.
+   * Enable or disable Research memory mode. Other historical command kinds
+   * reject with research.retired and never complete or discard old records.
    */
   async commandResearch(command: ResearchCommand): Promise<ResearchCommandResponse> {
     this.ensureOpen();

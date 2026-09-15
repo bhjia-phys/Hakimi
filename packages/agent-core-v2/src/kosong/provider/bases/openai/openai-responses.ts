@@ -53,9 +53,11 @@ import {
   convertOpenAIError,
   hasModelPrefix,
   isMediaPart,
+  isOpenAIGpt6AstraModel,
   isOpenAIInsufficientQuotaCode,
   isOpenAIReasoningModel,
   OPENAI_REASONING_CAPABILITY,
+  OPENAI_THINKING_VISION_TOOL_CAPABILITY,
   OPENAI_VISION_TOOL_CAPABILITY,
   OPENAI_VISION_TOOL_PREFIXES,
   TOOL_RESULT_MEDIA_PLACEHOLDER,
@@ -549,6 +551,7 @@ const OPENAI_RESPONSES_DEVELOPER_ROLE_MODELS = new Set([
 
 export function usesOpenAIResponsesDeveloperRole(modelName: string): boolean {
   const normalized = modelName.toLowerCase();
+  if (isOpenAIGpt6AstraModel(normalized)) return true;
   if (OPENAI_RESPONSES_DEVELOPER_ROLE_MODELS.has(normalized)) return true;
   for (const cataloguedModel of OPENAI_RESPONSES_DEVELOPER_ROLE_MODELS) {
     if (normalized.startsWith(cataloguedModel + '-')) return true;
@@ -1243,6 +1246,9 @@ export function getOpenAIResponsesModelCapability(modelName: string) {
   const normalized = modelName.toLowerCase();
   if (isOpenAIReasoningModel(normalized)) {
     return OPENAI_REASONING_CAPABILITY;
+  }
+  if (isOpenAIGpt6AstraModel(normalized)) {
+    return OPENAI_THINKING_VISION_TOOL_CAPABILITY;
   }
   if (hasModelPrefix(normalized, OPENAI_VISION_TOOL_PREFIXES)) {
     return OPENAI_VISION_TOOL_CAPABILITY;

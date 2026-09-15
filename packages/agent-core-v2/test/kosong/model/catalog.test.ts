@@ -2,7 +2,11 @@
  * `kosong/model` ModelCatalog tests — Model assembly, caching, and
  * config-event invalidation, exercised through the real DI graph (real
  * model/provider services + the real protocol-adapter registry with
- * every base contrib and the kimi + endpoint definitions registered):
+ * every base contrib and the kimi + endpoint definitions registered).
+ * DeepSeek covers capability and endpoint resolution plus cached requester
+ * routing through the real SDK with only fetch stubbed (no remote inference).
+ * Run: pnpm --filter @moonshot-ai/agent-core-v2 test test/kosong/model/catalog.test.ts
+ *
  *
  *  - the assembled Model is PURE DATA: no `with*` morphs, no request driver —
  *    per-turn intent belongs to `ModelRequester` params;
@@ -18,8 +22,15 @@
  *    `notifyConfigChanged()` (the load-bearing test-harness contract).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  applyDeepSeekProviderModels,
+  deepSeekModelInfo,
+  type ManagedKimiConfigShape,
+} from '@moonshot-ai/kimi-code-oauth';
+
+import { completionBudgetParams, resolveCompletionBudget } from '#/kosong/model/completionBudget';
 import { createScopedTestHost } from '#/_base/di/test';
 import { isErrorCode } from '#/_base/errors/codes';
 import { isError2 } from '#/_base/errors/errors';
@@ -33,6 +44,7 @@ import '#/kosong/provider/bases/anthropic/index';
 import '#/kosong/provider/bases/google-genai/index';
 import '#/kosong/provider/bases/openai/index';
 import '#/kosong/provider/protocolAdapterRegistry';
+import '#/kosong/provider/providers/deepseek/deepseek.contrib';
 import '#/kosong/provider/providers/kimi/kimi.contrib';
 import '#/kosong/provider/providers/standard.contrib';
 import {
@@ -138,6 +150,220 @@ beforeEach(() => {
 afterEach(() => {
   if (savedCustomHeaders === undefined) delete process.env['KIMI_CODE_CUSTOM_HEADERS'];
   else process.env['KIMI_CODE_CUSTOM_HEADERS'] = savedCustomHeaders;
+});
+
+describe('DeepSeek model assembly', () => {
+  it.each(['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'])(
+    'resolves %s through the DeepSeek definition with Flash capabilities',
+    async (modelName) => {
+      const { host, catalog } = createHost({
+        providers: { official: { type: 'deepseek', apiKey: 'test-key' } },
+        models: { flash: {
+          provider: 'official', model: modelName, maxContextSize: 1048576,
+          supportEfforts: ['low', 'high', 'max'], defaultEffort: 'high',
+        } },
+      });
+      try {
+        const model = catalog.get('flash');
+        expect(model).toMatchObject({
+          protocol: 'openai', providerType: 'deepseek', providerName: 'official',
+          baseUrl: 'https://api.deepseek.com',
+          supportEfforts: ['low', 'high', 'max'], defaultEffort: 'high',
+          capabilities: {
+            image_in: true, thinking: true, tool_use: true,
+            video_in: false, audio_in: false, max_context_tokens: 1048576,
+          },
+        });
+        expect(model.headers).toEqual({ 'User-Agent': 'kimi-test/1.0' });
+        await expect(model.authProvider.getAuth()).resolves.toEqual({ apiKey: 'test-key' });
+        expect(catalog.inspect('flash').sources['resolved.capabilities.image_in']).toMatchObject({
+          kind: 'builtin', detail: expect.stringContaining('trait capability hook'),
+        });
+      } finally {
+        host.dispose();
+      }
+    },
+  );
+
+  it.each(['deepseek-unknown', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp-preview'])(
+    'does not infer Flash vision for unknown model %s',
+    (modelName) => {
+      const { host, catalog } = createHost({
+        providers: { official: { type: 'deepseek', apiKey: 'test-key' } },
+        models: { unknown: { provider: 'official', model: modelName, maxContextSize: 4096 } },
+      });
+      try {
+        expect(catalog.get('unknown').capabilities).toMatchObject({
+          image_in: false, thinking: false, tool_use: false,
+        });
+      } finally {
+        host.dispose();
+      }
+    },
+  );
+
+  it('preserves explicit capability and effort metadata for an unknown DeepSeek model', () => {
+    const { host, catalog } = createHost({
+      providers: { official: { type: 'deepseek', apiKey: 'test-key' } },
+      models: { custom: {
+        provider: 'official', model: 'custom-model', maxContextSize: 4096,
+        capabilities: ['image_in', 'thinking', 'tool_use'],
+        supportEfforts: ['low', 'high'], defaultEffort: 'low',
+      } },
+    });
+    try {
+      expect(catalog.get('custom')).toMatchObject({
+        maxContextSize: 4096, supportEfforts: ['low', 'high'], defaultEffort: 'low',
+        capabilities: { image_in: true, thinking: true, tool_use: true, max_context_tokens: 4096 },
+      });
+    } finally {
+      host.dispose();
+    }
+  });
+
+  it('resolves the DeepSeek env bag while explicit provider fields retain precedence', async () => {
+    const { host, catalog } = createHost({
+      providers: {
+        env: { type: 'deepseek', env: {
+          DEEPSEEK_API_KEY: 'env-test-key', DEEPSEEK_BASE_URL: 'https://env.example.test/v1',
+        } },
+        explicit: { type: 'deepseek', apiKey: 'explicit-key', baseUrl: 'https://explicit.example.test/v1', env: {
+          DEEPSEEK_API_KEY: 'ignored-key', DEEPSEEK_BASE_URL: 'https://ignored.example.test/v1',
+        } },
+      },
+      models: {
+        env: { provider: 'env', model: 'deepseek-flash', maxContextSize: 1048576 },
+        explicit: { provider: 'explicit', model: 'deepseek-flash', maxContextSize: 1048576 },
+      },
+    });
+    try {
+      expect(catalog.get('env').baseUrl).toBe('https://env.example.test/v1');
+      await expect(catalog.get('env').authProvider.getAuth()).resolves.toEqual({ apiKey: 'env-test-key' });
+      expect(catalog.get('explicit').baseUrl).toBe('https://explicit.example.test/v1');
+      await expect(catalog.get('explicit').authProvider.getAuth()).resolves.toEqual({ apiKey: 'explicit-key' });
+    } finally {
+      host.dispose();
+    }
+  });
+
+  it('keeps the configured output override on the wire after a DeepSeek source refresh', async () => {
+    const config: ManagedKimiConfigShape = {
+      providers: {
+        deepseek: { type: 'deepseek', apiKey: 'refresh-test-key', source: { kind: 'deepseek' } },
+      },
+      models: {
+        'deepseek/deepseek-flash': {
+          provider: 'deepseek', model: 'deepseek-flash', maxContextSize: 1000000,
+          maxOutputSize: 65536, overrides: { maxOutputSize: 65536 },
+          supportEfforts: ['low', 'high', 'max'], defaultEffort: 'low',
+        },
+      },
+    };
+    applyDeepSeekProviderModels(config, 'deepseek', [deepSeekModelInfo('deepseek-flash')]);
+    expect(config.models?.['deepseek/deepseek-flash']).toMatchObject({
+      maxOutputSize: 384000, overrides: { maxOutputSize: 65536 },
+    });
+    const { host, catalog } = createHost(config);
+    let body: unknown;
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      body = await new Request(input, init).json();
+      return new Response(
+        'data: {"id":"refresh-test","choices":[{"index":0,"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\n' +
+          'data: [DONE]\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    });
+    try {
+      const model = catalog.get('deepseek/deepseek-flash');
+      expect(model.maxOutputSize).toBe(65536);
+      const params = completionBudgetParams({
+        budget: resolveCompletionBudget({ maxOutputSize: model.maxOutputSize }),
+        capability: model.capabilities,
+        usedContextTokens: 1000,
+      });
+      const requester = catalog.getRequester(model.id);
+      for await (const event of requester.request({
+        systemPrompt: '', tools: [],
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello.' }], toolCalls: [] }],
+      }, undefined, params)) void event;
+      expect(body).toMatchObject({ model: 'deepseek-flash', max_tokens: 65536 });
+      expect(body).not.toHaveProperty('max_completion_tokens');
+    } finally {
+      fetch.mockRestore();
+      host.dispose();
+    }
+  });
+
+  it('routes per-turn thinking through the cached requester to the official serialized wire', async () => {
+    const requests: Array<{ url: string; authorization: string | null; body: unknown }> = [];
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const request = new Request(input, init);
+      requests.push({
+        url: request.url,
+        authorization: request.headers.get('authorization'),
+        body: await request.json(),
+      });
+      return new Response(
+        'data: {"id":"example-completion","choices":[{"index":0,"delta":{"reasoning_content":"Checked.","content":"OK"},"finish_reason":"stop"}]}\n\n' +
+          'data: [DONE]\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    });
+    const { host, catalog } = createHost({
+      providers: { official: { type: 'deepseek', apiKey: 'requester-test-key' } },
+      models: { flash: {
+        provider: 'official', model: 'deepseek-flash', maxContextSize: 1048576,
+        supportEfforts: ['low', 'high', 'max'], defaultEffort: 'high',
+      } },
+    });
+    try {
+      const requester = catalog.getRequester('flash');
+      for (const effort of ['max', 'off']) {
+        const events = [];
+        for await (const event of requester.request({
+          systemPrompt: 'Be concise.', tools: [], messages: [
+            { role: 'assistant', content: [{ type: 'think', think: 'Earlier.' }], toolCalls: [] },
+            { role: 'user', content: [{ type: 'text', text: 'Continue.' }], toolCalls: [] },
+          ],
+        }, undefined, { thinkingEffort: effort, thinkingKeep: 'all', maxCompletionTokens: 200000 })) {
+          events.push(event);
+        }
+        expect(events).toContainEqual({ type: 'part', part: { type: 'think', think: 'Checked.' } });
+      }
+      expect(requests).toHaveLength(2);
+      expect(requests[0]).toMatchObject({
+        url: 'https://api.deepseek.com/chat/completions',
+        authorization: 'Bearer requester-test-key',
+        body: {
+          model: 'deepseek-flash', thinking: { type: 'enabled' }, reasoning_effort: 'max', max_tokens: 200000,
+        },
+      });
+      expect(requests[1]?.body).toMatchObject({ thinking: { type: 'disabled' }, max_tokens: 200000 });
+      expect(requests[1]?.body).not.toHaveProperty('reasoning_effort');
+      for (const { body } of requests) {
+        expect(body).not.toHaveProperty('extra_body');
+        expect(body).not.toHaveProperty('thinking.keep');
+        expect(body).not.toHaveProperty('max_completion_tokens');
+      }
+    } finally {
+      fetch.mockRestore();
+      host.dispose();
+    }
+  });
+
+  it('keeps a provider named deepseek generic when its configured type is openai', () => {
+    const { host, catalog } = createHost({
+      providers: { deepseek: { type: 'openai', apiKey: 'test-key', baseUrl: 'https://api.deepseek.com' } },
+      models: { flash: { provider: 'deepseek', model: 'deepseek-flash', maxContextSize: 1048576 } },
+    });
+    try {
+      expect(catalog.get('flash')).toMatchObject({
+        providerType: 'openai', protocol: 'openai', capabilities: { image_in: false },
+      });
+    } finally {
+      host.dispose();
+    }
+  });
 });
 
 describe('Model assembly (pure data)', () => {

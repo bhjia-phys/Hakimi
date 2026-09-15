@@ -22,6 +22,8 @@ Each dispatch is presented in the terminal as an approval request (unless it mat
 
 Sub-agents support running in the background: results are automatically returned to the main Agent upon completion, with no manual polling needed. You can also call back an existing sub-agent instance to continue the same task.
 
+In Hakimi Web, foreground subagent status appears on the `Agent` card in the chat, while background subagents also appear in the task area. Cards follow the linked task's live state: execution shows "Running", with separate labels for queued, suspended, and cancelled tasks. Cancellation is not treated as failure. A historical tool call with no result and no linked task state shows "Status unknown" rather than success; this does not mean the task is still running.
+
 ## Context Isolation and Resource Cost
 
 Each sub-agent has a fully independent context window. It can only see the task description explicitly passed by the main Agent and cannot see the main Agent's conversation history. The sub-agent's own intermediate reasoning and tool call records do not flow back; only the final result appears in the main Agent's context.

@@ -6,7 +6,9 @@ import type { TurnProgressSnapshot } from '../../lib/turnProgress';
 import ToolCall from './ToolCall.vue';
 import { toolStackKey, toolStackPosition } from '../chatTurnRendering';
 import type { ToolStackItem } from '../chatTurnRendering';
-import type { FilePreviewRequest, ToolMedia, WebPreviewTarget } from '../../types';
+import type { FilePreviewRequest, TaskItem, ToolMedia, WebPreviewTarget } from '../../types';
+import type { SwarmMember } from '../../composables/swarmGroups';
+import { aggregateToolStatus, effectiveToolStatus } from '../../lib/agentTaskResolver';
 import Icon from '../ui/Icon.vue';
 import StatusDot from '../ui/StatusDot.vue';
 
@@ -31,23 +33,13 @@ const emit = defineEmits<{
 const open = ref(true);
 
 const count = computed(() => props.tools.length);
-const aggregateStatus = computed<'running' | 'error' | 'done'>(() => {
-  if (props.tools.some((t) => t.tool.status === 'running')) return 'running';
-  if (props.tools.some((t) => t.tool.status === 'error')) return 'error';
-  return 'done';
-});
+const resolveAgentTask = inject<(toolCallId: string) => TaskItem | undefined>('resolveAgentTask');
+const resolveSwarmMembers = inject<(toolCallId: string) => SwarmMember[] | undefined>('resolveSwarmMembers');
+const aggregateStatus = computed(() => aggregateToolStatus(
+  props.tools.map(({ tool }) => effectiveToolStatus(tool, resolveAgentTask, resolveSwarmMembers)),
+));
 const { t } = useI18n();
-
-const statusLabel = computed(() => {
-  switch (aggregateStatus.value) {
-    case 'running':
-      return t('tools.group.running');
-    case 'error':
-      return t('tools.group.error');
-    default:
-      return t('tools.group.done');
-  }
-});
+const statusLabel = computed(() => t(`tools.status.${aggregateStatus.value}`));
 
 function toggle(): void {
   open.value = !open.value;

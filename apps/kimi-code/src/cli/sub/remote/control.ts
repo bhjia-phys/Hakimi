@@ -51,6 +51,11 @@ import {
   type SystemctlRunner,
 } from './systemd';
 import { buildRemoteRootUrl } from './tunnel';
+import {
+  probeTunnelReadiness,
+  type ProbeTunnelReadinessOptions,
+  type TunnelReadinessProbeResult,
+} from './cloudflared';
 
 export const REMOTE_START_STATE_TIMEOUT_MS = 30_000;
 export const REMOTE_STATE_POLL_MS = 200;
@@ -75,6 +80,11 @@ export interface RemoteControlDeps {
   readonly readStateFile?: (path: string) => RemoteState | undefined;
   readonly readConfigFile?: (path: string) => RemoteConfig | undefined;
   readonly probeHealth?: (port: number, token: string) => Promise<boolean>;
+  /** Tunnel-dataplane probe (cloudflared `/ready`); defaults to `probeTunnelReadiness`. */
+  readonly probeTunnelHealth?: (
+    port: number,
+    options: ProbeTunnelReadinessOptions,
+  ) => Promise<TunnelReadinessProbeResult>;
   readonly generateQrCode?: (url: string) => Promise<string>;
   readonly generateToken?: () => string;
   readonly stdout?: Pick<NodeJS.WriteStream, 'write'>;
@@ -306,6 +316,7 @@ export async function runRemoteStop(deps: RemoteControlDeps = {}): Promise<void>
 }
 
 export type RemoteHealth = 'ok' | 'down' | 'stale' | 'unknown';
+export type RemoteTunnelHealth = 'ok' | 'down' | 'unknown';
 
 export interface RemoteStatusSnapshot {
   readonly unit: RemoteUnitStatus | null;
@@ -313,6 +324,12 @@ export interface RemoteStatusSnapshot {
   readonly config?: RemoteConfig;
   readonly state?: RemoteState;
   readonly health: RemoteHealth;
+  /**
+   * Cloudflare tunnel dataplane health (`ok`/`down` from the loopback
+   * `/ready` probe; `unknown` when the serve state predates `metricsPort`).
+   * Deliberately separate from `health`, which only proves the local listener.
+   */
+  readonly tunnelHealth: RemoteTunnelHealth;
 }
 
 export async function collectRemoteStatus(
@@ -351,7 +368,28 @@ export async function collectRemoteStatus(
       health = (await probe(state.port, config.token)) ? 'ok' : 'down';
     }
   }
-  return { unit, systemdAvailable, config, state, health };
+
+  // Tunnel dataplane health needs the serve process's cloudflared metrics
+  // port. Only probe when the shown state is genuinely LIVE: the unit must be
+  // running, its MainPID must own the state file, and the local listener must
+  // answer. Otherwise a leftover state's port could probe an unrelated process
+  // and report a false OK — so stale/down/unsupported stay `unknown`.
+  let tunnelHealth: RemoteTunnelHealth = 'unknown';
+  if (
+    state?.metricsPort !== undefined &&
+    unit !== null &&
+    isRemoteUnitRunning(unit) &&
+    unit.mainPid !== null &&
+    unit.mainPid === state.pid &&
+    health === 'ok'
+  ) {
+    const probe = deps.probeTunnelHealth ?? probeTunnelReadiness;
+    const result = await probe(state.metricsPort, {
+      timeoutMs: REMOTE_HEALTH_PROBE_TIMEOUT_MS,
+    });
+    tunnelHealth = result.ok ? 'ok' : 'down';
+  }
+  return { unit, systemdAvailable, config, state, health, tunnelHealth };
 }
 
 export async function runRemoteStatus(deps: RemoteControlDeps = {}): Promise<void> {
@@ -393,6 +431,7 @@ export async function runRemoteStatus(deps: RemoteControlDeps = {}): Promise<voi
     lines.push(`  Port:     127.0.0.1:${state.port}`);
     lines.push(`  Started:  ${new Date(state.startedAt).toISOString()}`);
     lines.push(`  Health:   ${healthLabel(health)}`);
+    lines.push(`  Tunnel health: ${tunnelHealthLabel(snapshot.tunnelHealth)}`);
   }
 
   const hints = statusHints(snapshot);
@@ -415,6 +454,10 @@ function healthLabel(health: RemoteHealth): string {
     default:
       return 'unknown';
   }
+}
+
+function tunnelHealthLabel(health: RemoteTunnelHealth): string {
+  return health;
 }
 
 function statusHints(snapshot: RemoteStatusSnapshot): string[] {

@@ -97,7 +97,7 @@ import {
   configResponseSchema,
   subagentPresetStatusSchema,
 } from './rest-config';
-import { researchStatusSnapshotSchema } from './research';
+import { researchModeSnapshotSchema, researchStatusSnapshotSchema } from './research';
 import { sessionPendingInteractionSchema, sessionSchema } from './session';
 import { workspaceSchema } from './workspace';
 
@@ -737,6 +737,11 @@ export const researchUpdatedEventSchema = z.object({
   snapshot: researchStatusSnapshotSchema,
 });
 
+export const researchModeUpdatedEventSchema = z.object({
+  type: z.literal('research_mode.updated'),
+  snapshot: researchModeSnapshotSchema,
+});
+
 export const aitpModeUpdatedEventSchema = z.object({
   type: z.literal('aitp_mode.updated'),
 });
@@ -1070,6 +1075,7 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   capabilityChangedEventSchema,
   goalUpdatedEventSchema,
   researchUpdatedEventSchema,
+  researchModeUpdatedEventSchema,
   aitpModeUpdatedEventSchema,
   skillActivatedEventSchema,
   pluginCommandActivatedEventSchema,

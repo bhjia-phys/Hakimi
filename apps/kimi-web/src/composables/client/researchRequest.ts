@@ -1,7 +1,7 @@
-import type { ResearchStatusSnapshot } from '../../api/types';
+import type { ResearchModeSnapshot } from '../../api/types';
 
 export interface ResearchRequestState {
-  researchBySession: Record<string, ResearchStatusSnapshot>;
+  researchBySession: Record<string, ResearchModeSnapshot>;
   researchVersionBySession: Record<string, number>;
   researchRequestGenerationBySession: Record<string, number>;
 }
@@ -34,7 +34,7 @@ export function applyResearchResponseIfCurrent(
   state: ResearchRequestState,
   sessionId: string,
   token: ResearchRequestToken,
-  snapshot: ResearchStatusSnapshot,
+  snapshot: ResearchModeSnapshot,
 ): boolean {
   if (state.researchRequestGenerationBySession[sessionId] !== token.generation) {
     return false;
@@ -53,13 +53,13 @@ export interface ResearchRequestCoordinator {
   read: (
     state: ResearchRequestState,
     sessionId: string,
-    request: () => Promise<ResearchStatusSnapshot>,
-  ) => Promise<ResearchStatusSnapshot>;
+    request: () => Promise<ResearchModeSnapshot>,
+  ) => Promise<ResearchModeSnapshot>;
   mutate: (
     state: ResearchRequestState,
     sessionId: string,
-    request: () => Promise<ResearchStatusSnapshot>,
-  ) => Promise<ResearchStatusSnapshot>;
+    request: () => Promise<ResearchModeSnapshot>,
+  ) => Promise<ResearchModeSnapshot>;
 }
 
 /** Coordinate Research HTTP work per session. Mutations run serially, and reads
@@ -72,15 +72,15 @@ export function createResearchRequestCoordinator(): ResearchRequestCoordinator {
   function currentOrResponse(
     state: ResearchRequestState,
     sessionId: string,
-    snapshot: ResearchStatusSnapshot,
-  ): ResearchStatusSnapshot {
+    snapshot: ResearchModeSnapshot,
+  ): ResearchModeSnapshot {
     return state.researchBySession[sessionId] ?? snapshot;
   }
 
   async function currentAfterMutationTail(
     state: ResearchRequestState,
     sessionId: string,
-  ): Promise<ResearchStatusSnapshot | undefined> {
+  ): Promise<ResearchModeSnapshot | undefined> {
     for (;;) {
       const mutationTail = mutationTailBySession.get(sessionId);
       if (mutationTail === undefined) return state.researchBySession[sessionId];
@@ -91,8 +91,8 @@ export function createResearchRequestCoordinator(): ResearchRequestCoordinator {
   async function settleInvalidatedRead(
     state: ResearchRequestState,
     sessionId: string,
-    request: () => Promise<ResearchStatusSnapshot>,
-  ): Promise<ResearchStatusSnapshot> {
+    request: () => Promise<ResearchModeSnapshot>,
+  ): Promise<ResearchModeSnapshot> {
     // A mutation may still be applying the state that invalidated this read.
     // Await the full queue before choosing a value for the caller.
     const current = await currentAfterMutationTail(state, sessionId);
@@ -115,8 +115,8 @@ export function createResearchRequestCoordinator(): ResearchRequestCoordinator {
   async function read(
     state: ResearchRequestState,
     sessionId: string,
-    request: () => Promise<ResearchStatusSnapshot>,
-  ): Promise<ResearchStatusSnapshot> {
+    request: () => Promise<ResearchModeSnapshot>,
+  ): Promise<ResearchModeSnapshot> {
     // A second mutation may be queued while this read is awaiting the first.
     // Keep following the current tail until the complete queue is drained.
     while (mutationTailBySession.has(sessionId)) {
@@ -132,8 +132,8 @@ export function createResearchRequestCoordinator(): ResearchRequestCoordinator {
   function mutate(
     state: ResearchRequestState,
     sessionId: string,
-    request: () => Promise<ResearchStatusSnapshot>,
-  ): Promise<ResearchStatusSnapshot> {
+    request: () => Promise<ResearchModeSnapshot>,
+  ): Promise<ResearchModeSnapshot> {
     const previousMutation = mutationTailBySession.get(sessionId) ?? Promise.resolve();
     const response = previousMutation.then(async () => {
       const token = beginResearchRequest(state, sessionId);

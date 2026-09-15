@@ -11,11 +11,7 @@ import { z } from 'zod';
 import { createDecorator } from '#/_base/di/instantiation';
 import type { AgentTool } from '#/tool/toolContract';
 
-export const EnterAITPModeInputSchema = z
-  .object({
-    line_slug: z.string().optional(),
-  })
-  .strict();
+export const EnterAITPModeInputSchema = z.object({}).strict();
 export type EnterAITPModeInput = z.infer<typeof EnterAITPModeInputSchema>;
 
 export interface IEnterAITPModeTool extends AgentTool<EnterAITPModeInput> {

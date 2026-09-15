@@ -39,7 +39,7 @@ import type {
   PromptSubmitResult,
   QuestionResponse,
   ResearchCommand,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
 } from '../types';
 import { createAgentProjector } from './agentEventProjector';
 import { DaemonHttpClient } from './http';
@@ -57,7 +57,7 @@ import {
   toAppQuestionRequest,
   toAppRemotePersistentStatus,
   toAppRemoteShareStatus,
-  toAppResearchSnapshot,
+  toAppResearchModeSnapshot,
   toAppSession,
   toAppTask,
   toWireApprovalResponse,
@@ -93,7 +93,7 @@ import type {
   WireAutoSubagentPresetStatusResponse,
   WireSubagentPresetActivation,
   WireResearchCommandResponse,
-  WireResearchStatusSnapshot,
+  WireResearchModeSnapshot,
   WireSession,
   WireSessionAbortResult,
   WireSessionWarning,
@@ -565,22 +565,22 @@ export class DaemonKimiWebApi implements KimiWebApi {
     return toAppGoal(data);
   }
 
-  async getSessionResearch(sessionId: string): Promise<ResearchStatusSnapshot> {
-    const data = await this.http.get<WireResearchStatusSnapshot>(
+  async getSessionResearch(sessionId: string): Promise<ResearchModeSnapshot> {
+    const data = await this.http.get<WireResearchModeSnapshot>(
       `/sessions/${encodeURIComponent(sessionId)}/research`,
     );
-    return toAppResearchSnapshot(data);
+    return toAppResearchModeSnapshot(data);
   }
 
   async commandSessionResearch(
     sessionId: string,
     command: ResearchCommand,
-  ): Promise<ResearchStatusSnapshot> {
+  ): Promise<ResearchModeSnapshot> {
     const data = await this.http.post<WireResearchCommandResponse>(
       `/sessions/${encodeURIComponent(sessionId)}/research/command`,
       { command },
     );
-    return toAppResearchSnapshot(data.snapshot);
+    return toAppResearchModeSnapshot(data.snapshot);
   }
 
   async getSessionWarnings(sessionId: string): Promise<WireSessionWarning[]> {
@@ -1185,6 +1185,17 @@ export class DaemonKimiWebApi implements KimiWebApi {
     const encodedPath = path.split('/').map((part) => encodeURIComponent(part)).join('/');
     return buildRestUrl(
       this.config.serverHttpUrl,
+      `/sessions/${encodeURIComponent(sessionId)}/fs/${encodedPath}:download`,
+    );
+  }
+
+  /** Authenticated byte download of a workspace file (the fs :download route).
+   *  Use this instead of the bare getFileDownloadUrl whenever the bytes feed an
+   *  <iframe>/<img> src or a programmatic download — those carry no Bearer
+   *  token, so the raw URL 40101s under daemon auth. */
+  async getWorkspaceFileBlob(sessionId: string, path: string): Promise<Blob> {
+    const encodedPath = path.split('/').map((part) => encodeURIComponent(part)).join('/');
+    return this.http.getBlob(
       `/sessions/${encodeURIComponent(sessionId)}/fs/${encodedPath}:download`,
     );
   }

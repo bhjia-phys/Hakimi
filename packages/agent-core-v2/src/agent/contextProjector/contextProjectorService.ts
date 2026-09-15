@@ -21,8 +21,14 @@
  * HTTP 413 body-size rejection; media-stripped captures every media identity
  * present when degraded media is still too large or an image format is
  * rejected, then replaces only that snapshot on later steps so a newly
- * generated recovery image remains visible. Both are read-side only — the
- * history keeps its media.
+ * generated recovery image remains visible.
+ *
+ * `projectEncryptedStripped` / `stripEncryptedReasoningParts` are the
+ * fallback for an unverifiable OpenAI encrypted-reasoning rejection: they
+ * drop only the `encrypted` field of wire `think` parts — keeping the
+ * visible thinking summary and every other part — so the provider receives
+ * `summary_text` without the stale `encrypted_content`. All fallbacks are
+ * read-side only — the history keeps its original content.
  */
 
 import { createHash } from 'node:crypto';
@@ -79,6 +85,10 @@ export class AgentContextProjectorService implements IAgentContextProjectorServi
       this.projectWithTrace(messages, project),
       MEDIA_DEGRADE_KEEP_RECENT,
     );
+  }
+
+  projectEncryptedStripped(messages: readonly ContextMessage[]): readonly Message[] {
+    return stripEncryptedReasoningParts(this.projectWithTrace(messages, project));
   }
 
   captureMediaStripSnapshot(messages: readonly ContextMessage[]): MediaStripSnapshot {
@@ -289,6 +299,25 @@ export function stripMediaPartsBySnapshot(
       return { type: 'text', text: MEDIA_STRIPPED_PLACEHOLDERS[part.type] };
     });
     return messageChanged ? { ...message, content } : message;
+  });
+  return changed ? result : messages;
+}
+
+export function stripEncryptedReasoningParts(
+  messages: readonly Message[],
+): readonly Message[] {
+  let changed = false;
+  const result = messages.map((message) => {
+    if (!message.content.some((part) => part.type === 'think' && part.encrypted !== undefined)) {
+      return message;
+    }
+    changed = true;
+    const content = message.content.map((part): ContentPart =>
+      part.type === 'think' && part.encrypted !== undefined
+        ? { type: 'think', think: part.think }
+        : part,
+    );
+    return { ...message, content };
   });
   return changed ? result : messages;
 }

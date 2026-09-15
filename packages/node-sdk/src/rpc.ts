@@ -56,7 +56,7 @@ import type {
   CompactOptions,
   ResearchCommand,
   ResearchCommandResponse,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
   ResumeGoalInput,
   SessionPlan,
   SessionStatus,
@@ -845,7 +845,7 @@ export abstract class SDKRpcClientBase {
   // feature). The base implementation fails with `not_implemented` so a v1
   // client reports the gap clearly; only `SDKRpcClientV2` overrides these.
 
-  async getResearch(input: SessionIdRpcInput): Promise<ResearchStatusSnapshot> {
+  async getResearch(input: SessionIdRpcInput): Promise<ResearchModeSnapshot> {
     void input;
     throw new KimiError(
       ErrorCodes.NOT_IMPLEMENTED,

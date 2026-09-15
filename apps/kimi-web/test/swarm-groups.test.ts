@@ -84,6 +84,19 @@ describe('countSwarmMembers', () => {
     ]);
     expect(countSwarmMembers(groups)).toEqual({ done: 2, total: 4 });
   });
+
+  it('keeps cancelled members distinct from failed and counts them as done', () => {
+    const groups = buildSwarmGroups([
+      subagentTask('a', 'swarm-1', { swarmIndex: 1, subagentPhase: 'completed', status: 'completed' }),
+      // A cancelled task keeps a stale 'working' phase from the event stream;
+      // the terminal status must win and must NOT collapse into 'failed'.
+      subagentTask('b', 'swarm-1', { swarmIndex: 2, subagentPhase: 'working', status: 'cancelled' }),
+    ]);
+    expect(groups[0]?.counts.cancelled).toBe(1);
+    expect(groups[0]?.counts.failed).toBe(0);
+    expect(groups[0]?.members[1]?.phase).toBe('cancelled');
+    expect(countSwarmMembers(groups)).toEqual({ done: 2, total: 2 });
+  });
 });
 
 describe('swarmMembersByToolCall', () => {

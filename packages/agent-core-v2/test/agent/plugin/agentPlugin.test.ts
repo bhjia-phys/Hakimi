@@ -17,6 +17,9 @@ import { SyncDescriptor } from '#/_base/di/descriptors';
 import { Emitter } from '#/_base/event';
 import { IAgentPluginService } from '#/agent/plugin/agentPlugin';
 import { AgentPluginService } from '#/agent/plugin/agentPluginService';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
+import { AgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibilityService';
+import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { USER_PROMPT_ORIGIN } from '#/agent/contextMemory/types';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IEventBus } from '#/app/event/eventBus';
@@ -34,6 +37,8 @@ import { IProviderService } from '#/kosong/provider/provider';
 import { summarizeSkill } from '#/app/skillCatalog/types';
 import type { SkillDefinition } from '#/app/skillCatalog/types';
 import { ISessionSkillCatalog } from '#/session/sessionSkillCatalog/skillCatalog';
+import { drainSessionIndexMirror } from '#/app/sessionIndex/sessionIndexMirrorService';
+import { drainQueryStoreDisposals } from '#/persistence/backends/minidb/miniDbQueryStore';
 
 import { agentService, appService, createTestAgent, skillServices, type TestAgentContext } from '../../harness';
 import { stubBootstrap } from '../../app/bootstrap/stubs';
@@ -486,6 +491,8 @@ describe('AgentPluginService plugin-change reminder', () => {
         await ctx.dispose();
         ctx = undefined;
       }
+      await drainSessionIndexMirror();
+      await drainQueryStoreDisposals();
       await rm(home, { recursive: true, force: true });
     }
   });
@@ -511,6 +518,66 @@ describe('AgentPluginService plugin-change reminder', () => {
       mutation: { kind: 'install', id },
     });
   }
+
+  it('preserves frozen guidance through the real Research visibility fold on unrelated changes', async () => {
+    const catalog = new InMemorySkillCatalog();
+    catalog.register(pluginSkill());
+    const sinkChange = new Emitter<string>();
+    const mutateEmitter = new Emitter<PluginMutationSummary>();
+    const reloadEmitter = new Emitter<ReloadSummary>();
+    let sessionStarts: readonly EnabledPluginSessionStart[] = [{ pluginId: 'demo', skillName: 'demo-skill' }];
+    ctx = createTestAgent(
+      { autoConfigure: true },
+      appService(IPluginService, {
+        ...stubPluginService({ sessionStarts, mutateEmitter, reloadEmitter }),
+        enabledSessionStarts: async () => sessionStarts,
+      }),
+      skillServices(skillCatalogWithChange(catalog, sinkChange)),
+      agentService(IAgentSkillVisibilityService, new SyncDescriptor(AgentSkillVisibilityService)),
+      agentService(IAgentPluginService, new SyncDescriptor(AgentPluginService)),
+    );
+    const mode = ctx.get(IAgentAitpModeService);
+    ctx.get(IAgentPluginService);
+    await runInjectionBoundary(ctx);
+    expect(await mode.getSnapshot()).toEqual({ enabled: false, skillsAvailable: false });
+    const original = messageText(findPluginSessionStartMessages(ctx).at(-1)!);
+    let visibilityEvents = 0;
+    const subscription = ctx.get(IAgentSkillVisibilityService).onDidChange(() => { visibilityEvents++; });
+    try {
+      reloadEmitter.fire({ added: [], removed: [], errors: [] });
+      mutateEmitter.fire({ added: [], removed: ['demo'], errors: [], mutation: { kind: 'disable', id: 'demo' } });
+      sessionStarts = [];
+      sinkChange.fire('plugin');
+      await runInjectionBoundary(ctx);
+      expect(visibilityEvents).toBe(0);
+      expect(findPluginSessionStartMessages(ctx)).toHaveLength(1);
+      expect(messageText(findPluginSessionStartMessages(ctx).at(-1)!)).toBe(original);
+      expect(findPluginChangeMessages(ctx)).toHaveLength(1);
+
+      sinkChange.fire('user');
+      ctx.get(IEventBus).publish({ type: 'context.undone', turns: 1 });
+      await runInjectionBoundary(ctx);
+      expect(visibilityEvents).toBe(0);
+      expect(findPluginSessionStartMessages(ctx)).toHaveLength(1);
+
+      reloadEmitter.fire({ added: [], removed: [], errors: [] });
+      await flushMicrotasks();
+      sinkChange.fire('plugin');
+      await runInjectionBoundary(ctx);
+      expect(messageText(findPluginSessionStartMessages(ctx).at(-1)!)).toContain('There are currently no active plugin session starts.');
+      expect(visibilityEvents).toBe(0);
+      await mode.enter({ actor: 'user' });
+      await mode.enter({ actor: 'user' });
+      expect(visibilityEvents).toBe(1);
+      await mode.exit();
+      expect(visibilityEvents).toBe(2);
+    } finally {
+      subscription.dispose();
+      sinkChange.dispose();
+      mutateEmitter.dispose();
+      reloadEmitter.dispose();
+    }
+  });
 
   it('suppresses the session-start refresh for mutation-driven catalog changes', async () => {
     const catalog = new InMemorySkillCatalog();

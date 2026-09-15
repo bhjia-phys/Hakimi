@@ -5,42 +5,15 @@ import { ResearchController } from '#/tui/controllers/research-controller';
 import { StreamingUIController } from '#/tui/controllers/streaming-ui';
 import { ResearchBoardComponent } from '#/tui/components/chrome/research-board';
 import { TodoPanelComponent } from '#/tui/components/chrome/todo-panel';
-import type { ResearchStatusSnapshot, Session } from '@bhjia-phys/hakimi-sdk';
+import type { ResearchModeSnapshot, Session } from '@bhjia-phys/hakimi-sdk';
 import type { TUIState } from '#/tui/tui-state';
 
 function makeSnapshot(
-  overrides: Partial<ResearchStatusSnapshot> = {},
-): ResearchStatusSnapshot {
+  overrides: Partial<ResearchModeSnapshot> = {},
+): ResearchModeSnapshot {
   return {
-    mode: 'ready',
-    loopStatus: 'active',
-    planningPolicy: 'collaborative',
-    currentLineSlug: 'test-line',
-    currentFocus: { questionId: 'q1', revision: 1 },
-    currentQuestion: {
-      id: 'q1',
-      lineSlug: 'test-line',
-      wording: 'What is the mechanism?',
-      priority: 1,
-      neededEvidence: [],
-      evidenceRefs: [],
-      falsifierRefs: [],
-      nextBoundedAction: 'Run experiment A',
-      workflow: 'active',
-      epistemic: 'candidate',
-      persistence: 'working',
-      revision: 1,
-    },
-    questions: [],
-    lines: [],
-    openQuestionCount: 1,
-    activeQuestionCount: 1,
-    blockedQuestionCount: 0,
-    alerts: [],
-    lineWorkstreamBindings: [],
-    aitpHealth: { phase: 'ready' },
-    phase: 'action_executing',
-    revision: 1,
+    enabled: true,
+    skillsAvailable: true,
     ...overrides,
   };
 }
@@ -48,11 +21,7 @@ function makeSnapshot(
 function makeHost(): {
   host: {
     state: TUIState;
-    setAppState: (patch: {
-      researchMode?: boolean;
-      researchModePhase?: 'inactive' | 'probing' | 'ready' | 'degraded';
-      researchLoopStatus?: 'active' | 'paused';
-    }) => void;
+    setAppState: (patch: { researchMode?: boolean }) => void;
     syncTodoPanelSlot: () => void;
     getResearchSession: () => Session | undefined;
   };
@@ -77,7 +46,7 @@ function makeHost(): {
     researchBoard.setTodos(todoPanel.getTodos());
     todoPanelContainer.clear();
     if (researchBoard.isVisible()) todoPanelContainer.addChild(researchBoard);
-    else if (!todoPanel.isEmpty()) todoPanelContainer.addChild(todoPanel);
+    if (!todoPanel.isEmpty()) todoPanelContainer.addChild(todoPanel);
   });
   const getResearchSession = vi.fn<() => Session | undefined>(() => undefined);
   const host = {
@@ -87,68 +56,41 @@ function makeHost(): {
     getResearchSession,
   } as unknown as {
     state: TUIState;
-    setAppState: (patch: {
-      researchMode?: boolean;
-      researchModePhase?: 'inactive' | 'probing' | 'ready' | 'degraded';
-      researchLoopStatus?: 'active' | 'paused';
-    }) => void;
+    setAppState: (patch: { researchMode?: boolean }) => void;
     syncTodoPanelSlot: () => void;
     getResearchSession: () => Session | undefined;
   };
   return { host, todoPanelContainer, todoPanel, researchBoard, ui, getResearchSession };
 }
 describe('ResearchController', () => {
-  it('setSnapshot updates the board and sets researchMode true when mode is ready', () => {
+  it('setSnapshot updates the board and sets researchMode true when enabled', () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    const snapshot = makeSnapshot({ mode: 'ready' });
+    const snapshot = makeSnapshot({ enabled: true });
     controller.setSnapshot(snapshot);
     expect(researchBoard.getSnapshot()).toBe(snapshot);
     expect(host.setAppState).toHaveBeenCalledWith(
-      expect.objectContaining({ researchMode: true, researchModePhase: 'ready', researchLoopStatus: 'active' }),
+      expect.objectContaining({ researchMode: true }),
     );
   });
 
-  it('setSnapshot sets researchMode false when mode is inactive', () => {
+  it('setSnapshot sets researchMode false when disabled', () => {
     const { host } = makeHost();
     const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'inactive' }));
+    controller.setSnapshot(makeSnapshot({ enabled: false }));
     expect(host.setAppState).toHaveBeenCalledWith(
-      expect.objectContaining({ researchMode: false, researchModePhase: 'inactive' }),
+      expect.objectContaining({ researchMode: false }),
     );
   });
 
-  it('applySnapshot preserves unresolved human attention in the board projection', () => {
+  it('setSnapshot(null) hides the board and clears researchMode', () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    const session = { getResearch: vi.fn() } as unknown as Session;
-    const token = controller.beginRequest(session);
-    const gate = {
-      gateId: 'gate-1',
-      kind: 'review' as const,
-      prompt: 'Review the derivation before continuing.',
-      createdAt: 10,
-    };
-    const alert = {
-      fingerprint: 'alert-fingerprint',
-      kind: 'contradiction' as const,
-      message: 'The latest result conflicts with prior evidence.',
-      createdAt: 11,
-    };
-    const snapshot = makeSnapshot({
-      phase: 'awaiting_human',
-      humanGate: gate,
-      alerts: [alert],
-      revision: 2,
-    });
-
-    expect(token).toBeDefined();
-    expect(controller.applySnapshot(token!, snapshot)).toBe(true);
-    expect(researchBoard.getSnapshot()).toBe(snapshot);
-    expect(researchBoard.getSnapshot()?.humanGate).toEqual(gate);
-    expect(researchBoard.getSnapshot()?.alerts).toEqual([alert]);
-    expect(host.setAppState).toHaveBeenCalledWith(
-      expect.objectContaining({ researchMode: true, researchModePhase: 'ready' }),
+    controller.setSnapshot(makeSnapshot());
+    controller.setSnapshot(null);
+    expect(researchBoard.isVisible()).toBe(false);
+    expect(host.setAppState).toHaveBeenLastCalledWith(
+      expect.objectContaining({ researchMode: false }),
     );
   });
 
@@ -160,34 +102,24 @@ describe('ResearchController', () => {
     controller.clear();
     expect(researchBoard.isEmpty()).toBe(true);
     expect(host.setAppState).toHaveBeenCalledWith(
-      expect.objectContaining({ researchMode: false, researchModePhase: 'inactive' }),
+      expect.objectContaining({ researchMode: false }),
     );
   });
 
-  it('getSnapshotRevision returns the current revision', () => {
-    const { host } = makeHost();
-    const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ revision: 42 }));
-    expect(controller.getSnapshotRevision()).toBe(42);
-  });
-
-  it('board visible takes priority over Todo in the container', () => {
+  it('shows the board alongside Todo in the container', () => {
     const { host, todoPanelContainer, todoPanel } = makeHost();
     todoPanel.setTodos([{ title: 'Task 1', status: 'pending' }]);
     todoPanelContainer.addChild(todoPanel);
     const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'ready' }));
-    // Container should have the research board, not the todo panel
-    expect(todoPanelContainer.children.length).toBe(1);
-    expect(todoPanelContainer.children[0]).toBe(host.state.researchBoard);
-    // Todo state should be preserved
-    expect(todoPanel.getTodos().length).toBe(1);
+    controller.setSnapshot(makeSnapshot({ enabled: true }));
+    expect(todoPanelContainer.children).toEqual([host.state.researchBoard, todoPanel]);
+    expect(todoPanelContainer.render(120).join('\n')).toContain('Task 1');
   });
 
   it('Todo updates keep the visible board mounted and update its projection', () => {
     const { host, todoPanelContainer, todoPanel, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'ready' }));
+    controller.setSnapshot(makeSnapshot({ enabled: true }));
 
     const streaming = new StreamingUIController({
       state: host.state,
@@ -198,52 +130,50 @@ describe('ResearchController', () => {
       { title: 'Write closeout', status: 'pending' },
     ]);
 
-    expect(todoPanelContainer.children).toEqual([researchBoard]);
+    expect(todoPanelContainer.children).toEqual([researchBoard, todoPanel]);
     expect(todoPanel.getTodos()).toHaveLength(2);
     expect(researchBoard.getTodos()).toEqual(todoPanel.getTodos());
   });
 
-  it('board hidden restores Todo panel when it has items', () => {
+  it('keeps the Todo panel mounted when the board is hidden', () => {
     const { host, todoPanelContainer, todoPanel } = makeHost();
     todoPanel.setTodos([{ title: 'Task 1', status: 'pending' }]);
     const controller = new ResearchController(host);
-    // First show the board
-    controller.setSnapshot(makeSnapshot({ mode: 'ready' }));
-    expect(todoPanelContainer.children[0]).toBe(host.state.researchBoard);
-    // Then hide it (mode becomes inactive)
-    controller.setSnapshot(makeSnapshot({ mode: 'inactive' }));
-    // Todo panel should be restored
-    expect(todoPanelContainer.children[0]).toBe(todoPanel);
+    controller.setSnapshot(makeSnapshot({ enabled: true }));
+    expect(todoPanelContainer.children).toEqual([host.state.researchBoard, todoPanel]);
+    controller.setSnapshot(makeSnapshot({ enabled: false }));
+    expect(todoPanelContainer.children).toEqual([todoPanel]);
   });
 
   it('board hidden does not restore empty Todo panel', () => {
     const { host, todoPanelContainer } = makeHost();
     const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'ready' }));
-    controller.setSnapshot(makeSnapshot({ mode: 'inactive' }));
+    controller.setSnapshot(makeSnapshot({ enabled: true }));
+    controller.setSnapshot(makeSnapshot({ enabled: false }));
     expect(todoPanelContainer.children.length).toBe(0);
   });
 
-  it('hydrates an inactive snapshot without probing and keeps the Board hidden', async () => {
+  it('hydrates a disabled snapshot and keeps the Board hidden', async () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    const getResearch = vi.fn(async () => makeSnapshot({ mode: 'inactive' }));
+    const getResearch = vi.fn(async () => makeSnapshot({ enabled: false }));
     const session = { getResearch } as unknown as Parameters<ResearchController['hydrate']>[0];
     await controller.hydrate(session);
     expect(getResearch).toHaveBeenCalledOnce();
     expect(researchBoard.isVisible()).toBe(false);
-    expect(host.state.researchBoard.getSnapshot()?.mode).toBe('inactive');
+    expect(host.state.researchBoard.getSnapshot()?.enabled).toBe(false);
   });
 
-  it('hydrate updates the board from an active snapshot', async () => {
+  it('hydrate updates the board from an enabled snapshot', async () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    const snapshot = makeSnapshot({ mode: 'ready' });
+    const snapshot = makeSnapshot({ enabled: true });
     const getResearch = vi.fn(async () => snapshot);
     const session = { getResearch } as unknown as Parameters<ResearchController['hydrate']>[0];
     await controller.hydrate(session);
     expect(getResearch).toHaveBeenCalled();
     expect(researchBoard.getSnapshot()).toBe(snapshot);
+    expect(researchBoard.isVisible()).toBe(true);
   });
 
   it('hydrate swallows getResearch errors', async () => {
@@ -261,12 +191,12 @@ describe('ResearchController', () => {
   it('live setSnapshot beats stale hydrate result', async () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    const staleSnapshot = makeSnapshot({ mode: 'ready', revision: 1 });
-    const liveSnapshot = makeSnapshot({ mode: 'ready', revision: 2 });
+    const staleSnapshot = makeSnapshot({ enabled: false });
+    const liveSnapshot = makeSnapshot({ enabled: true });
 
-    let resolveGetResearch!: (s: ResearchStatusSnapshot) => void;
+    let resolveGetResearch!: (s: ResearchModeSnapshot) => void;
     const getResearch = vi.fn(
-      () => new Promise<ResearchStatusSnapshot>((resolve) => { resolveGetResearch = resolve; }),
+      () => new Promise<ResearchModeSnapshot>((resolve) => { resolveGetResearch = resolve; }),
     );
     const session = { getResearch } as unknown as Parameters<ResearchController['hydrate']>[0];
 
@@ -274,7 +204,7 @@ describe('ResearchController', () => {
     const hydratePromise = controller.hydrate(session);
     expect(getResearch).toHaveBeenCalledOnce();
 
-    // A live research.updated arrives before the round-trip resolves.
+    // A live research_mode.updated arrives before the round-trip resolves.
     controller.setSnapshot(liveSnapshot);
     expect(researchBoard.getSnapshot()).toBe(liveSnapshot);
 
@@ -289,11 +219,11 @@ describe('ResearchController', () => {
   it('clear beats stale hydrate result', async () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    const staleSnapshot = makeSnapshot({ mode: 'ready', revision: 1 });
+    const staleSnapshot = makeSnapshot({ enabled: true });
 
-    let resolveGetResearch!: (s: ResearchStatusSnapshot) => void;
+    let resolveGetResearch!: (s: ResearchModeSnapshot) => void;
     const getResearch = vi.fn(
-      () => new Promise<ResearchStatusSnapshot>((resolve) => { resolveGetResearch = resolve; }),
+      () => new Promise<ResearchModeSnapshot>((resolve) => { resolveGetResearch = resolve; }),
     );
     const session = { getResearch } as unknown as Parameters<ResearchController['hydrate']>[0];
 
@@ -316,45 +246,15 @@ describe('ResearchController', () => {
   it('isBoardVisible returns true when board is visible', () => {
     const { host } = makeHost();
     const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'ready' }));
+    controller.setSnapshot(makeSnapshot({ enabled: true }));
     expect(controller.isBoardVisible()).toBe(true);
   });
 
   it('isBoardVisible returns false when board is hidden', () => {
     const { host } = makeHost();
     const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'inactive' }));
+    controller.setSnapshot(makeSnapshot({ enabled: false }));
     expect(controller.isBoardVisible()).toBe(false);
-  });
-
-  it('setSnapshot with probing mode mounts the board in the Todo slot immediately', () => {
-    const { host, todoPanelContainer, todoPanel } = makeHost();
-    todoPanel.setTodos([{ title: 'Task 1', status: 'pending' }]);
-    todoPanelContainer.addChild(todoPanel);
-    const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'probing' }));
-    // Board is in the container synchronously — no async event needed.
-    expect(todoPanelContainer.children[0]).toBe(host.state.researchBoard);
-    expect(host.setAppState).toHaveBeenCalledWith(
-      expect.objectContaining({ researchMode: true, researchModePhase: 'probing' }),
-    );
-  });
-
-  it('returns no mutation revision for an inactive snapshot', () => {
-    const { host } = makeHost();
-    const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ mode: 'inactive', revision: 8 }));
-    expect(controller.getSnapshotRevision()).toBeUndefined();
-  });
-
-  it('rejects a lower revision without replacing the visible snapshot', () => {
-    const { host, researchBoard } = makeHost();
-    const controller = new ResearchController(host);
-    const current = makeSnapshot({ revision: 5 });
-    const stale = makeSnapshot({ revision: 4, currentLineSlug: 'stale-line' });
-    expect(controller.setSnapshot(current)).toBe(true);
-    expect(controller.setSnapshot(stale)).toBe(false);
-    expect(researchBoard.getSnapshot()).toBe(current);
   });
 
   it('rejects an old command token after a live snapshot supersedes it', () => {
@@ -365,29 +265,29 @@ describe('ResearchController', () => {
     controller.bindSession(session);
     const token = controller.beginRequest(session);
     expect(token).toBeDefined();
-    const live = makeSnapshot({ revision: 3, currentLineSlug: 'live-line' });
+    const live = makeSnapshot({ enabled: true });
     controller.setSnapshot(live);
-    expect(controller.applySnapshot(token!, makeSnapshot({ revision: 2 }))).toBe(false);
+    expect(controller.applySnapshot(token!, makeSnapshot({ enabled: false }))).toBe(false);
     expect(researchBoard.getSnapshot()).toBe(live);
   });
 
   it('drops a hydrate result when the session identity changes', async () => {
     const { host, researchBoard, getResearchSession } = makeHost();
     const oldSession = { getResearch: vi.fn() } as unknown as Session;
-    const newSession = { getResearch: vi.fn(async () => makeSnapshot({ revision: 1 })) } as unknown as Session;
+    const newSession = { getResearch: vi.fn(async () => makeSnapshot()) } as unknown as Session;
     getResearchSession.mockReturnValue(oldSession);
-    let resolveOld!: (snapshot: ResearchStatusSnapshot) => void;
+    let resolveOld!: (snapshot: ResearchModeSnapshot) => void;
     oldSession.getResearch = vi.fn(
-      () => new Promise<ResearchStatusSnapshot>((resolve) => { resolveOld = resolve; }),
+      () => new Promise<ResearchModeSnapshot>((resolve) => { resolveOld = resolve; }),
     );
     const controller = new ResearchController(host);
     const hydrate = controller.hydrate(oldSession);
     getResearchSession.mockReturnValue(newSession);
     controller.clear();
     controller.bindSession(newSession);
-    const current = makeSnapshot({ revision: 1, currentLineSlug: 'new-line' });
+    const current = makeSnapshot({ enabled: true, skillsAvailable: false });
     controller.setSnapshot(current);
-    resolveOld(makeSnapshot({ revision: 9, currentLineSlug: 'old-line' }));
+    resolveOld(makeSnapshot({ enabled: false }));
     await hydrate;
     expect(researchBoard.getSnapshot()).toBe(current);
   });
@@ -395,15 +295,15 @@ describe('ResearchController', () => {
   it('keeps Todo projection and expansion stable across live Research/Todo interleaving', () => {
     const { host, todoPanelContainer, todoPanel, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    controller.setSnapshot(makeSnapshot({ revision: 1 }));
+    controller.setSnapshot(makeSnapshot({ enabled: true }));
     researchBoard.setExpanded(true);
     const streaming = new StreamingUIController({
       state: host.state,
       syncTodoPanelSlot: host.syncTodoPanelSlot,
     } as unknown as ConstructorParameters<typeof StreamingUIController>[0]);
     streaming.setTodoList([{ title: 'Research Todo', status: 'in_progress' }]);
-    controller.setSnapshot(makeSnapshot({ revision: 2, currentLineSlug: 'new-line' }));
-    expect(todoPanelContainer.children).toEqual([researchBoard]);
+    controller.setSnapshot(makeSnapshot({ enabled: true, skillsAvailable: false }));
+    expect(todoPanelContainer.children).toEqual([researchBoard, todoPanel]);
     expect(researchBoard.isExpanded()).toBe(true);
     expect(researchBoard.getTodos()).toEqual([
       { title: 'Research Todo', status: 'in_progress' },

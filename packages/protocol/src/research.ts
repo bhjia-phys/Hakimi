@@ -1,11 +1,10 @@
 /**
  * AITP Research Mode — JSON-safe public protocol types and zod schemas.
  *
- * Mirrors the agent-core-v2 `aitpResearch` domain's `ResearchStatusSnapshot`
- * and `HumanSteeringCommand` as wire-safe shapes so the REST GET and the WS
- * `research.updated` event share one schema. The `ResearchCommand` union
- * covers the public steering commands a host may POST; `expectedRevision`
- * enables optimistic-concurrency checks on the host side.
+ * Live REST reads and research_mode.updated expose ResearchModeSnapshot:
+ * enabled plus catalog Skill availability, not CLI health. Only enter_mode
+ * and exit_mode execute. Historical snapshots, events, and command schemas
+ * remain decodable; old execution commands are rejected as research.retired.
  */
 
 import { z } from 'zod';
@@ -927,7 +926,13 @@ export const researchStatusSnapshotSchema = z.object({
 });
 export type ResearchStatusSnapshot = z.infer<typeof researchStatusSnapshotSchema>;
 
-export const getSessionResearchResponseSchema = researchStatusSnapshotSchema;
+export const researchModeSnapshotSchema = z.object({
+  enabled: z.boolean(),
+  skillsAvailable: z.boolean(),
+}).strict();
+export type ResearchModeSnapshot = z.infer<typeof researchModeSnapshotSchema>;
+
+export const getSessionResearchResponseSchema = researchModeSnapshotSchema;
 export type GetSessionResearchResponse = z.infer<typeof getSessionResearchResponseSchema>;
 
 export const researchCommandSchema = z.discriminatedUnion('kind', [
@@ -1173,6 +1178,6 @@ export const researchCommandRequestSchema = z.object({
 export type ResearchCommandRequest = z.infer<typeof researchCommandRequestSchema>;
 
 export const researchCommandResponseSchema = z.object({
-  snapshot: researchStatusSnapshotSchema,
+  snapshot: researchModeSnapshotSchema,
 });
 export type ResearchCommandResponse = z.infer<typeof researchCommandResponseSchema>;

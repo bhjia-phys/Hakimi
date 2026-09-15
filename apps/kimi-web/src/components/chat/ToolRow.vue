@@ -1,15 +1,17 @@
 <!-- apps/kimi-web/src/components/chat/ToolRow.vue -->
 <script setup lang="ts">
 import { computed, inject, nextTick, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { ToolStatus } from '../../types';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import StatusDot from '../ui/StatusDot.vue';
 import TurnProgressBar from './TurnProgressBar.vue';
 import { toolProgressKey } from './toolProgressContext';
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
-    status: 'running' | 'ok' | 'error' | 'suspended';
+    status: ToolStatus;
     /** Inline-SVG glyph string (toolGlyph), or empty for none. */
     icon?: string;
     name: string;
@@ -33,9 +35,31 @@ withDefaults(
 
 const emit = defineEmits<{ toggle: [] }>();
 
+const { t } = useI18n();
+
+// Success/failure stay icon-only (the ✓/✗ vocabulary of §04); every other
+// state carries an explicit text label so running never degrades to a lone
+// pulsing dot and cancelled/unknown/suspended/queued stay distinguishable.
+const statusText = computed(() => {
+  switch (props.status) {
+    case 'running':
+      return t('tools.status.running');
+    case 'queued':
+      return t('tools.status.queued');
+    case 'suspended':
+      return t('tools.status.suspended');
+    case 'cancelled':
+      return t('tools.status.cancelled');
+    case 'unknown':
+      return t('tools.status.unknown');
+    default:
+      return '';
+  }
+});
+
 const pinScroll = inject<(el: HTMLElement, ms?: number) => void>('pinScroll', () => {});
 const providedTurnProgress = inject(toolProgressKey);
-const turnProgress = computed(() => providedTurnProgress?.value ?? null);
+const turnProgress = computed(() => props.status === 'running' ? providedTurnProgress?.value ?? null : null);
 const bhEl = ref<HTMLElement | null>(null);
 
 function onHeadClick(): void {
@@ -66,11 +90,15 @@ function onHeadClick(): void {
         </Tooltip>
       </span>
       <span class="rt">
-        <span class="status" :class="status" role="status" :aria-label="status">
+        <span class="status" :class="status" role="status" :aria-label="t(`tools.status.${status}`)">
           <Icon v-if="status === 'ok'" name="check" size="sm" />
           <Icon v-else-if="status === 'error'" name="close" size="sm" />
+          <Icon v-else-if="status === 'cancelled'" name="stop" size="sm" />
+          <Icon v-else-if="status === 'unknown'" name="help-circle" size="sm" />
           <StatusDot v-else-if="status === 'suspended'" status="suspended" />
+          <StatusDot v-else-if="status === 'queued'" status="idle" />
           <StatusDot v-else status="running" />
+          <span v-if="statusText" class="status-text">{{ statusText }}</span>
         </span>
         <slot name="trailing" />
         <span v-if="time" class="tm">{{ time }}</span>
@@ -196,10 +224,13 @@ function onHeadClick(): void {
 }
 
 /* Status indicator at the right edge of the row: done = green ✓, error = red ✗,
-   running = pulsing accent dot. */
+   cancelled = amber stop icon, unknown = muted question mark, suspended/queued =
+   dot, running = pulsing accent dot — every non-terminal-plain state also gets a
+   short text label so the state is readable without decoding the glyph. */
 .status {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   flex: none;
 }
 .status.ok {
@@ -207,6 +238,23 @@ function onHeadClick(): void {
 }
 .status.error {
   color: var(--color-danger);
+}
+.status.cancelled {
+  color: var(--color-warning);
+}
+.status.running {
+  color: var(--color-accent);
+}
+.status.unknown,
+.status.queued {
+  color: var(--color-text-muted);
+}
+.status.suspended {
+  color: var(--color-warning);
+}
+.status-text {
+  font: var(--text-xs) var(--font-ui);
+  white-space: nowrap;
 }
 
 /* Expanded detail: sunken panel under the row. Opens downward / collapses upward

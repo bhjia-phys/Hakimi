@@ -260,9 +260,17 @@ export function toAgentMember(task: AppTask): AgentMember {
     subagentType: task.subagentType,
     model: task.model,
     thinkingEffort: task.thinkingEffort,
+    // A terminal status is authoritative over a possibly-stale subagentPhase:
+    // a cancelled task keeps whatever phase it last had (e.g. 'working'), and
+    // cancelled must stay distinct from failed instead of being folded into it.
     phase:
-      task.subagentPhase ??
-      (task.status === 'completed' ? 'completed' : task.status === 'failed' ? 'failed' : 'working'),
+      task.status === 'completed'
+        ? 'completed'
+        : task.status === 'failed'
+          ? 'failed'
+          : task.status === 'cancelled'
+            ? 'cancelled'
+            : (task.subagentPhase ?? 'working'),
     status: task.status,
     summary: task.outputPreview,
     outputLines: task.outputLines,
@@ -640,12 +648,14 @@ export function messagesToTurns(
     // render it settled instead of spinning forever. The FINAL group keeps
     // 'running' so live in-flight tools show their spinner — but only while the
     // session is actually active; once it is idle a dangling tool is a missed
-    // result, not a live one, so settle it too.
+    // result, not a live one, so settle it too. Settled-without-result means
+    // exactly that: the outcome is UNKNOWN, so mark it 'unknown' rather than
+    // guessing success ('ok') or failure.
     if (!final || !sessionActive) {
       for (let i = 0; i < g.tools.length; i++) {
         const t = g.tools[i]!;
         if (t.status !== 'running') continue;
-        const updated: ToolCall = { ...t, status: 'ok' };
+        const updated: ToolCall = { ...t, status: 'unknown' };
         g.tools[i] = updated;
         const blk = g.blocks.find((b) => b.kind === 'tool' && b.tool.id === updated.id);
         if (blk && blk.kind === 'tool') blk.tool = updated;
@@ -696,7 +706,7 @@ export function messagesToTurns(
           name: c.toolName,
           arg: typeof c.input === 'string' ? c.input : JSON.stringify(c.input),
           // 'running' until the toolResult is absorbed (resolves to ok/error);
-          // flushGroup settles dangling tools of finished turns back to 'ok'.
+          // flushGroup settles dangling tools of finished turns to 'unknown'.
           status: 'running',
           output: c.outputLines,
           outputText: toolUseOutputText(c),

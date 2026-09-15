@@ -22,6 +22,8 @@ import {
   createRemoteToken,
   createSystemctlRunner,
   createTemporaryAuthTokenService,
+  createTunnelLogTail,
+  createTunnelReadinessMonitor,
   formatRemoteBanner,
   formatServeBanner,
   formatStartBanner,
@@ -34,9 +36,11 @@ import {
   parseServeLogLevel,
   parseShowOutput,
   pollForStateFile,
+  probeTunnelReadiness,
   quoteSystemdArg,
   readPrivateJsonFile,
   readRemoteUnitStatus,
+  redactDiagnosticText,
   registerRemoteCommand,
   registerRemoteCommands,
   renderRemoteUnit,
@@ -58,12 +62,15 @@ import {
   systemctlDisableNow,
   systemctlEnableNow,
   terminateCloudflared,
+  waitForMetricsAddress,
   waitForTryCloudflareUrl,
   writePrivateJsonFile,
+  type MetricsAddressStatus,
   type RemoteControlDeps,
   type RemoteServeDeps,
   type RemoteStartCliOptions,
   type SystemctlRunner,
+  type TunnelUnhealthyDiagnosis,
 } from '#/cli/sub/remote/index';
 import {
   createRemoteShareManager,
@@ -98,6 +105,7 @@ function makeChild(): FakeChild {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   mocks.spawn.mockReset();
   process.exitCode = undefined;
@@ -250,6 +258,594 @@ describe('cloudflared process boundary', () => {
 
     expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
     expect(child.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+  });
+
+  it('appends only an opt-in metrics bind without changing the base command', () => {
+    const child = makeChild();
+    mocks.spawn.mockReturnValue(child);
+
+    expect(spawnCloudflared('/usr/bin/cloudflared', 60001, { metrics: '127.0.0.1:0' })).toBe(child);
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      '/usr/bin/cloudflared',
+      [
+        'tunnel',
+        '--no-autoupdate',
+        '--output',
+        'json',
+        '--url',
+        'http://127.0.0.1:60001',
+        '--metrics',
+        '127.0.0.1:0',
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+    );
+  });
+
+  it('parses the loopback metrics address from cloudflared JSON logs across chunks', async () => {
+    const child = makeChild();
+    const pending = waitForMetricsAddress(child, { timeoutMs: 1_000 });
+    child.stdout.write('{"level":"info","mess');
+    child.stdout.write('age":"Starting metrics server on 127.0.0.1:42221/metrics"}\n');
+
+    await expect(pending).resolves.toEqual({ host: '127.0.0.1', port: 42221 });
+  });
+
+  it('rejects the IPv6 loopback form because serve binds and probes IPv4', async () => {
+    const child = makeChild();
+    const pending = waitForMetricsAddress(child, { timeoutMs: 50 });
+    child.stdout.write(
+      `${JSON.stringify({ level: 'info', message: 'Starting metrics server on [::1]:43333/metrics' })}\n`,
+    );
+
+    await expect(pending).rejects.toThrow('timed out');
+  });
+
+  it('refuses non-loopback, malformed, or illegal metrics addresses', async () => {
+    const cases = [
+      'Starting metrics server on 0.0.0.0:42221/metrics',
+      'Starting metrics server on 192.168.1.10:42221/metrics',
+      'Starting metrics server on localhost:42221/metrics',
+      'Starting metrics server on 127.0.0.1:0/metrics',
+      'Starting metrics server on 127.0.0.1:99999/metrics',
+      'Starting metrics server on 127.0.0.1:42221', // missing /metrics suffix
+      'Starting metrics server on 127.0.0.1:42221/other',
+      'Metrics listening at http://127.0.0.1:42221/metrics', // wrong message shape
+      'not json at all',
+    ];
+    for (const message of cases) {
+      const child = makeChild();
+      const pending = waitForMetricsAddress(child, { timeoutMs: 50 });
+      child.stdout.write(`${JSON.stringify({ level: 'info', message })}\n`);
+      await expect(pending).rejects.toThrow('timed out');
+    }
+  });
+
+  it('fails on early exit before publishing a metrics address', async () => {
+    const child = makeChild();
+    const pending = waitForMetricsAddress(child, { timeoutMs: 1_000 });
+    child.emit('close', 1, null);
+
+    await expect(pending).rejects.toThrow('exited before publishing a metrics address');
+  });
+
+  it('probes /ready on loopback without auth, releasing the body and refusing redirects', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.redirect).toBe('error');
+      expect(init?.headers).not.toHaveProperty('authorization');
+      return new Response(JSON.stringify({ status: 200, readyConnections: 1 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(probeTunnelReadiness(42221)).resolves.toEqual({
+      ok: true,
+      detail: 'readyConnections 1',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:42221/ready',
+      expect.objectContaining({ redirect: 'error' }),
+    );
+  });
+
+  it('reports /ready failure states and network errors without echoing the body', async () => {
+    vi.stubGlobal('fetch', async () => new Response('{"status":503,"readyConnections":0}', { status: 503 }));
+    expect(await probeTunnelReadiness(42221)).toEqual({
+      ok: false,
+      detail: 'ready 503, readyConnections 0',
+    });
+
+    vi.stubGlobal('fetch', async () => new Response('{"status":200,"readyConnections":0}', { status: 200 }));
+    expect(await probeTunnelReadiness(42221)).toEqual({
+      ok: false,
+      detail: 'readyConnections 0',
+    });
+
+    vi.stubGlobal('fetch', async () => new Response('not json', { status: 200 }));
+    expect(await probeTunnelReadiness(42221)).toEqual({
+      ok: false,
+      detail: 'ready body lacks a numeric readyConnections',
+    });
+
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    expect(await probeTunnelReadiness(42221)).toEqual({
+      ok: false,
+      detail: 'probe failed: ECONNREFUSED',
+    });
+  });
+
+  it('never reads or echoes more than a bounded /ready body', async () => {
+    const huge = JSON.stringify({ status: 200, readyConnections: 1, pad: 'y'.repeat(4096) });
+    vi.stubGlobal('fetch', async () => new Response(huge, { status: 200 }));
+    const result = await probeTunnelReadiness(42221);
+    expect(result.detail.length).toBeLessThan(256);
+    expect(result.detail).not.toContain('y'.repeat(16));
+  });
+
+  it('retains only the byte cap from one huge body chunk and handles multibyte JSON', async () => {
+    const huge = new Uint8Array(1024 * 1024);
+    huge.fill(120); // ASCII `x`
+    const originalSubarray = huge.subarray.bind(huge);
+    const subarray = vi.fn((start: number, end: number) => originalSubarray(start, end));
+    Object.defineProperty(huge, 'subarray', { value: subarray });
+    const cancel = vi.fn(async () => {});
+    const read = vi.fn(async () => ({ done: false as const, value: huge }));
+    const response = {
+      ok: true,
+      status: 200,
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Response;
+    vi.stubGlobal('fetch', async () => response);
+
+    expect((await probeTunnelReadiness(42221)).ok).toBe(false);
+    expect(subarray).toHaveBeenCalledWith(0, 256);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(1);
+
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(JSON.stringify({ readyConnections: 1, note: '你好😀' }), { status: 200 }),
+    );
+    await expect(probeTunnelReadiness(42221)).resolves.toEqual({
+      ok: true,
+      detail: 'readyConnections 1',
+    });
+  });
+
+  it('does not call fetch for a pre-aborted readiness probe', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(probeTunnelReadiness(42221, { signal: controller.signal })).resolves.toEqual({
+      ok: false,
+      detail: 'probe aborted before start',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts a hanging /ready probe on its timeout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        }),
+    );
+    const result = await probeTunnelReadiness(42221, { timeoutMs: 20 });
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('probe aborted');
+  });
+
+  it('keeps the log tail bounded and drops pathological lines', () => {
+    const tail = createTunnelLogTail({ limitBytes: 64 });
+    for (let index = 0; index < 20; index += 1) {
+      tail.onChunk(`line-${index} ${'x'.repeat(10)}\n`);
+    }
+    const dump = tail.dump();
+    expect(Buffer.byteLength(dump)).toBeLessThanOrEqual(64);
+    expect(dump).not.toContain('line-0');
+    expect(dump).toContain('line-19');
+
+    // A single oversized line is dropped whole (never sliced) with a marker.
+    const pathological = createTunnelLogTail({ limitBytes: 64 });
+    pathological.onChunk(`${'a'.repeat(200)}\n`);
+    const clipped = pathological.dump();
+    expect(Buffer.byteLength(clipped)).toBeLessThanOrEqual(64);
+    expect(clipped).toContain('[truncated log line]');
+    expect(clipped).not.toContain('a'.repeat(100));
+
+    // Incomplete lines are never included in diagnostics, even if they contain
+    // an otherwise recognizable credential.
+    const unfinished = createTunnelLogTail({ limitBytes: 128, redact: redactDiagnosticText });
+    unfinished.onChunk('Authorization: Bearer TOP_SECRET');
+    expect(unfinished.dump()).toBe('');
+
+    // Once a partial line exceeds the limit, discard its later chunks through
+    // the next newline; only the fixed marker and following safe line survive.
+    const partial = createTunnelLogTail({ limitBytes: 64, redact: redactDiagnosticText });
+    partial.onChunk(`Authorization: Bearer ${'x'.repeat(80)}`);
+    partial.onChunk('SECRET_TAIL\nnext-safe\n');
+    const partialDump = partial.dump();
+    expect(partialDump).toContain('[truncated log line]');
+    expect(partialDump).not.toContain('SECRET_TAIL');
+    expect(partialDump).toContain('next-safe');
+
+    // Markers that do not fit are dropped; dump honours maxBytes per line and
+    // in total.
+    const tiny = createTunnelLogTail({ limitBytes: 4 });
+    tiny.onChunk(`${'x'.repeat(20)}\n`);
+    expect(tiny.dump()).toBe('');
+    const sized = createTunnelLogTail({ limitBytes: 64 });
+    sized.onChunk('line-one\n');
+    sized.onChunk('another-long-line\n');
+    const small = sized.dump({ maxBytes: 8 });
+    expect(Buffer.byteLength(small)).toBeLessThanOrEqual(8);
+    const medium = sized.dump({ maxBytes: 20 });
+    expect(Buffer.byteLength(medium)).toBeLessThanOrEqual(20);
+  });
+
+  it('enforces UTF-8 byte budgets and never splits a redaction boundary', () => {
+    const tail = createTunnelLogTail({ limitBytes: 32, redact: redactDiagnosticText });
+    tail.onChunk(`你好 ${'密'.repeat(40)}\n`); // multibyte far beyond the budget
+    const dump = tail.dump();
+    expect(Buffer.byteLength(dump)).toBeLessThanOrEqual(32);
+    expect(dump).toContain('[truncated'); // whole line dropped, no sliced surrogates
+
+    const utf = createTunnelLogTail({ limitBytes: 64 });
+    utf.onChunk('mid😀line\n');
+    expect(utf.dump()).toContain('mid😀line');
+    expect(Buffer.byteLength(utf.dump())).toBeLessThanOrEqual(64);
+
+    // A redacted line that still fits is kept; the secret never survives.
+    const fits = createTunnelLogTail({ limitBytes: 200, redact: redactDiagnosticText });
+    fits.onChunk(`msg token=${fixedToken()} end\n`);
+    const fitted = fits.dump();
+    expect(fitted).toContain('token=[REDACTED]');
+    expect(fitted).not.toContain(fixedToken());
+
+    // An oversized line whose CONTENT is a secret is dropped whole, so no
+    // half-redacted slice (e.g. `#token=` without the value) can leak.
+    const secretLine = `#token=${fixedToken()} ${'z'.repeat(200)}`;
+    const secretTail = createTunnelLogTail({ limitBytes: 64, redact: redactDiagnosticText });
+    secretTail.onChunk(`${secretLine}\n`);
+    const secretDump = secretTail.dump();
+    expect(secretDump).not.toContain(fixedToken());
+    expect(secretDump).not.toContain('#token=');
+    expect(secretDump).toContain('[truncated');
+  });
+
+  it('redacts credentials in every context, including JSON values and bare tokens', () => {
+    expect(redactDiagnosticText('url#token=ABC123XYZ end')).toBe('url#token=[REDACTED] end');
+    expect(redactDiagnosticText('#access_token=abc')).toBe('#access_token=[REDACTED]');
+    expect(
+      redactDiagnosticText('?access_token=abc&refresh_token=def&client_secret=ghi'),
+    ).toBe('?access_token=[REDACTED]&refresh_token=[REDACTED]&client_secret=[REDACTED]');
+    expect(redactDiagnosticText('Authorization: Bearer AAAA.BBBB.CCCC')).toContain(
+      'Bearer [REDACTED]',
+    );
+    expect(redactDiagnosticText('https://user:pass@example.test/path')).toBe(
+      'https://[REDACTED]@example.test/path',
+    );
+    expect(redactDiagnosticText('{"access_token":"AAAA","refresh_token":"BBBB"}')).toBe(
+      '{"access_token":"[REDACTED]","refresh_token":"[REDACTED]"}',
+    );
+    // Token-shaped fallback covers ordinary 43-char base64url values.
+    expect(redactDiagnosticText(`say ${fixedToken()} stop`)).toBe('say [REDACTED] stop');
+    expect(redactDiagnosticText(`{"token":"${fixedToken()}"}`)).toBe(
+      '{"token":"[REDACTED]"}',
+    );
+    // The known-token path is exact: leading/trailing '-' and arbitrary
+    // adjacent characters cannot defeat it through regex boundary behavior.
+    const knownToken = `-${'A'.repeat(41)}-`;
+    expect(knownToken).toHaveLength(43);
+    expect(redactDiagnosticText(`x${knownToken}y`, knownToken)).toBe('x[REDACTED]y');
+  });
+});
+
+describe('tunnel readiness monitor', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('probes immediately and clears the startup deadline on the first ok', async () => {
+    const probe = vi.fn(async () => ({ ok: true, detail: 'readyConnections 1' }));
+    const onUnhealthy = vi.fn();
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(probe).toHaveBeenCalledTimes(1); // probes immediately
+    await vi.advanceTimersByTimeAsync(5 * 5_000);
+    expect(probe).toHaveBeenCalledTimes(6);
+    // The startup deadline was cleared by the first ok, so 60s passes quietly.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(onUnhealthy).not.toHaveBeenCalled();
+    monitor.stop();
+  });
+
+  it('recovers after a transient failure once the startup deadline is cleared', async () => {
+    const answers = [
+      { ok: true, detail: 'ok' }, // t0: deadline cleared
+      { ok: false, detail: 'down' }, // t5: fail 1
+      { ok: false, detail: 'down' }, // t10: fail 2
+      { ok: true, detail: 'ok' }, // t15: counter cleared
+      { ok: false, detail: 'down' }, // t20: fail 1
+      { ok: false, detail: 'down' }, // t25: fail 2
+      { ok: false, detail: 'down' }, // t30: fail 3 → unhealthy
+    ];
+    const probe = vi.fn(async () => answers.shift() ?? { ok: true, detail: 'ok' });
+    const onUnhealthy = vi.fn();
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2 * 5_000);
+    expect(onUnhealthy).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000); // ok — counter cleared
+    await vi.advanceTimersByTimeAsync(2 * 5_000);
+    expect(onUnhealthy).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000); // fail 3 → unhealthy
+    expect(onUnhealthy).toHaveBeenCalledTimes(1);
+    expect(probe).toHaveBeenCalledTimes(7);
+  });
+
+  it('with the deadline cleared, three consecutive failures fire exactly once', async () => {
+    const probe = vi.fn(async () => ({ ok: false, detail: 'readyConnections 0' }));
+    let diagnosis: TunnelUnhealthyDiagnosis | undefined;
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      onUnhealthy: (d) => {
+        diagnosis = d;
+      },
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0); // t0: fail during the deadline phase (no counting)
+    const ok = vi.fn(async () => ({ ok: true, detail: 'ok' }));
+    probe.mockImplementation(ok);
+    await vi.advanceTimersByTimeAsync(5_000); // t5: ok — deadline cleared, counter reset
+    probe.mockImplementation(async () => ({ ok: false, detail: 'readyConnections 0' }));
+    await vi.advanceTimersByTimeAsync(3 * 5_000); // t10, t15, t20: fail 1..3 → unhealthy
+    expect(probe).toHaveBeenCalledTimes(5);
+    expect(diagnosis).toMatchObject({
+      metrics: { state: 'known', host: '127.0.0.1', port: 42221 },
+      lastOkAt: expect.any(Number),
+    });
+    expect(diagnosis?.failures).toHaveLength(3);
+    expect(diagnosis?.failures[0]?.detail).toBe('readyConnections 0');
+
+    const calls = probe.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120_000); // stopped → nothing more
+    expect(probe).toHaveBeenCalledTimes(calls);
+  });
+
+  it('never ok: fires once at the startup deadline despite repeated failures', async () => {
+    const probe = vi.fn(async () => ({ ok: false, detail: 'readyConnections 0' }));
+    let diagnosis: TunnelUnhealthyDiagnosis | undefined;
+    const onUnhealthy = vi.fn((d: TunnelUnhealthyDiagnosis) => {
+      diagnosis = d;
+    });
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(onUnhealthy).toHaveBeenCalledTimes(1);
+    expect(diagnosis?.lastOkAt).toBeNull();
+    expect(diagnosis?.failures.some((f) => f.detail.includes('never became ready'))).toBe(true);
+    expect(probe).toHaveBeenCalledTimes(12); // every 5s from 0s to 55s
+
+    await vi.advanceTimersByTimeAsync(120_000); // stopped → nothing more
+    expect(probe).toHaveBeenCalledTimes(12);
+  });
+
+  it('waits for a late metrics address and probes once it appears', async () => {
+    let status: MetricsAddressStatus = { state: 'pending' };
+    const probe = vi.fn(async () => ({ ok: true, detail: 'ok' }));
+    const onUnhealthy = vi.fn();
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => status,
+      probe,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0); // pending → keep waiting
+    status = { state: 'known', host: '127.0.0.1', port: 42221 };
+    await vi.advanceTimersByTimeAsync(2 * 5_000); // next tick probes and clears the deadline
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(onUnhealthy).not.toHaveBeenCalled();
+    expect(probe.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it('reports unhealthy at the deadline when the metrics address never resolves', async () => {
+    let status: MetricsAddressStatus = { state: 'pending' };
+    const probe = vi.fn(async () => ({ ok: true, detail: 'ok' }));
+    let diagnosis: TunnelUnhealthyDiagnosis | undefined;
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => status,
+      probe,
+      onUnhealthy: (d) => {
+        diagnosis = d;
+      },
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0); // pending → wait, no probe
+    await vi.advanceTimersByTimeAsync(60_000); // deadline fires
+    expect(diagnosis?.metrics.state).toBe('pending');
+    expect(diagnosis?.failures.some((f) => f.detail.includes('never became ready'))).toBe(true);
+    expect(probe).not.toHaveBeenCalled();
+
+    // A late resolution cannot resurrect a stopped monitor.
+    status = { state: 'known', host: '127.0.0.1', port: 42221 };
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed metrics discovery under the same 60s startup deadline', async () => {
+    const probe = vi.fn(async () => ({ ok: true, detail: 'ok' }));
+    const onUnhealthy = vi.fn();
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'failed' }),
+      probe,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(onUnhealthy).not.toHaveBeenCalled();
+    expect(probe).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onUnhealthy).toHaveBeenCalledTimes(1);
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('counts a metrics-state regression after the first ok as a normal failure', async () => {
+    let status: MetricsAddressStatus = { state: 'known', host: '127.0.0.1', port: 42221 };
+    const probe = vi.fn(async () => ({ ok: true, detail: 'ok' }));
+    let diagnosis: TunnelUnhealthyDiagnosis | undefined;
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => status,
+      probe,
+      onUnhealthy: (value) => {
+        diagnosis = value;
+      },
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0); // first OK clears startup deadline
+    status = { state: 'pending' };
+    await vi.advanceTimersByTimeAsync(3 * 5_000);
+    expect(diagnosis?.failures).toHaveLength(3);
+    expect(diagnosis?.failures.every((failure) => failure.detail === 'metrics address pending')).toBe(
+      true,
+    );
+  });
+
+  it('aborts a hanging probe at the startup deadline', async () => {
+    let probeSignal: AbortSignal | undefined;
+    const probe = vi.fn(
+      async (_port: number, signal: AbortSignal) =>
+        new Promise<{ ok: boolean; detail: string }>((_resolve, reject) => {
+          probeSignal = signal;
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        }),
+    );
+    const onUnhealthy = vi.fn();
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(probeSignal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000); // deadline aborts the hanging probe
+    expect(probeSignal?.aborted).toBe(true);
+    expect(onUnhealthy).toHaveBeenCalledTimes(1);
+    expect(probe).toHaveBeenCalledTimes(1);
+  });
+
+  it('never starts against an already-aborted signal', async () => {
+    const external = new AbortController();
+    external.abort();
+    const probe = vi.fn(async () => ({ ok: true, detail: 'ok' }));
+    const onUnhealthy = vi.fn();
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      signal: external.signal,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(probe).not.toHaveBeenCalled();
+    expect(onUnhealthy).not.toHaveBeenCalled();
+  });
+
+  it('never overlaps probes, tolerates a duplicate start, and stops on the external signal', async () => {
+    let resolveProbe!: (result: { ok: boolean; detail: string }) => void;
+    const probe = vi.fn(
+      async () =>
+        new Promise<{ ok: boolean; detail: string }>((resolve) => {
+          resolveProbe = resolve;
+        }),
+    );
+    const onUnhealthy = vi.fn();
+    const external = new AbortController();
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      signal: external.signal,
+      onUnhealthy,
+    });
+    monitor.start();
+    monitor.start(); // idempotent
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(probe).toHaveBeenCalledTimes(1); // one in-flight probe
+    await vi.advanceTimersByTimeAsync(20_000); // still hanging → no overlap
+    expect(probe).toHaveBeenCalledTimes(1);
+
+    resolveProbe({ ok: true, detail: 'ok' });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(probe).toHaveBeenCalledTimes(2);
+
+    external.abort();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(onUnhealthy).not.toHaveBeenCalled();
+  });
+
+  it('a throwing onUnhealthy callback cannot surface an unhandled rejection', async () => {
+    const probe = vi.fn(async () => ({ ok: true, detail: 'ok' }));
+    const onUnhealthy = vi.fn(() => {
+      throw new Error('logger exploded');
+    });
+    const monitor = createTunnelReadinessMonitor({
+      metricsAddress: () => ({ state: 'known', host: '127.0.0.1', port: 42221 }),
+      probe,
+      onUnhealthy,
+    });
+    monitor.start();
+
+    await vi.advanceTimersByTimeAsync(0); // ok clears the deadline
+    probe.mockImplementation(async () => ({ ok: false, detail: 'down' }));
+    await vi.advanceTimersByTimeAsync(3 * 5_000); // threshold → callback throws inside fire()
+    expect(probe).toHaveBeenCalledTimes(4);
+    expect(onUnhealthy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(probe).toHaveBeenCalledTimes(4); // stopped, no further calls
   });
 });
 
@@ -707,6 +1303,44 @@ describe('remote persistent store', () => {
     );
   });
 
+  it('reads older state without metricsPort and rejects illegal metrics ports', () => {
+    const path = remoteStatePath(home);
+    writePrivateJsonFile(path, {
+      version: 1,
+      pid: 1,
+      port: 2,
+      origin: 'https://name.trycloudflare.com',
+      startedAt: 3,
+    });
+    const legacy = readPrivateJsonFile(path, RemoteStateSchema);
+    expect(legacy?.metricsPort).toBeUndefined();
+
+    writePrivateJsonFile(path, {
+      version: 1,
+      pid: 1,
+      port: 2,
+      origin: 'https://name.trycloudflare.com',
+      startedAt: 3,
+      metricsPort: 42221,
+    });
+    const current = readPrivateJsonFile(path, RemoteStateSchema);
+    expect(current?.metricsPort).toBe(42221);
+
+    for (const metricsPort of [0, 65_536, '42221', 42.5]) {
+      writePrivateJsonFile(path, {
+        version: 1,
+        pid: 1,
+        port: 2,
+        origin: 'https://name.trycloudflare.com',
+        startedAt: 3,
+        metricsPort,
+      });
+      expect(() => readPrivateJsonFile(path, RemoteStateSchema)).toThrow(
+        'invalid remote state file',
+      );
+    }
+  });
+
   it('refuses to read config files with group/other permissions', () => {
     const path = remoteConfigPath(home);
     writePrivateJsonFile(path, {
@@ -908,13 +1542,14 @@ describe('remote serve (persistent all-sessions)', () => {
       const writes: unknown[] = [];
       const signalSource = new EventEmitter();
       let output = '';
+      const spawnTunnel = vi.fn(() => child);
 
       const pending = runRemoteServe(
         { configPath: join(home, 'remote', 'config.json'), logLevel: 'silent' },
         {
           pid: 777,
           startServer,
-          spawnCloudflared: vi.fn(() => child),
+          spawnCloudflared: spawnTunnel,
           waitForTunnelUrl: async () => 'https://public-name.trycloudflare.com',
           terminateCloudflared: terminateTunnel,
           signalSource,
@@ -949,12 +1584,19 @@ describe('remote serve (persistent all-sessions)', () => {
       await vi.waitFor(() => {
         expect(writes).toHaveLength(1);
       });
-      expect(writes[0]).toEqual({
+      expect(writes[0]).toMatchObject({
         version: 1,
         pid: 777,
         port: 61234,
         origin: 'https://public-name.trycloudflare.com',
         startedAt: 12_345,
+      });
+      // The injected child never announces a metrics address, so no port is
+      // recorded (older state stays readable and equivalent).
+      expect((writes[0] as Record<string, unknown>)['metricsPort']).toBeUndefined();
+      // The serve-only spawn adds the loopback metrics bind.
+      expect(spawnTunnel).toHaveBeenCalledWith('/opt/cloudflared', 61234, {
+        metrics: '127.0.0.1:0',
       });
       expect(serverOptions).toMatchObject({
         host: '127.0.0.1',
@@ -978,6 +1620,10 @@ describe('remote serve (persistent all-sessions)', () => {
       signalSource.emit('SIGTERM');
       await pending;
       expect(order).toEqual(['cloudflared', 'server', 'state']);
+      expect(child.stdout.listenerCount('data')).toBe(0);
+      expect(child.stderr.listenerCount('data')).toBe(0);
+      expect(signalSource.listenerCount('SIGTERM')).toBe(0);
+      expect(signalSource.listenerCount('SIGINT')).toBe(0);
     } finally {
       await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
     }
@@ -1179,6 +1825,76 @@ describe('remote serve (persistent all-sessions)', () => {
     }
   });
 
+  it('detaches tail and signal listeners even when cleanup throws', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-serve-cleanup-error-'));
+    try {
+      const child = makeChild();
+      const signalSource = new EventEmitter();
+      const writes: unknown[] = [];
+      const closeServer = vi.fn(async () => {});
+      const pending = runRemoteServe(
+        { configPath: join(home, 'remote', 'config.json'), logLevel: 'silent' },
+        {
+          pid: 777,
+          startServer: vi.fn(async () => ({
+            host: '127.0.0.1',
+            port: 61234,
+            close: closeServer,
+          }) as never),
+          spawnCloudflared: vi.fn(() => child),
+          waitForTunnelUrl: async () => 'https://public-name.trycloudflare.com',
+          waitForMetricsAddress: async () => ({ host: '127.0.0.1', port: 42221 }),
+          probeTunnelReadiness: vi.fn(async () => ({ ok: true, detail: 'readyConnections 1' })) as never,
+          terminateCloudflared: vi.fn(async () => {
+            throw new Error('cleanup exploded');
+          }),
+          signalSource,
+          stdout: { write: () => true },
+          readConfig: () => ({
+            version: 1,
+            homeDir: home,
+            cloudflaredPath: '/opt/cloudflared',
+            token: fixedToken(),
+          }),
+          writeState: vi.fn((_path, state) => {
+            writes.push(state);
+          }),
+          readState: vi.fn(() => ({
+            version: 1,
+            pid: 777,
+            port: 61234,
+            origin: 'https://public-name.trycloudflare.com',
+            startedAt: 1,
+          } as const)),
+          removeState: vi.fn(),
+          generateQrCode: async () => 'QR',
+          now: () => 1,
+        },
+      );
+
+      await vi.waitFor(() => {
+        expect(writes.length).toBeGreaterThan(0);
+      });
+      expect(child.stdout.listenerCount('data')).toBeGreaterThan(0);
+      expect(child.stderr.listenerCount('data')).toBeGreaterThan(0);
+      const outcome = pending.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      signalSource.emit('SIGTERM');
+      const settled = await outcome;
+      expect(settled).toBeInstanceOf(Error);
+      expect((settled as Error).message).toContain('cleanup exploded');
+      expect(closeServer).toHaveBeenCalledTimes(1);
+      expect(child.stdout.listenerCount('data')).toBe(0);
+      expect(child.stderr.listenerCount('data')).toBe(0);
+      expect(signalSource.listenerCount('SIGTERM')).toBe(0);
+      expect(signalSource.listenerCount('SIGINT')).toBe(0);
+    } finally {
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+    }
+  });
+
   it('fails fast when the config file is missing or unreadable', async () => {
     const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-serve-'));
     try {
@@ -1199,6 +1915,356 @@ describe('remote serve (persistent all-sessions)', () => {
         }),
       ).rejects.toThrow('too open');
     } finally {
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+    }
+  });
+
+  it('self-heals via the readiness monitor: non-zero exit, cleanups in order, metrics port merged into state', async () => {
+    vi.useFakeTimers();
+    const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-serve-health-'));
+    try {
+      const order: string[] = [];
+      const child = makeChild();
+      const writes: unknown[] = [];
+      let output = '';
+      const probe = vi.fn(async () => ({ ok: false, detail: 'readyConnections 0' }));
+      const pending = runRemoteServe(
+        { configPath: join(home, 'remote', 'config.json'), logLevel: 'silent' },
+        {
+          pid: 777,
+          startServer: vi.fn(async () => ({
+            host: '127.0.0.1',
+            port: 61234,
+            close: vi.fn(async () => {
+              order.push('server');
+            }),
+          }) as never),
+          spawnCloudflared: vi.fn(() => child),
+          waitForTunnelUrl: async () => 'https://public-name.trycloudflare.com',
+          waitForMetricsAddress: async () => ({ host: '127.0.0.1', port: 42221 }),
+          probeTunnelReadiness: probe as never,
+          terminateCloudflared: vi.fn(async () => {
+            order.push('cloudflared');
+          }),
+          signalSource: new EventEmitter(),
+          stdout: {
+            write(chunk: string) {
+              output += chunk;
+              return true;
+            },
+          },
+          readConfig: () => ({
+            version: 1,
+            homeDir: home,
+            cloudflaredPath: '/opt/cloudflared',
+            token: fixedToken(),
+          }),
+          writeState: vi.fn((_path, state) => {
+            writes.push(state);
+          }),
+          readState: vi.fn(() => ({
+            version: 1,
+            pid: 777,
+            port: 61234,
+            origin: 'https://public-name.trycloudflare.com',
+            startedAt: 12_345,
+          } as const)),
+          removeState: () => {
+            order.push('state');
+          },
+          generateQrCode: async () => 'QR-HEALTH',
+          now: () => 12_345,
+        },
+      );
+
+      // Flush the whole async startup (server + URL publish + metrics parse).
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writes.length).toBeGreaterThanOrEqual(1);
+      expect(writes[0]).toMatchObject({
+        version: 1,
+        pid: 777,
+        port: 61234,
+        origin: 'https://public-name.trycloudflare.com',
+        startedAt: 12_345,
+      });
+      // The injected metrics parse resolves before the URL publish, so the
+      // first state write already carries the port; the PID-guarded merge is
+      // idempotent.
+      expect(writes.some((w) => (w as Record<string, unknown>)['metricsPort'] === 42221)).toBe(true);
+      // The URL publish flow (banner, fixed-token link) is unchanged.
+      expect(output).toContain(
+        `https://public-name.trycloudflare.com/?remote=1#token=${fixedToken()}`,
+      );
+
+      // Attach the settlement handler BEFORE the monitor fires so the rejection
+      // is never observed as unhandled within the timer callback chain.
+      const outcome = pending.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      // Never-ready: the monitor probes every 5s but only the 60s startup
+      // deadline fires the unhealthy exit (first-ok failures are not counted).
+      await vi.advanceTimersByTimeAsync(60_000);
+      const settled = await outcome;
+      expect(settled).toBeInstanceOf(Error);
+      expect((settled as Error).message).toContain('cloudflared tunnel became unhealthy');
+      expect(probe).toHaveBeenCalledTimes(12); // 0s..55s on the 5s cadence
+      await vi.advanceTimersByTimeAsync(3 * 5_000); // stopped → no further probes
+      expect(probe).toHaveBeenCalledTimes(12);
+      expect(order).toEqual(['cloudflared', 'server', 'state']);
+    } finally {
+      vi.useRealTimers();
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+    }
+  });
+
+  it('still cleans up and exits non-zero when the unhealthy diagnostic throws', async () => {
+    vi.useFakeTimers();
+    const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-serve-report-'));
+    try {
+      const order: string[] = [];
+      const child = makeChild();
+      const reportTunnelUnhealthy = vi.fn(
+        (diagnosis: TunnelUnhealthyDiagnosis, recentLogs: string) => {
+          expect(diagnosis.failures).toHaveLength(3);
+          for (const failure of diagnosis.failures) {
+            expect(failure.detail).not.toContain(fixedToken());
+            expect(failure.detail.length).toBeLessThanOrEqual(512);
+          }
+          expect(recentLogs).toContain('x[REDACTED]y');
+          expect(recentLogs).not.toContain(fixedToken());
+          throw new Error('logger exploded');
+        },
+      );
+      let probeCount = 0;
+      const probe = vi.fn(async () => {
+        probeCount += 1;
+        return probeCount === 1
+          ? { ok: true, detail: 'readyConnections 1' }
+          : { ok: false, detail: `x${fixedToken()}y ${'z'.repeat(600)}` };
+      });
+      const pending = runRemoteServe(
+        { configPath: join(home, 'remote', 'config.json'), logLevel: 'silent' },
+        {
+          pid: 777,
+          startServer: vi.fn(async () => ({
+            host: '127.0.0.1',
+            port: 61234,
+            close: vi.fn(async () => {
+              order.push('server');
+            }),
+          }) as never),
+          spawnCloudflared: vi.fn(() => child),
+          waitForTunnelUrl: async () => 'https://public-name.trycloudflare.com',
+          waitForMetricsAddress: async () => ({ host: '127.0.0.1', port: 42221 }),
+          probeTunnelReadiness: probe as never,
+          reportTunnelUnhealthy,
+          terminateCloudflared: vi.fn(async () => {
+            order.push('cloudflared');
+          }),
+          signalSource: new EventEmitter(),
+          stdout: {
+            write() {
+              return true;
+            },
+          },
+          readConfig: () => ({
+            version: 1,
+            homeDir: home,
+            cloudflaredPath: '/opt/cloudflared',
+            token: fixedToken(),
+          }),
+          writeState: vi.fn(),
+          readState: vi.fn(() => ({
+            version: 1,
+            pid: 777,
+            port: 61234,
+            origin: 'https://public-name.trycloudflare.com',
+            startedAt: 12_345,
+          } as const)),
+          removeState: () => {
+            order.push('state');
+          },
+          generateQrCode: async () => 'QR',
+          now: () => 12_345,
+        },
+      );
+
+      const outcome = pending.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(0); // first probe OK
+      child.stdout.write(`x${fixedToken()}y\n`);
+      await vi.advanceTimersByTimeAsync(3 * 5_000); // three post-ready failures
+      const settled = await outcome;
+      expect(settled).toBeInstanceOf(Error);
+      expect((settled as Error).message).toContain('cloudflared tunnel became unhealthy');
+      // The failing diagnostic hook ran but the restart path still completed.
+      expect(reportTunnelUnhealthy).toHaveBeenCalledTimes(1);
+      expect(order).toEqual(['cloudflared', 'server', 'state']);
+    } finally {
+      vi.useRealTimers();
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+    }
+  });
+
+  it('still cleans up and exits non-zero when diagnostic tail dumping throws', async () => {
+    vi.useFakeTimers();
+    const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-serve-tail-'));
+    try {
+      const order: string[] = [];
+      const child = makeChild();
+      const signalSource = new EventEmitter();
+      const makeTail = vi.fn(() => ({
+        onChunk: vi.fn(),
+        dump: vi.fn(() => {
+          throw new Error('tail exploded');
+        }),
+      }));
+      const reportTunnelUnhealthy = vi.fn();
+      let probeCount = 0;
+      const pending = runRemoteServe(
+        { configPath: join(home, 'remote', 'config.json'), logLevel: 'silent' },
+        {
+          pid: 777,
+          startServer: vi.fn(async () => ({
+            host: '127.0.0.1',
+            port: 61234,
+            close: vi.fn(async () => {
+              order.push('server');
+            }),
+          }) as never),
+          spawnCloudflared: vi.fn(() => child),
+          waitForTunnelUrl: async () => 'https://public-name.trycloudflare.com',
+          waitForMetricsAddress: async () => ({ host: '127.0.0.1', port: 42221 }),
+          probeTunnelReadiness: vi.fn(async () => {
+            probeCount += 1;
+            return probeCount === 1
+              ? { ok: true, detail: 'readyConnections 1' }
+              : { ok: false, detail: 'readyConnections 0' };
+          }) as never,
+          createTunnelLogTail: makeTail,
+          reportTunnelUnhealthy,
+          terminateCloudflared: vi.fn(async () => {
+            order.push('cloudflared');
+          }),
+          signalSource,
+          stdout: { write: () => true },
+          readConfig: () => ({
+            version: 1,
+            homeDir: home,
+            cloudflaredPath: '/opt/cloudflared',
+            token: fixedToken(),
+          }),
+          writeState: vi.fn(),
+          readState: vi.fn(() => ({
+            version: 1,
+            pid: 777,
+            port: 61234,
+            origin: 'https://public-name.trycloudflare.com',
+            startedAt: 12_345,
+          } as const)),
+          removeState: () => {
+            order.push('state');
+          },
+          generateQrCode: async () => 'QR',
+          now: () => 12_345,
+        },
+      );
+
+      const outcome = pending.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(0); // first probe OK
+      await vi.advanceTimersByTimeAsync(3 * 5_000); // tail dump throws on unhealthy
+      const settled = await outcome;
+      expect(settled).toBeInstanceOf(Error);
+      expect((settled as Error).message).toContain('cloudflared tunnel became unhealthy');
+      expect(makeTail).toHaveBeenCalledTimes(2);
+      expect(reportTunnelUnhealthy).not.toHaveBeenCalled();
+      expect(order).toEqual(['cloudflared', 'server', 'state']);
+      expect(child.stdout.listenerCount('data')).toBe(0);
+      expect(child.stderr.listenerCount('data')).toBe(0);
+      expect(signalSource.listenerCount('SIGTERM')).toBe(0);
+      expect(signalSource.listenerCount('SIGINT')).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+    }
+  });
+
+  it('never merges a metrics port into state owned by a newer serve process', async () => {
+    vi.useFakeTimers();
+    const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-serve-metrics-pid-'));
+    try {
+      const order: string[] = [];
+      const child = makeChild();
+      const writes: unknown[] = [];
+      const signalSource = new EventEmitter();
+      const pending = runRemoteServe(
+        { configPath: join(home, 'remote', 'config.json'), logLevel: 'silent' },
+        {
+          pid: 777,
+          startServer: vi.fn(async () => ({
+            host: '127.0.0.1',
+            port: 61234,
+            close: vi.fn(async () => {
+              order.push('server');
+            }),
+          }) as never),
+          spawnCloudflared: vi.fn(() => child),
+          waitForTunnelUrl: async () => 'https://public-name.trycloudflare.com',
+          waitForMetricsAddress: async () => ({ host: '127.0.0.1', port: 42221 }),
+          terminateCloudflared: vi.fn(async () => {
+            order.push('cloudflared');
+          }),
+          signalSource,
+          stdout: {
+            write() {
+              return true;
+            },
+          },
+          readConfig: () => ({
+            version: 1,
+            homeDir: home,
+            cloudflaredPath: '/opt/cloudflared',
+            token: fixedToken(),
+          }),
+          writeState: vi.fn((_path, state) => {
+            writes.push(state);
+          }),
+          // A newer serve process (pid 999) already replaced the state file.
+          readState: vi.fn(() => ({
+            version: 1,
+            pid: 999,
+            port: 61234,
+            origin: 'https://public-name.trycloudflare.com',
+            startedAt: 12_345,
+          } as const)),
+          removeState: () => {
+            order.push('state');
+          },
+          generateQrCode: async () => 'QR',
+          now: () => 12_345,
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      // Only the URL-publish write lands (metrics resolved before it), the
+      // PID-guarded merge is refused, so there is exactly one write.
+      expect(writes).toHaveLength(1);
+      expect((writes[0] as Record<string, unknown>)['metricsPort']).toBe(42221);
+
+      signalSource.emit('SIGTERM');
+      await pending;
+      // Cleanup keeps the guard too: the newer pid's state is untouched.
+      expect(order).toEqual(['cloudflared', 'server']);
+    } finally {
+      vi.useRealTimers();
       await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
     }
   });
@@ -1558,7 +2624,136 @@ describe('remote start/status/stop control', () => {
       expect(text).toContain('QR-STATUS');
       expect(text).toContain('127.0.0.1:61234');
       expect(text).toContain('Health:   ok');
+      // Older state without a metrics port reports the tunnel as unknown.
+      expect(text).toContain('Tunnel health: unknown');
       expect(calls).toContain('show hakimi-remote.service --property=LoadState,ActiveState,SubState,MainPID');
+    } finally {
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+    }
+  });
+
+  it('status reports tunnel health from the loopback /ready probe, distinct from local health', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-control-'));
+    try {
+      writePrivateJsonFile(remoteConfigPath(home), {
+        version: 1,
+        homeDir: home,
+        cloudflaredPath: '/opt/cloudflared',
+        token: fixedToken(),
+      });
+      writePrivateJsonFile(remoteStatePath(home), {
+        version: 1,
+        pid: 4242,
+        port: 61234,
+        origin: 'https://name.trycloudflare.com',
+        startedAt: 1111,
+        metricsPort: 42221,
+      });
+      const runner = (vi.fn(async (args: string[]) => {
+        if (args[0] === 'is-system-running') {
+          return { code: 0, stdout: 'running', stderr: '' };
+        }
+        return {
+          code: 0,
+          stdout: 'LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=4242\n',
+          stderr: '',
+        };
+      }) as unknown) as SystemctlRunner;
+
+      const okProbe = vi.fn(async () => ({ ok: true, detail: 'readyConnections 1' }));
+      let captured = captureStdout();
+      await runRemoteStatus({
+        platform: 'linux',
+        homeDir: home,
+        runner,
+        probeHealth: async () => true,
+        probeTunnelHealth: okProbe as never,
+        generateQrCode: async () => 'QR',
+        stdout: captured.stdout,
+      });
+      expect(captured.text()).toContain('Tunnel health: ok');
+      expect(okProbe).toHaveBeenCalledWith(42221, expect.objectContaining({ timeoutMs: expect.any(Number) }));
+
+      const downProbe = vi.fn(async () => ({ ok: false, detail: 'readyConnections 0' }));
+      captured = captureStdout();
+      await runRemoteStatus({
+        platform: 'linux',
+        homeDir: home,
+        runner,
+        probeHealth: async () => true,
+        probeTunnelHealth: downProbe as never,
+        generateQrCode: async () => 'QR',
+        stdout: captured.stdout,
+      });
+      // Correctly down even though the LOCAL listener is healthy.
+      expect(captured.text()).toContain('Health:   ok');
+      expect(captured.text()).toContain('Tunnel health: down');
+    } finally {
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+    }
+  });
+
+  it('status never probes tunnel health from stale or unsupported state', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'hakimi-remote-control-'));
+    try {
+      writePrivateJsonFile(remoteConfigPath(home), {
+        version: 1,
+        homeDir: home,
+        cloudflaredPath: '/opt/cloudflared',
+        token: fixedToken(),
+      });
+      writePrivateJsonFile(remoteStatePath(home), {
+        version: 1,
+        pid: 4242,
+        port: 61234,
+        origin: 'https://name.trycloudflare.com',
+        startedAt: 1111,
+        metricsPort: 42221,
+      });
+
+      // Stale: systemd restarted the service (MainPID differs from state.pid),
+      // so the leftover metrics port must NOT be probed — it could belong to a
+      // completely different process now.
+      const staleRunner = (vi.fn(async (args: string[]) => {
+        if (args[0] === 'is-system-running') return { code: 0, stdout: 'running', stderr: '' };
+        return {
+          code: 0,
+          stdout: 'LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=9999\n',
+          stderr: '',
+        };
+      }) as unknown) as SystemctlRunner;
+      const noProbe = vi.fn();
+      let captured = captureStdout();
+      await runRemoteStatus({
+        platform: 'linux',
+        homeDir: home,
+        runner: staleRunner,
+        probeHealth: async () => true,
+        probeTunnelHealth: noProbe as never,
+        generateQrCode: async () => 'QR',
+        stdout: captured.stdout,
+      });
+      expect(noProbe).not.toHaveBeenCalled();
+      expect(captured.text()).toContain('Tunnel health: unknown');
+
+      // Unsupported: no usable systemd user session at all (unit unknown) —
+      // the state is not live, so nothing is probed.
+      const unsupportedRunner = (vi.fn(async (args: string[]) => {
+        if (args[0] === 'is-system-running') return { code: 1, stdout: 'offline', stderr: '' };
+        return { code: 1, stdout: '', stderr: 'no bus' };
+      }) as unknown) as SystemctlRunner;
+      captured = captureStdout();
+      await runRemoteStatus({
+        platform: 'linux',
+        homeDir: home,
+        runner: unsupportedRunner,
+        probeHealth: async () => true,
+        probeTunnelHealth: noProbe as never,
+        generateQrCode: async () => 'QR',
+        stdout: captured.stdout,
+      });
+      expect(noProbe).not.toHaveBeenCalled();
+      expect(captured.text()).toContain('Tunnel health: unknown');
     } finally {
       await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
     }

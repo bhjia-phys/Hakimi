@@ -99,6 +99,7 @@ export function webRemotePersistentController(
         unit: null,
         systemdAvailable: false,
         health: 'unknown',
+        tunnelHealth: 'unknown',
       });
     }
     try {

@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, ref, useId } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ProviderUsageResult, ProviderUsageRow } from '../../api/types';
+import type {
+  ProviderMeteredPeriod,
+  ProviderMeteredUsage,
+  ProviderUsageResult,
+  ProviderUsageRow,
+} from '../../api/types';
 import { useKimiWebClient } from '../../composables/useKimiWebClient';
 import {
+  formatBeijingTime,
+  formatCnyEstimatedCost,
+  formatMeteredBalance,
   formatProviderCurrency,
   formatProviderUsageReset,
+  formatTokenCount,
   providerUsageBadgeVariant,
   providerUsageBarPercent,
   providerUsagePercent,
@@ -17,6 +26,7 @@ import Button from '../ui/Button.vue';
 import Card from '../ui/Card.vue';
 
 const { t, locale } = useI18n();
+const detailsId = useId();
 withDefaults(defineProps<{ embedded?: boolean }>(), {
   embedded: false,
 });
@@ -31,6 +41,20 @@ const {
 onMounted(() => {
   void refreshProviderUsage();
 });
+
+// Per-provider expandable metered detail state (today/month), keyed so multiple
+// providers keep independent open/close state.
+const expanded = ref<Record<string, { today: boolean; month: boolean }>>({});
+
+function isExpanded(provider: string, period: 'today' | 'month'): boolean {
+  return expanded.value[provider]?.[period] ?? false;
+}
+
+function toggleDetails(provider: string, period: 'today' | 'month'): void {
+  const entry = expanded.value[provider] ?? { today: false, month: false };
+  entry[period] = !entry[period];
+  expanded.value = { ...expanded.value, [provider]: entry };
+}
 
 function usageLabel(row: ProviderUsageRow): string {
   if (row.name) return row.name;
@@ -88,6 +112,41 @@ function monthlyUsage(result: Extract<ProviderUsageResult, { kind: 'ok' }>): str
     locale.value,
   );
   return t('settings.usageMonthlyWithLimit', { used, limit });
+}
+
+// ---------------------------------------------------------------------------
+// Metered usage (local estimated CNY cost + official balance).
+// ---------------------------------------------------------------------------
+
+function meteredPeriods(
+  metered: ProviderMeteredUsage,
+): Array<{ key: 'today' | 'month'; label: string; period: ProviderMeteredPeriod }> {
+  return [
+    { key: 'today', label: t('settings.meteredToday'), period: metered.today },
+    { key: 'month', label: t('settings.meteredMonth'), period: metered.month },
+  ];
+}
+
+/** Estimated cost for display — `—` when unknown, never a fabricated zero. */
+function costLabel(estimatedCost: string | null): string {
+  return formatCnyEstimatedCost(estimatedCost) ?? '—';
+}
+
+function periodFlags(period: ProviderMeteredPeriod): string[] {
+  const flags: string[] = [];
+  if (period.pendingRequestCount > 0) {
+    flags.push(t('settings.meteredPending', { count: String(period.pendingRequestCount) }));
+  }
+  if (period.missingUsageRequestCount > 0) {
+    flags.push(t('settings.meteredMissingUsage', { count: String(period.missingUsageRequestCount) }));
+  }
+  if (period.unpricedRequestCount > 0) {
+    flags.push(t('settings.meteredUnpriced', { count: String(period.unpricedRequestCount) }));
+  }
+  if (period.isPartial) {
+    flags.push(t('settings.meteredPartial'));
+  }
+  return flags;
 }
 </script>
 
@@ -161,6 +220,104 @@ function monthlyUsage(result: Extract<ProviderUsageResult, { kind: 'ok' }>): str
               <strong>{{ monthlyUsage(result) }}</strong>
             </div>
           </div>
+
+          <div v-if="result.meteredUsage" class="metered-usage">
+            <div class="metered-note">
+              <span>{{ t('settings.meteredLocalNote') }}</span>
+              <span class="metered-note-time">{{ t('settings.meteredTimezone') }}</span>
+            </div>
+
+            <div v-if="result.meteredUsage.degraded" class="metered-flags">
+              <Badge variant="danger" size="sm">{{ t('settings.meteredDegraded') }}</Badge>
+            </div>
+
+            <div v-if="result.meteredUsage.trackingStartedAt !== null" class="metered-tracking">
+              {{ t('settings.meteredTrackingSince', { time: formatBeijingTime(result.meteredUsage.trackingStartedAt, locale) }) }}
+            </div>
+            <div v-else class="metered-state">
+              {{ result.meteredUsage.month.requestCount > 0
+                ? t('settings.meteredTrackingUnknown')
+                : t('settings.meteredNotTracked') }}
+            </div>
+
+            <section
+              v-for="{ key, label, period } in meteredPeriods(result.meteredUsage)"
+              :key="key"
+              class="metered-period"
+            >
+              <div class="metered-period-head">
+                <span class="metered-period-title">{{ label }}</span>
+                <span class="metered-period-summary">
+                  <span class="metered-tokens">{{ t('settings.meteredTokens', { count: formatTokenCount(period.totalTokens, locale) }) }}</span>
+                  <span class="metered-cost">{{ costLabel(period.estimatedCost) }}</span>
+                </span>
+              </div>
+
+              <div v-if="periodFlags(period).length" class="metered-flags">
+                <Badge v-for="flag in periodFlags(period)" :key="flag" variant="warning" size="sm">
+                  {{ flag }}
+                </Badge>
+              </div>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                :aria-expanded="isExpanded(result.provider, key)"
+                :aria-controls="`${detailsId}-${encodeURIComponent(result.provider)}-${key}`"
+                @click="toggleDetails(result.provider, key)"
+              >
+                {{ isExpanded(result.provider, key) ? t('settings.meteredHideDetails') : t('settings.meteredDetails') }}
+              </Button>
+
+              <div
+                v-if="isExpanded(result.provider, key)"
+                :id="`${detailsId}-${encodeURIComponent(result.provider)}-${key}`"
+                class="metered-details"
+              >
+                <div class="metered-detail-row">
+                  <span>{{ t('settings.meteredInput') }}</span>
+                  <span class="metered-detail-value">{{ formatTokenCount(period.inputTokens, locale) }}</span>
+                </div>
+                <div class="metered-detail-row">
+                  <span>{{ t('settings.meteredOutput') }}</span>
+                  <span class="metered-detail-value">{{ formatTokenCount(period.outputTokens, locale) }}</span>
+                </div>
+                <div class="metered-detail-row">
+                  <span>{{ t('settings.meteredCacheRead') }}</span>
+                  <span class="metered-detail-value">{{ formatTokenCount(period.cacheReadTokens, locale) }}</span>
+                </div>
+              </div>
+            </section>
+
+            <div class="metered-balance">
+              <div class="metered-balance-head">
+                <span>{{ t('settings.meteredBalanceTitle') }}</span>
+              </div>
+              <template v-if="result.meteredUsage.balance.kind === 'ok'">
+                <div v-if="!result.meteredUsage.balance.isAvailable" class="metered-state">
+                  {{ t('settings.meteredBalanceUnavailable') }}
+                </div>
+                <div v-if="result.meteredUsage.balance.balances.length === 0" class="metered-state">
+                  {{ t('settings.meteredBalanceEmpty') }}
+                </div>
+                <div
+                  v-for="balance in result.meteredUsage.balance.balances"
+                  v-else
+                  :key="balance.currency"
+                  class="metered-balance-row"
+                >
+                  <span class="metered-balance-currency">{{ balance.currency }}</span>
+                  <span class="metered-balance-value">
+                    <span class="metered-balance-total">{{ t('settings.meteredBalanceTotal') }} {{ formatMeteredBalance(balance.total, balance.currency, locale) }}</span>
+                    <span class="metered-balance-sub">{{ t('settings.meteredBalanceGranted') }} {{ formatMeteredBalance(balance.granted, balance.currency, locale) }} · {{ t('settings.meteredBalanceToppedUp') }} {{ formatMeteredBalance(balance.toppedUp, balance.currency, locale) }}</span>
+                  </span>
+                </div>
+              </template>
+              <div v-else class="metered-balance-error">
+                {{ t('settings.meteredBalanceFailed', { message: result.meteredUsage.balance.message }) }}
+              </div>
+            </div>
+          </div>
         </template>
 
         <div v-else class="usage-message">
@@ -197,7 +354,35 @@ function monthlyUsage(result: Extract<ProviderUsageResult, { kind: 'ok' }>): str
 .usage-message { align-items: flex-start; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-sunken); color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
 .usage-status { flex: none; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-faint); }
 
+/* Metered usage (local estimate + official balance) — isolated from the quota
+   summary above; no quota percentage bars here. */
+.metered-usage { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-line); }
+.metered-note { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-xs); color: var(--color-text-faint); }
+.metered-note-time { flex: none; }
+.metered-tracking { font-size: var(--text-xs); color: var(--color-text-muted); }
+.metered-state { font-size: var(--text-sm); color: var(--color-text-muted); }
+.metered-period { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-sunken); }
+.metered-period-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.metered-period-title { color: var(--color-text); font-weight: var(--weight-medium); }
+.metered-period-summary { display: inline-flex; align-items: baseline; gap: var(--space-2); flex: none; }
+.metered-tokens { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text); }
+.metered-cost { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--color-text); }
+.metered-flags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.metered-details { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-2); }
+.metered-detail-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); color: var(--color-text-muted); }
+.metered-detail-value { flex: none; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text); }
+.metered-balance { display: flex; flex-direction: column; gap: var(--space-2); }
+.metered-balance-head { font-size: var(--text-sm); color: var(--color-text); font-weight: var(--weight-medium); }
+.metered-balance-row { display: flex; align-items: flex-start; gap: var(--space-3); }
+.metered-balance-currency { flex: none; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-faint); }
+.metered-balance-value { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.metered-balance-total { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text); }
+.metered-balance-sub { font-size: var(--text-xs); color: var(--color-text-muted); }
+.metered-balance-error { font-size: var(--text-sm); color: var(--color-warning); }
+
 @media (max-width: 640px) {
   .provider-head, .usage-row-head, .extra-usage > div, .usage-message { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
+  .metered-note, .metered-period-head { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
+  .metered-period-summary { flex-direction: column; align-items: flex-start; gap: var(--space-1); }
 }
 </style>

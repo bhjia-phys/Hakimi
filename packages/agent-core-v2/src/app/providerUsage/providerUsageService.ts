@@ -1,7 +1,7 @@
 /**
  * `providerUsage` domain — `IProviderUsageService` implementation.
  *
- * Resolves usage through four supported routes: managed Kimi OAuth providers
+ * Resolves usage through five supported routes: managed Kimi OAuth
  * (`managed:kimi-code`) delegate to `IOAuthService.getManagedUsage`; the
  * official `api.kimi.com/coding` API-key provider calls `fetchManagedUsage`
  * (pinned to the fixed official `/v1/usages` endpoint, validated by the
@@ -9,33 +9,41 @@
  * provider (`managed:openai-codex`) uses the existing OAuth token provider /
  * request auth and calls `fetchCodexUsage` against the fixed official
  * `wham/usage` URL (only the official `chatgpt.com/backend-api/codex` base is
- * accepted); and the exact-base OpenCode Go provider calls
- * `fetchOpenCodeGoUsage` against the fixed `opencode.ai/zen/go/v1/usage`
- * endpoint. Any other provider is `unsupported`, never guessed. Effective
- * endpoints resolve inline first and fall back to the provider-definition env
- * bag (key and base URL alike), so discovery and explicit queries see the same
- * endpoint. Error text is scrubbed at this boundary: the API-key routes redact
- * their credential from untrusted remote text inside the fetch adapters, and
- * the managed OAuth routes replace every error with a fixed message (plus the
- * safe HTTP status) because this layer does not hold the refresh credential
- * needed to redact an echoed one. An omitted query targets every identifiable
- * supported usage provider; a caller-supplied signal stops the loop and the
- * in-flight fetches. Bound at App scope.
+ * accepted); the exact-base OpenCode Go provider calls `fetchOpenCodeGoUsage`
+ * against the fixed `opencode.ai/zen/go/v1/usage` endpoint; and (behind the
+ * `deepseek_usage` flag) an official DeepSeek base merges the local metered
+ * today/month ledger with `fetchDeepSeekBalance` against the fixed official
+ * balance endpoint. Any other provider is `unsupported`, never guessed.
+ * Effective endpoints resolve inline first and fall back to the
+ * provider-definition env bag (key and base URL alike), so discovery and
+ * explicit queries see the same endpoint. Error text is scrubbed at this
+ * boundary: the API-key routes redact their credential from untrusted remote
+ * text inside the fetch adapters, and the managed OAuth routes replace every
+ * error with a fixed message (plus the safe HTTP status) because this layer
+ * does not hold the refresh credential needed to redact an echoed one. An
+ * omitted query targets every identifiable supported usage provider; a
+ * caller-supplied signal stops the loop and the in-flight fetches. Bound at
+ * App scope.
  */
 
 import {
   OPENAI_CODEX_PROVIDER_NAME,
   fetchCodexUsage,
+  fetchDeepSeekBalance,
   fetchManagedUsage,
   fetchOpenCodeGoUsage,
   isManagedKimiCode,
   officialCodexUsageUrl,
+  officialDeepSeekBalanceUrl,
   officialKimiCodeUsageUrl,
   opencodeGoUsageUrl,
   type BearerRequestAuth,
 } from '@moonshot-ai/kimi-code-oauth';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { IOAuthService } from '#/app/auth/auth';
+import { IFlagService } from '#/app/flag/flag';
+import { DEEPSEEK_USAGE_FLAG_ID } from '#/app/providerUsage/flag';
+import { IProviderUsageLedgerService } from '#/app/providerUsageLedger/providerUsageLedger';
 import { LifecycleScope } from '#/app/scopes';
 import { nonEmpty } from '#/kosong/model/modelAuth';
 import {
@@ -66,6 +74,8 @@ export class ProviderUsageService implements IProviderUsageService {
   constructor(
     @IProviderService private readonly providerService: IProviderService,
     @IOAuthService private readonly oauth: IOAuthService,
+    @IFlagService private readonly flags: IFlagService,
+    @IProviderUsageLedgerService private readonly ledger: IProviderUsageLedgerService,
   ) {}
 
   async queryUsage(
@@ -116,7 +126,9 @@ export class ProviderUsageService implements IProviderUsageService {
       const endpoint = this.resolveEndpoint(config);
       if (
         officialKimiCodeUsageUrl(endpoint.baseUrl) !== undefined ||
-        opencodeGoUsageUrl(endpoint.baseUrl) !== undefined
+        opencodeGoUsageUrl(endpoint.baseUrl) !== undefined ||
+        (this.flags.enabled(DEEPSEEK_USAGE_FLAG_ID) &&
+          officialDeepSeekBalanceUrl(endpoint.baseUrl) !== undefined)
       ) {
         ids.push(id);
       }
@@ -209,6 +221,9 @@ export class ProviderUsageService implements IProviderUsageService {
       return { kind: 'error', provider: providerId, message: `Provider ${providerId} is not configured.` };
     }
     const endpoint = this.resolveEndpoint(config);
+    if (officialDeepSeekBalanceUrl(endpoint.baseUrl) !== undefined) {
+      return this.queryDeepSeek(providerId, endpoint, signal);
+    }
     if (officialKimiCodeUsageUrl(endpoint.baseUrl) !== undefined) {
       if (endpoint.apiKey === undefined) {
         return { kind: 'error', provider: providerId, message: `No credential configured for provider ${providerId}.` };
@@ -245,6 +260,33 @@ export class ProviderUsageService implements IProviderUsageService {
       };
     }
     return { kind: 'unsupported', provider: providerId, message: 'Usage endpoint is not available for this provider.' };
+  }
+
+  private async queryDeepSeek(
+    providerId: string,
+    endpoint: ResolvedEndpoint,
+    signal?: AbortSignal,
+  ): Promise<ProviderUsageResult> {
+    if (!this.flags.enabled(DEEPSEEK_USAGE_FLAG_ID)) {
+      return {
+        kind: 'unsupported',
+        provider: providerId,
+        message: 'Usage endpoint is not available for this provider.',
+      };
+    }
+    if (endpoint.apiKey === undefined) {
+      return { kind: 'error', provider: providerId, message: `No credential configured for provider ${providerId}.` };
+    }
+    const metered = await this.ledger.getMeteredUsage(providerId, { signal });
+    const balance = await fetchDeepSeekBalance(endpoint.apiKey, { signal });
+    return {
+      kind: 'ok',
+      provider: providerId,
+      summary: null,
+      limits: [],
+      extraUsage: null,
+      meteredUsage: { ...metered, balance },
+    };
   }
 
   private resolveEndpoint(config: ProviderConfig): ResolvedEndpoint {

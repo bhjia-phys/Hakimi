@@ -1074,44 +1074,26 @@ describe('background subagent task registration', () => {
   });
 });
 
-describe('research.updated projection', () => {
+describe('research_mode.updated projection', () => {
   const snapshot = {
-    mode: 'ready',
-    loopStatus: 'active',
-    planningPolicy: 'collaborative',
-    lineWorkstreamBindings: [],
-    phase: 'idle',
-    questions: [],
-    lines: [],
-    openQuestionCount: 0,
-    activeQuestionCount: 0,
-    blockedQuestionCount: 0,
-    alerts: [],
-    aitpHealth: { phase: 'ready' },
-    program: {
-      topicId: 'topic-example',
-      title: 'Example research program',
-      goalText: 'Establish the bounded research result.',
-      goalSource: 'aitp-enter',
-      establishedAt: 1_700_000_000_000,
-    },
-    revision: 3,
-  } satisfies import('../src/api/types').ResearchStatusSnapshot;
+    enabled: true,
+    skillsAvailable: true,
+  } satisfies import('../src/api/types').ResearchModeSnapshot;
 
-  it('projects the raw agent event to a typed Research update', () => {
+  it('projects the raw agent event to a typed Research mode update', () => {
     const projector = createAgentProjector();
-    const events = projector.project('research.updated', { snapshot }, 's1');
+    const events = projector.project('research_mode.updated', { snapshot }, 's1');
     expect(events).toEqual([
       { type: 'researchUpdated', sessionId: 's1', snapshot },
     ]);
   });
 
   it('keeps raw and protocol-prefixed frames on their distinct routes', () => {
-    expect(classifyFrame('research.updated', { snapshot })).toEqual({
+    expect(classifyFrame('research_mode.updated', { snapshot })).toEqual({
       route: 'agent',
-      agentType: 'research.updated',
+      agentType: 'research_mode.updated',
     });
-    expect(classifyFrame('event.research.updated', { snapshot })).toEqual({
+    expect(classifyFrame('event.research_mode.updated', { snapshot })).toEqual({
       route: 'protocol',
     });
   });

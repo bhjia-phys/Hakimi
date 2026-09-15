@@ -28,12 +28,16 @@ import type {
   ApprovalResponse,
   ImageSource,
   PromptSubmission,
+  ProviderMeteredBalance,
+  ProviderMeteredBalanceResult,
+  ProviderMeteredPeriod,
+  ProviderMeteredUsage,
   ProviderUsageResult,
   QuestionAnswer,
   QuestionItem,
   QuestionOption,
   QuestionResponse,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
 } from '../types';
 
 import type {
@@ -49,6 +53,10 @@ import type {
   WireModel,
   WirePromptSubmission,
   WireProvider,
+  WireProviderMeteredBalance,
+  WireProviderMeteredBalanceResult,
+  WireProviderMeteredPeriod,
+  WireProviderMeteredUsage,
   WireProviderUsageItem,
   WireQuestionAnswer,
   WireQuestionItem,
@@ -57,7 +65,7 @@ import type {
   WireQuestionResponse,
   WireRemotePersistentStatus,
   WireRemoteShareStatus,
-  WireResearchStatusSnapshot,
+  WireResearchModeSnapshot,
   WireSession,
   WireSessionUsage,
   WireWorkspace,
@@ -560,30 +568,12 @@ export function toAppGoal(snapshot: unknown): AppGoal | null {
   };
 }
 
-function cloneResearchValue<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((item) => cloneResearchValue(item)) as T;
-  }
-  if (value !== null && typeof value === 'object') {
-    const clone: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value)) {
-      clone[key] = cloneResearchValue(child);
-    }
-    return clone as T;
-  }
-  return value;
-}
-
-export function toAppResearchSnapshot(
-  snapshot: WireResearchStatusSnapshot,
-): ResearchStatusSnapshot {
-  // Research REST and WS payloads are already camelCase. Deep-clone the complete
-  // JSON-safe protocol object so nested receipts/progress never share mutable
-  // wire references, while the bidirectional assignments keep the local wire and
-  // app mirrors structurally aligned at compile time.
-  const appSnapshot: ResearchStatusSnapshot = cloneResearchValue(snapshot);
-  const wireSnapshot: WireResearchStatusSnapshot = appSnapshot;
-  return wireSnapshot;
+export function toAppResearchModeSnapshot(
+  snapshot: WireResearchModeSnapshot,
+): ResearchModeSnapshot {
+  // The mode snapshot is two booleans; a shallow copy is sufficient and keeps
+  // the caller from sharing the mutable wire reference.
+  return { ...snapshot };
 }
 
 const AUTO_PRESET_REASON_CODES = new Set<AutoSubagentPresetReasonCode>([
@@ -894,11 +884,11 @@ export function toAppEvent(wire: WireEvent): AppEvent {
       };
     }
 
-    case 'event.research.updated':
+    case 'event.research_mode.updated':
       return {
         type: 'researchUpdated',
         sessionId: w.session_id,
-        snapshot: toAppResearchSnapshot(w.payload.snapshot),
+        snapshot: toAppResearchModeSnapshot(w.payload.snapshot),
       };
 
     case 'event.subagent.preset_evaluated': {
@@ -1158,6 +1148,60 @@ function toAppProviderUsageRow(wire: WireUsageRow): AppUsageRow {
   };
 }
 
+function toAppProviderMeteredBalance(wire: WireProviderMeteredBalance): ProviderMeteredBalance {
+  return {
+    currency: wire.currency,
+    total: wire.total,
+    granted: wire.granted,
+    toppedUp: wire.topped_up,
+  };
+}
+
+function toAppProviderMeteredBalanceResult(
+  wire: WireProviderMeteredBalanceResult,
+): ProviderMeteredBalanceResult {
+  if (wire.kind === 'ok') {
+    return {
+      kind: 'ok',
+      isAvailable: wire.is_available,
+      balances: wire.balances.map(toAppProviderMeteredBalance),
+    };
+  }
+  return { kind: 'error', message: wire.message, status: wire.status };
+}
+
+function toAppProviderMeteredPeriod(wire: WireProviderMeteredPeriod): ProviderMeteredPeriod {
+  return {
+    startAt: wire.start_at,
+    endAt: wire.end_at,
+    requestCount: wire.request_count,
+    measuredRequestCount: wire.measured_request_count,
+    pendingRequestCount: wire.pending_request_count,
+    missingUsageRequestCount: wire.missing_usage_request_count,
+    unpricedRequestCount: wire.unpriced_request_count,
+    inputTokens: wire.input_tokens,
+    outputTokens: wire.output_tokens,
+    cacheReadTokens: wire.cache_read_tokens,
+    totalTokens: wire.total_tokens,
+    estimatedCost: wire.estimated_cost,
+    isPartial: wire.is_partial,
+  };
+}
+
+function toAppProviderMeteredUsage(wire: WireProviderMeteredUsage): ProviderMeteredUsage {
+  return {
+    source: wire.source,
+    costSource: wire.cost_source,
+    currency: wire.currency,
+    timezone: wire.timezone,
+    trackingStartedAt: wire.tracking_started_at,
+    degraded: wire.degraded,
+    today: toAppProviderMeteredPeriod(wire.today),
+    month: toAppProviderMeteredPeriod(wire.month),
+    balance: toAppProviderMeteredBalanceResult(wire.balance),
+  };
+}
+
 export function toAppProviderUsageResult(wire: WireProviderUsageItem): ProviderUsageResult {
   if (wire.kind !== 'ok') {
     return {
@@ -1183,6 +1227,7 @@ export function toAppProviderUsageResult(wire: WireProviderUsageItem): ProviderU
             monthlyUsedCents: wire.extra_usage.monthly_used_cents,
             currency: wire.extra_usage.currency,
           },
+    meteredUsage: wire.metered_usage === undefined ? undefined : toAppProviderMeteredUsage(wire.metered_usage),
   };
 }
 

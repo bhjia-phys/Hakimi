@@ -6,8 +6,9 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { FilePreviewRequest, TaskItem, ToolCall, ToolMedia } from '../../../types';
+import type { FilePreviewRequest, TaskItem, ToolCall, ToolMedia, ToolStatus } from '../../../types';
 import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
+import { agentCardStatus } from '../../../lib/agentTaskResolver';
 import Badge from '../../ui/Badge.vue';
 import Tooltip from '../../ui/Tooltip.vue';
 import ToolRow from '../ToolRow.vue';
@@ -57,7 +58,6 @@ const hasOutput = computed(() => !!props.tool.output && props.tool.output.length
 const canExpand = computed(() => Boolean(input.value.prompt) || hasOutput.value);
 const open = ref(props.tool.defaultExpanded === true && canExpand.value);
 
-const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
 
@@ -67,6 +67,11 @@ const glyph = computed(() => toolGlyph(props.tool.name));
 const resolveAgentTask = inject<(toolCallId: string) => TaskItem | undefined>('resolveAgentTask');
 const resolveAgentTaskId = inject<(toolCallId: string) => string | undefined>('resolveAgentTaskId');
 const task = computed(() => resolveAgentTask?.(props.tool.id));
+// The card status comes from the LIVE task when one is linked to this call
+// (running/queued/suspended/cancelled stay accurate even when the message side
+// has no result yet or was settled to 'unknown' after the main turn went idle);
+// without a task the message-derived tool status is the fallback.
+const status = computed<ToolStatus>(() => agentCardStatus(props.tool.status, task.value));
 const role = computed(() => task.value?.subagentType || input.value.subagentType);
 const model = computed(() => task.value?.model);
 const summary = computed(() => input.value.description || role.value || '');

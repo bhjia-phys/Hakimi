@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DaemonKimiWebApi, deriveTurnProgressSeed } from '../src/api/daemon/client';
+import { clearCredential, setCredential } from '../src/api/daemon/serverAuth';
 import {
   toAppAutoSubagentPresetStatus,
   toAppTask,
@@ -117,327 +118,8 @@ const WIRE_GOAL = {
 };
 
 const WIRE_RESEARCH = {
-  mode: 'ready',
-  loopStatus: 'active',
-  planningPolicy: 'collaborative',
-  currentLineSlug: 'sources',
-  currentWorkstreamBinding: {
-    lineSlug: 'sources',
-    status: 'bound',
-    reason: 'Explicit confirmation matches the observed Topic revision.',
-    binding: {
-      confirmationId: 'confirmation-sources-1',
-      lineSlug: 'sources',
-      workstream: 'primary-sources',
-      topicId: 'topic-example',
-      observedRevision: 5,
-      confirmedBy: 'user',
-      confirmedAt: 1_700_000_000_560,
-    },
-  },
-  lineWorkstreamBindings: [{
-    confirmationId: 'confirmation-sources-1',
-    lineSlug: 'sources',
-    workstream: 'primary-sources',
-    topicId: 'topic-example',
-    observedRevision: 5,
-    confirmedBy: 'user',
-    confirmedAt: 1_700_000_000_560,
-  }],
-  currentFocus: { questionId: 'q_1', boundedAction: 'Read the primary source', revision: 3 },
-  currentQuestion: {
-    id: 'q_1',
-    lineSlug: 'sources',
-    wording: 'What does the primary source establish?',
-    assessment: 'Still collecting evidence',
-    priority: 2,
-    neededEvidence: ['Primary source'],
-    evidenceRefs: ['ev_1'],
-    falsifierRefs: [],
-    nextBoundedAction: 'Read the primary source',
-    workflow: 'active',
-    epistemic: 'candidate',
-    persistence: 'working',
-    revision: 7,
-  },
-  questions: [
-    {
-      id: 'q_1',
-      lineSlug: 'sources',
-      wording: 'What does the primary source establish?',
-      assessment: 'Still collecting evidence',
-      priority: 2,
-      neededEvidence: ['Primary source'],
-      evidenceRefs: ['ev_1'],
-      falsifierRefs: [],
-      nextBoundedAction: 'Read the primary source',
-      workflow: 'active',
-      epistemic: 'candidate',
-      persistence: 'working',
-      revision: 7,
-    },
-  ],
-  lines: [
-    {
-      slug: 'sources',
-      title: 'Primary sources',
-      objective: 'Establish the source record',
-      assessment: 'One source found',
-      status: 'active',
-      createdAt: 1_700_000_000_000,
-      revision: 4,
-    },
-  ],
-  openQuestionCount: 1,
-  activeQuestionCount: 1,
-  blockedQuestionCount: 0,
-  alerts: [
-    {
-      fingerprint: 'alert-active',
-      kind: 'stale',
-      classification: 'active_blocker',
-      source: 'question',
-      state: 'active',
-      message: 'Recheck the cached source',
-      questionId: 'q_1',
-      lineSlug: 'sources',
-      relatedEntryId: 'entry_0',
-      workstream: 'sources',
-      retryOfEntryId: 'entry_retry',
-      reason: 'Source changed',
-      createdAt: 1_700_000_000_300,
-    },
-    {
-      fingerprint: 'alert-acknowledged',
-      kind: 'degraded',
-      state: 'acknowledged',
-      message: 'Historical adapter warning',
-      createdAt: 1_700_000_000_000,
-      acknowledgedAt: 1_700_000_000_400,
-    },
-  ],
-  effectiveNextStep: {
-    text: 'Review the new spectrum',
-    source: 'research_run',
-    freshness: 'current',
-    observedAt: 1_700_000_000_500,
-    derivedFrom: {
-      actionId: 'action_1',
-      entryId: 'entry_0',
-      questionId: 'q_1',
-      lineSlug: 'sources',
-    },
-  },
-  goalSummary: {
-    objective: 'Finish the current Goal milestone',
-    status: 'active',
-    remainingTurns: 8,
-  },
-  program: {
-    topicId: 'topic-example',
-    title: 'Example research program',
-    goalText: 'Establish the bounded research result.',
-    goalSource: 'aitp-enter',
-    establishedAt: 1_700_000_000_550,
-    observedRevision: 5,
-  },
-  aitpHealth: {
-    phase: 'ready',
-    contractVersion: '1.0',
-    pluginVersion: '2.0',
-    pythonVersion: '3.12',
-    lastCheckAt: 1_700_000_000_100,
-    notInitialized: false,
-  },
-  aitpMaintenance: {
-    status: 'ready',
-    refreshedAt: 1_700_000_000_600,
-    memoryStatus: 'available',
-    workstream: 'sources',
-    latestWorkingNoteAt: 1_700_000_000_200,
-    activeNewerThanWorkingNote: true,
-    unresolvedFailureCount: 1,
-    unresolvedFailures: [{
-      entryId: 'failure_1',
-      kind: 'failure',
-      summary: 'A prior run failed',
-      source: 'aitp',
-      authority: 'tool',
-      createdAt: 1_700_000_000_100,
-      workstream: 'sources',
-    }],
-    nextAction: 'Review the new spectrum',
-    nextActionDetails: {
-      text: 'Review the new spectrum',
-      entryId: 'entry_0',
-      authority: 'agent',
-      createdAt: 1_700_000_000_500,
-      source: 'aitp',
-    },
-    warningSummaries: [{ level: 'warning', code: 'NOTE_STALE' }],
-    check: {
-      status: 'findings',
-      counts: { entries: 3, notes: 1, errors: 0, warnings: 1 },
-      findingCodes: ['NOTE_STALE'],
-    },
-  },
-  pendingCheckpoint: {
-    checkpointId: 'cp_1',
-    committedEntryId: 'entry_pending',
-    questionId: 'q_1',
-    questionRevision: 7,
-    lineSlug: 'sources',
-    workstreamBinding: {
-      confirmationId: 'confirmation-sources-1',
-      lineSlug: 'sources',
-      workstream: 'primary-sources',
-      topicId: 'topic-example',
-      observedRevision: 5,
-      confirmedBy: 'user',
-      confirmedAt: 1_700_000_000_560,
-    },
-    commitCandidate: {
-      sourceActionId: 'action_1',
-      progressRecordedAt: 1_700_000_000_570,
-      entryKind: 'source',
-      authority: 'source',
-      provenance: 'source_assessment',
-      rationale: 'The assessed primary source changes the durable evidence state.',
-    },
-    assessment: 'Primary source located',
-    nextAction: 'Commit the ledger entry',
-    idempotencyKey: 'idem_1',
-    persistence: 'pending_commit',
-    receipt: {
-      prepare: {
-        status: 'prepared',
-        id: 'draft_1',
-        path: '.aitp/draft_1.json',
-        idempotencyKey: 'idem_1',
-        workstreams: ['sources'],
-      },
-      save: {
-        status: 'saved',
-        draftPath: '.aitp/draft_1.json',
-        path: '.aitp/entry_pending.json',
-        source: 'record_save',
-      },
-      preSaveCheck: {
-        status: 'clean',
-        errors: 0,
-        warnings: 0,
-        findingFingerprints: [],
-        errorFindingFingerprints: [],
-        checkedAt: 1_700_000_000_150,
-      },
-      postSaveCheck: {
-        status: 'findings',
-        errors: 0,
-        warnings: 1,
-        findingFingerprints: ['warning_1'],
-        errorFindingFingerprints: [],
-        newErrorFindingFingerprints: [],
-        preExistingErrorFindingFingerprints: [],
-        checkedAt: 1_700_000_000_250,
-      },
-    },
-    createdAt: 1_700_000_000_200,
-  },
-  latestCommittedCheckpoint: {
-    checkpointId: 'cp_0',
-    entryId: 'entry_0',
-    receipt: {
-      prepare: {
-        status: 'existing',
-        id: 'entry_0',
-        path: '.aitp/entry_0.json',
-        idempotencyKey: 'idem_0',
-        workstreams: ['sources'],
-      },
-    },
-    committedAt: 1_700_000_000_050,
-  },
-  committedCheckpointHistory: [
-    { checkpointId: 'cp_old', entryId: 'entry_old', committedAt: 1_699_999_999_000 },
-    { checkpointId: 'cp_0', entryId: 'entry_0', committedAt: 1_700_000_000_050 },
-  ],
-  phase: 'action_executing',
-  currentAction: {
-    actionId: 'action_1',
-    questionId: 'q_1',
-    lineSlug: 'sources',
-    kind: 'experiment',
-    purpose: 'Measure the spectrum',
-    expectedEvidence: ['A resolved peak'],
-    stopCondition: 'Peak converges',
-    allowedToolKinds: ['bash'],
-    retryOfEntryId: 'entry_retry',
-    status: 'in_progress',
-    createdAt: 1_700_000_000_000,
-    requiresHumanApproval: true,
-    run: {
-      actionId: 'action_1',
-      campaign: 'campaign_1',
-      jobId: 'job_1',
-      sourcePin: 'source-sha',
-      binaryPin: 'binary-sha',
-      stage: 'running',
-      schedulerState: 'running',
-      lastObservedAt: 1_700_000_000_700,
-      nextCheckAt: 1_700_000_001_000,
-      artifactRefs: ['artifact://run.log'],
-    },
-  },
-  currentRun: {
-    actionId: 'action_1',
-    campaign: 'campaign_1',
-    jobId: 'job_1',
-    sourcePin: 'source-sha',
-    binaryPin: 'binary-sha',
-    stage: 'running',
-    schedulerState: 'running',
-    lastObservedAt: 1_700_000_000_700,
-    nextCheckAt: 1_700_000_001_000,
-    artifactRefs: ['artifact://run.log'],
-  },
-  latestProgress: {
-    headline: 'Spectrum run started',
-    question: 'What does the primary source establish?',
-    motivation: 'Resolve the remaining uncertainty',
-    workPerformed: 'Submitted the measured run',
-    result: 'Scheduler accepted the job',
-    mainlineImpact: 'Evidence collection is active',
-    uncertainties: ['Peak position is pending'],
-    nextAction: 'Observe the scheduler',
-    phaseChange: { from: 'action_planned', to: 'action_executing' },
-    detail: {
-      assumptions: ['Calibration is stable'],
-      derivation: 'Use the calibrated response',
-      tests: ['Check convergence'],
-      observations: ['Job is running'],
-      sources: ['source://primary'],
-      limitations: ['No final spectrum yet'],
-      detailHint: 'Inspect the run log',
-      artifactRefs: ['artifact://run.log'],
-    },
-    recordedAt: 1_700_000_000_750,
-  },
-  recentStateChange: {
-    beforePhase: 'action_planned',
-    afterPhase: 'action_executing',
-    actionId: 'action_1',
-    summary: 'The experiment started',
-    changedAt: 1_700_000_000_700,
-  },
-  humanGate: {
-    gateId: 'gate_1',
-    kind: 'decision',
-    actionId: 'action_1',
-    questionId: 'q_1',
-    prompt: 'Continue after the first spectrum?',
-    createdAt: 1_700_000_000_800,
-  },
-  revision: 11,
+  enabled: true,
+  skillsAvailable: true,
 };
 
 const WIRE_AUTO_PRESET_STATUS = {
@@ -720,7 +402,7 @@ describe('DaemonKimiWebApi Research', () => {
     vi.unstubAllGlobals();
   });
 
-  it('gets and maps the complete Research snapshot from the encoded session path', async () => {
+  it('gets and maps the Research mode snapshot from the encoded session path', async () => {
     vi.mocked(fetch).mockResolvedValue(envelope(WIRE_RESEARCH));
 
     const snapshot = await createApi().getSessionResearch('sess/1');
@@ -730,81 +412,24 @@ describe('DaemonKimiWebApi Research', () => {
     );
     expect(snapshot).toEqual(WIRE_RESEARCH);
     expect(snapshot).not.toBe(WIRE_RESEARCH);
-    expect(snapshot.currentAction).not.toBe(WIRE_RESEARCH.currentAction);
-    expect(snapshot.aitpMaintenance).not.toBe(WIRE_RESEARCH.aitpMaintenance);
-    expect(snapshot.program).toEqual(WIRE_RESEARCH.program);
-    expect(snapshot.program).not.toBe(WIRE_RESEARCH.program);
-    expect(snapshot.currentWorkstreamBinding).toEqual(WIRE_RESEARCH.currentWorkstreamBinding);
-    expect(snapshot.currentWorkstreamBinding).not.toBe(WIRE_RESEARCH.currentWorkstreamBinding);
-  });
-
-  it('posts the typed command and maps the returned snapshot', async () => {
-    vi.mocked(fetch).mockResolvedValue(envelope({ snapshot: WIRE_RESEARCH }));
-    const command = { kind: 'set_focus', questionId: 'q_1', expectedRevision: 11 } as const;
-
-    const snapshot = await createApi().commandSessionResearch('sess/1', command);
-
-    const [url, init] = vi.mocked(fetch).mock.calls[0]!;
-    expect(url).toBe('http://daemon.test/api/v1/sessions/sess%2F1/research/command');
-    expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ command }) });
-    expect(snapshot.revision).toBe(11);
   });
 
   it.each([
-    {
-      kind: 'resolve_decision',
-      gateId: 'gate_1',
-      resolution: 'Continue',
-      nextPhase: 'idle',
-    },
-    {
-      kind: 'review_evidence',
-      expectedRevision: 11,
-      packet: {
-        packet_id: 'packet_1',
-        kind: 'observation',
-        claim: 'The peak is resolved',
-        evidence: 'Measured spectrum',
-        assumptions: [],
-        tests: [],
-        artifact_refs: [],
-        source_refs: [],
-        limitations: [],
-        confidence: 'high',
-      },
-    },
-    {
-      kind: 'observe_run',
-      actionId: 'action_1',
-      expectedRevision: 11,
-      campaign: 'campaign_1',
-      jobId: 'job_1',
-      stage: 'running',
-      schedulerState: 'running',
-      artifactRefs: ['artifact://run.log'],
-    },
-    { kind: 'acknowledge_alert', fingerprint: 'alert-active' },
-    {
-      kind: 'confirm_line_workstream_binding',
-      lineSlug: 'sources',
-      workstream: 'primary-sources',
-      expectedRevision: 11,
-    },
-    {
-      kind: 'clear_line_workstream_binding',
-      lineSlug: 'sources',
-      expectedConfirmationId: 'confirmation-sources-1',
-      expectedRevision: 11,
-    },
-  ] satisfies ResearchCommand[])('posts the $kind Research Manager command unchanged', async (command) => {
-    vi.mocked(fetch).mockResolvedValue(envelope({ snapshot: WIRE_RESEARCH }));
+    { kind: 'enter_mode', actor: 'user' },
+    { kind: 'exit_mode' },
+  ] as const satisfies readonly ResearchCommand[])(
+    'posts the $kind mode command unchanged and maps the returned snapshot',
+    async (command) => {
+      vi.mocked(fetch).mockResolvedValue(envelope({ snapshot: WIRE_RESEARCH }));
 
-    await createApi().commandSessionResearch('sess/1', command);
+      const snapshot = await createApi().commandSessionResearch('sess/1', command);
 
-    const [url, init] = vi.mocked(fetch).mock.calls[0]!;
-    expect(url).toBe('http://daemon.test/api/v1/sessions/sess%2F1/research/command');
-    expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ command }) });
-  });
+      const [url, init] = vi.mocked(fetch).mock.calls[0]!;
+      expect(url).toBe('http://daemon.test/api/v1/sessions/sess%2F1/research/command');
+      expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ command }) });
+      expect(snapshot).toEqual(WIRE_RESEARCH);
+    },
+  );
 });
 
 describe('DaemonKimiWebApi config and provider usage', () => {
@@ -1156,6 +781,187 @@ describe('DaemonKimiWebApi config and provider usage', () => {
       { provider: 'custom', kind: 'unsupported', message: 'Usage endpoint unavailable.', status: undefined },
     ]);
   });
+
+  it('maps the local metered usage and official balance to camelCase', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        providers: [
+          {
+            provider: 'deepseek',
+            kind: 'ok',
+            summary: null,
+            limits: [],
+            extra_usage: null,
+            metered_usage: {
+              source: 'local',
+              cost_source: 'estimated',
+              currency: 'CNY',
+              timezone: 'Asia/Shanghai',
+              tracking_started_at: '2030-01-01T00:00:00.000Z',
+              degraded: false,
+              today: {
+                start_at: '2030-01-01T00:00:00.000Z',
+                end_at: '2030-01-01T23:59:59.999Z',
+                request_count: 3,
+                measured_request_count: 2,
+                pending_request_count: 1,
+                missing_usage_request_count: 0,
+                unpriced_request_count: 0,
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_read_tokens: 10,
+                total_tokens: 160,
+                estimated_cost: '0.000123',
+                is_partial: true,
+              },
+              month: {
+                start_at: '2030-01-01T00:00:00.000Z',
+                end_at: '2030-01-31T23:59:59.999Z',
+                request_count: 10,
+                measured_request_count: 8,
+                pending_request_count: 2,
+                missing_usage_request_count: 1,
+                unpriced_request_count: 1,
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: 100,
+                total_tokens: 1600,
+                estimated_cost: null,
+                is_partial: true,
+              },
+              balance: {
+                kind: 'ok',
+                is_available: true,
+                balances: [
+                  { currency: 'CNY', total: '10.50', granted: '2.00', topped_up: '8.50' },
+                  { currency: 'USD', total: '1.25', granted: '0.00', topped_up: '1.25' },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    const [result] = await createApi().getProviderUsage('deepseek');
+
+    expect(result).toMatchObject({
+      provider: 'deepseek',
+      kind: 'ok',
+      meteredUsage: {
+        source: 'local',
+        costSource: 'estimated',
+        currency: 'CNY',
+        timezone: 'Asia/Shanghai',
+        trackingStartedAt: '2030-01-01T00:00:00.000Z',
+        degraded: false,
+        today: {
+          startAt: '2030-01-01T00:00:00.000Z',
+          endAt: '2030-01-01T23:59:59.999Z',
+          requestCount: 3,
+          measuredRequestCount: 2,
+          pendingRequestCount: 1,
+          missingUsageRequestCount: 0,
+          unpricedRequestCount: 0,
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 10,
+          totalTokens: 160,
+          estimatedCost: '0.000123',
+          isPartial: true,
+        },
+        month: {
+          startAt: '2030-01-01T00:00:00.000Z',
+          endAt: '2030-01-31T23:59:59.999Z',
+          requestCount: 10,
+          measuredRequestCount: 8,
+          pendingRequestCount: 2,
+          missingUsageRequestCount: 1,
+          unpricedRequestCount: 1,
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 100,
+          totalTokens: 1600,
+          estimatedCost: null,
+          isPartial: true,
+        },
+        balance: {
+          kind: 'ok',
+          isAvailable: true,
+          balances: [
+            { currency: 'CNY', total: '10.50', granted: '2.00', toppedUp: '8.50' },
+            { currency: 'USD', total: '1.25', granted: '0.00', toppedUp: '1.25' },
+          ],
+        },
+      },
+    });
+  });
+
+  it('maps a balance error while keeping local metered stats', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        providers: [
+          {
+            provider: 'deepseek',
+            kind: 'ok',
+            summary: null,
+            limits: [],
+            extra_usage: null,
+            metered_usage: {
+              source: 'local',
+              cost_source: 'estimated',
+              currency: 'CNY',
+              timezone: 'Asia/Shanghai',
+              tracking_started_at: '2030-01-01T00:00:00.000Z',
+              degraded: false,
+              today: {
+                start_at: '2030-01-01T00:00:00.000Z',
+                end_at: '2030-01-01T23:59:59.999Z',
+                request_count: 3,
+                measured_request_count: 2,
+                pending_request_count: 1,
+                missing_usage_request_count: 0,
+                unpriced_request_count: 0,
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_read_tokens: 10,
+                total_tokens: 160,
+                estimated_cost: '0.000123',
+                is_partial: true,
+              },
+              month: {
+                start_at: '2030-01-01T00:00:00.000Z',
+                end_at: '2030-01-31T23:59:59.999Z',
+                request_count: 10,
+                measured_request_count: 8,
+                pending_request_count: 2,
+                missing_usage_request_count: 1,
+                unpriced_request_count: 1,
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: 100,
+                total_tokens: 1600,
+                estimated_cost: null,
+                is_partial: true,
+              },
+              balance: { kind: 'error', message: 'Balance endpoint unavailable.', status: 503 },
+            },
+          },
+        ],
+      }),
+    );
+
+    const [result] = await createApi().getProviderUsage('deepseek');
+
+    expect(result).toMatchObject({
+      provider: 'deepseek',
+      kind: 'ok',
+      meteredUsage: {
+        today: expect.objectContaining({ totalTokens: 160, estimatedCost: '0.000123' }),
+        balance: { kind: 'error', message: 'Balance endpoint unavailable.', status: 503 },
+      },
+    });
+  });
 });
 
 describe('deriveTurnProgressSeed', () => {
@@ -1485,14 +1291,14 @@ describe('DaemonKimiWebApi.connectEvents', () => {
 
     socket.emit({ type: 'server_hello', payload: { protocol_version: 2 } });
     socket.emit({
-      type: 'research.updated',
+      type: 'research_mode.updated',
       seq: 1,
       session_id: 'session-1',
       timestamp: '2026-01-01T00:00:00.000Z',
       payload: { snapshot: WIRE_RESEARCH },
     });
     socket.emit({
-      type: 'event.research.updated',
+      type: 'event.research_mode.updated',
       seq: 2,
       session_id: 'session-1',
       timestamp: '2026-01-01T00:00:01.000Z',
@@ -1727,5 +1533,64 @@ describe('automatic subagent-preset event mapping', () => {
     });
 
     expect(received.some((event) => event.type === 'subagentPresetChanged')).toBe(false);
+  });
+});
+
+describe('DaemonKimiWebApi.getWorkspaceFileBlob', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+    clearTrace();
+    setCredential('test-token');
+  });
+
+  afterEach(() => {
+    clearCredential();
+    clearTrace();
+    vi.unstubAllGlobals();
+  });
+
+  it('downloads workspace bytes with the Bearer credential and a per-segment-encoded path', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(new Uint8Array([37, 80, 68, 70]), {
+        status: 200,
+        headers: { 'content-type': 'application/pdf' },
+      }),
+    );
+
+    const blob = await createApi().getWorkspaceFileBlob('sess_1', 'docs/报告 v1.pdf');
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0]!;
+    expect(url).toBe(
+      `http://daemon.test/api/v1/sessions/sess_1/fs/docs/${encodeURIComponent('报告 v1.pdf')}:download`,
+    );
+    expect((init?.headers as Record<string, string>)['Authorization']).toBe('Bearer test-token');
+    expect(init?.method).toBe('GET');
+    expect(blob.size).toBe(4);
+  });
+
+  it('parses the daemon error envelope (e.g. 40101) into a DaemonApiError', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ code: 40101, msg: 'unauthorized', request_id: 'req_1' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const caught = await createApi()
+      .getWorkspaceFileBlob('sess_1', 'docs/a.pdf')
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(DaemonApiError);
+    expect(caught).toMatchObject({ code: 40101, requestId: 'req_1' });
+  });
+
+  it('throws a DaemonNetworkError when the fetch itself fails', async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed'));
+
+    const caught = await createApi()
+      .getWorkspaceFileBlob('sess_1', 'docs/a.pdf')
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(DaemonNetworkError);
   });
 });

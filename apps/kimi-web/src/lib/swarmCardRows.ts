@@ -4,7 +4,7 @@
 // `<agent_swarm_result>` payload (terminal result) — kept in plain TS so it can
 // be unit-tested without mounting the component.
 
-import type { AppSubagentPhase } from '../api/types';
+import type { AgentPhase } from '../types';
 import type { SwarmMember } from '../composables/swarmGroups';
 import type { SwarmResult, SwarmResultSubagent } from './parseSwarmResult';
 
@@ -15,7 +15,7 @@ export interface SwarmCardRow {
   model?: string;
   thinkingEffort?: string;
   activity: string;
-  phase: AppSubagentPhase;
+  phase: AgentPhase;
   body: string;
 }
 
@@ -43,9 +43,12 @@ function swarmMemberBody(member: SwarmMember): string {
   return member.summary ?? '';
 }
 
-function outcomeToPhase(outcome: string): AppSubagentPhase {
+function outcomeToPhase(outcome: string): AgentPhase {
   if (outcome === 'completed') return 'completed';
-  if (outcome === 'failed' || outcome === 'aborted') return 'failed';
+  // An aborted member was interrupted, not failed — keep the two apart so the
+  // card can tell a cancelled swarm member from a genuine failure.
+  if (outcome === 'aborted') return 'cancelled';
+  if (outcome === 'failed') return 'failed';
   return 'working';
 }
 

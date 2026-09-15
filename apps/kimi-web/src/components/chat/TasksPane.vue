@@ -6,6 +6,7 @@ import { reactive } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { TaskItem } from '../../types';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { isTaskCancellable, taskDisplayStatus } from '../../lib/agentTaskResolver';
 import Badge from '../ui/Badge.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
@@ -48,9 +49,15 @@ function isClickable(task: TaskItem): boolean {
   return task.kind === 'subagent' || hasDetail(task);
 }
 
-function glyphStatus(state: string): StatusGlyphStatus {
-  if (state === 'run' || state === 'done' || state === 'fail') return state;
-  return 'pending';
+function glyphStatus(task: TaskItem): StatusGlyphStatus {
+  switch (taskDisplayStatus(task)) {
+    case 'running': return 'run';
+    case 'ok': return 'done';
+    case 'error': return 'fail';
+    case 'cancelled': return 'cancelled';
+    case 'suspended': return 'suspended';
+    default: return 'pending';
+  }
 }
 
 async function copyToClipboard(text: string, taskId: string, set: Set<string>): Promise<void> {
@@ -88,10 +95,10 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
           v-for="task in tasks"
           :key="task.id"
           class="tp-row"
-          :class="{ done: task.state === 'done', fail: task.state === 'fail', expandable: isClickable(task) }"
+          :class="{ done: task.state === 'done', fail: task.state === 'fail', cancelled: task.state === 'cancelled', expandable: isClickable(task) }"
         >
           <div class="tp-main" :role="isClickable(task) ? 'button' : undefined" @click="handleClick(task)">
-            <StatusGlyph :status="glyphStatus(task.state)" />
+            <StatusGlyph :status="glyphStatus(task)" />
             <span class="tp-name">{{ task.name }}</span>
             <template v-if="task.kind === 'subagent'">
               <Tooltip v-if="task.subagentType" :text="`${t('tasks.role')}: ${task.subagentType}`">
@@ -108,7 +115,7 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
             <Badge v-else variant="neutral" size="sm">{{ task.kind }}</Badge>
             <span class="tp-time">{{ task.timing }}</span>
             <button
-              v-if="task.state === 'run'"
+              v-if="isTaskCancellable(task)"
               class="tp-stop"
               @click.stop="emit('cancel', task.id)"
             >{{ t('tasks.stop') }}</button>
@@ -197,6 +204,9 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
 }
 .tp-row.fail .tp-name {
   color: var(--color-danger);
+}
+.tp-row.cancelled .tp-name {
+  color: var(--color-warning);
 }
 
 .tp-main {
@@ -346,7 +356,7 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
 @media (max-width: 640px) {
   .taskspane { padding: 14px 14px 16px; }
   .tp-main { flex-wrap: wrap; row-gap: 4px; }
-  .tp-name { font-size: var(--ui-font-size-sm); }
+  .tp-name { flex-basis: calc(100% - 24px); font-size: var(--ui-font-size-sm); }
   .tp-identity { max-width: 104px; }
   .tp-model { max-width: 128px; }
   .tp-stop {

@@ -1,30 +1,20 @@
 /**
- * `/sessions/{id}/research` route handlers — AITP Research Mode REST surface.
+ * `/sessions/{id}/research` — the local knowledge / research memory toggle.
  *
- * Both routes resolve the session's main agent (materializing it on demand via
- * `ensureMainAgent`) and read/dispatch through the Agent-scope
- * `IAgentResearchService` and `IAgentAitpModeService`. Loop commands use the
- * dedicated mode service; focus, line, and question commands use their typed
- * Research methods, whose expected-revision guards remain engine-owned.
- * The `expectedRevision` optimistic-concurrency guard is enforced by the
- * engine; mode lifecycle (`enter_mode` / `exit_mode`) goes through
- * `IAgentAitpModeService`.
- * `research.updated` / `aitp_mode.updated` WS events are forwarded by the
- * session event broadcaster's generic `onAgentEvent` path — no extra wiring
- * is needed here.
+ * Resolves only the main agent's lightweight mode service. Legacy execution
+ * commands return an explicit retired error; historical wire data is untouched.
+ * research_mode.updated carries the same snapshot over the normal WS path.
  */
 
 import {
-  IAgentResearchService,
   IAgentAitpModeService,
+  dispatchResearchModeCommand,
   resumeSessionById,
   isError2,
   type Scope,
 } from '@moonshot-ai/agent-core-v2';
 import { z } from 'zod';
-
 import { errEnvelope, okEnvelope } from '../envelope';
-import { requestLog } from '../lib/requestLog';
 import { defineRoute } from '../middleware/defineRoute';
 import { ensureMainAgent } from '../transport/mainAgent';
 import {
@@ -35,11 +25,8 @@ import {
 } from '../protocol/research';
 import { ErrorCode } from '../protocol/error-codes';
 
+const sessionIdParamSchema = z.object({ session_id: z.string().min(1) });
 const detailsSchema = z.array(z.object({ path: z.string(), message: z.string() }));
-
-const sessionIdParamSchema = z.object({
-  session_id: z.string().min(1),
-});
 
 interface SessionRouteHost {
   post(
@@ -61,425 +48,68 @@ interface SessionRouteHost {
 }
 
 export function registerResearchRoutes(app: SessionRouteHost, core: Scope): void {
-  const getResearchRoute = defineRoute(
-    {
-      method: 'GET',
-      path: '/sessions/{session_id}/research',
-      params: sessionIdParamSchema,
-      success: { data: getSessionResearchResponseSchema },
-      errors: {
-        [ErrorCode.VALIDATION_FAILED]: { detailsSchema },
-        [ErrorCode.SESSION_NOT_FOUND]: {},
-      },
-      description: 'Get the current AITP research-mode snapshot',
-      tags: ['research'],
-    },
-    async (req, reply) => {
-      try {
-        const { session_id } = req.params as { session_id: string };
-        const session = await resumeSessionById(core.accessor, session_id);
-        if (session === undefined) {
-          reply.send(
-            errEnvelope(
-              ErrorCode.SESSION_NOT_FOUND,
-              `session ${session_id} does not exist`,
-              req.id,
-            ),
-          );
-          return;
-        }
-        const agent = await ensureMainAgent(session);
-        const snapshot = agent.accessor.get(IAgentResearchService).getSnapshot();
-        reply.send(okEnvelope(snapshot, req.id));
-      } catch (error) {
-        sendResearchError(reply, req.id, error);
-      }
-    },
-  );
-  app.get(
-    getResearchRoute.path,
-    getResearchRoute.options,
-    getResearchRoute.handler as Parameters<SessionRouteHost['get']>[2],
-  );
+  async function modeFor(sessionId: string) {
+    const session = await resumeSessionById(core.accessor, sessionId);
+    if (session === undefined) return undefined;
+    return (await ensureMainAgent(session)).accessor.get(IAgentAitpModeService);
+  }
+  const getRoute = defineRoute({
+    method: 'GET',
+    path: '/sessions/{session_id}/research',
+    params: sessionIdParamSchema,
+    success: { data: getSessionResearchResponseSchema },
+    errors: { [ErrorCode.VALIDATION_FAILED]: { detailsSchema }, [ErrorCode.SESSION_NOT_FOUND]: {} },
+    description: 'Get Research memory-mode visibility (not CLI health)',
+    tags: ['research'],
+  }, async (req, reply) => {
+    try {
+      const { session_id } = req.params as { session_id: string };
+      const mode = await modeFor(session_id);
+      reply.send(mode === undefined
+        ? errEnvelope(ErrorCode.SESSION_NOT_FOUND, `session ${session_id} does not exist`, req.id)
+        : okEnvelope(await mode.getSnapshot(), req.id));
+    } catch (error) {
+      sendResearchError(reply, req.id, error);
+    }
+  });
+  app.get(getRoute.path, getRoute.options, getRoute.handler as Parameters<SessionRouteHost['get']>[2]);
 
-  const commandResearchRoute = defineRoute(
-    {
-      method: 'POST',
-      path: '/sessions/{session_id}/research/command',
-      params: sessionIdParamSchema,
-      body: researchCommandRequestSchema,
-      success: { data: researchCommandResponseSchema },
-      errors: {
-        [ErrorCode.VALIDATION_FAILED]: { detailsSchema },
-        [ErrorCode.SESSION_NOT_FOUND]: {},
-      },
-      description: 'Submit a research steering command',
-      tags: ['research'],
-    },
-    async (req, reply) => {
-      try {
-        const { session_id } = req.params as { session_id: string };
-        const session = await resumeSessionById(core.accessor, session_id);
-        if (session === undefined) {
-          reply.send(
-            errEnvelope(
-              ErrorCode.SESSION_NOT_FOUND,
-              `session ${session_id} does not exist`,
-              req.id,
-            ),
-          );
-          return;
-        }
-        const agent = await ensureMainAgent(session);
-        const research = agent.accessor.get(IAgentResearchService);
-        const mode = agent.accessor.get(IAgentAitpModeService);
-        const command = (req.body as { command: ResearchCommand }).command;
-        await dispatchResearchCommand(research, mode, command);
-        const snapshot = research.getSnapshot();
-        requestLog(req)?.info(
-          { session_id, command_kind: command.kind },
-          'research command completed',
-        );
-        reply.send(okEnvelope({ snapshot }, req.id));
-      } catch (error) {
-        sendResearchError(reply, req.id, error);
+  const commandRoute = defineRoute({
+    method: 'POST',
+    path: '/sessions/{session_id}/research/command',
+    params: sessionIdParamSchema,
+    body: researchCommandRequestSchema,
+    success: { data: researchCommandResponseSchema },
+    errors: { [ErrorCode.VALIDATION_FAILED]: { detailsSchema }, [ErrorCode.SESSION_NOT_FOUND]: {} },
+    description: 'Enable or disable Research memory mode; legacy execution commands are retired',
+    tags: ['research'],
+  }, async (req, reply) => {
+    try {
+      const { session_id } = req.params as { session_id: string };
+      const mode = await modeFor(session_id);
+      if (mode === undefined) {
+        reply.send(errEnvelope(ErrorCode.SESSION_NOT_FOUND, `session ${session_id} does not exist`, req.id));
+        return;
       }
-    },
-  );
-  app.post(
-    commandResearchRoute.path,
-    commandResearchRoute.options,
-    commandResearchRoute.handler as Parameters<SessionRouteHost['post']>[2],
-  );
+      const { command } = req.body as { command: ResearchCommand };
+      const snapshot = await dispatchResearchModeCommand(mode, command);
+      reply.send(okEnvelope({ snapshot }, req.id));
+    } catch (error) {
+      sendResearchError(reply, req.id, error);
+    }
+  });
+  app.post(commandRoute.path, commandRoute.options, commandRoute.handler as Parameters<SessionRouteHost['post']>[2]);
 }
 
-async function dispatchResearchCommand(
-  research: IAgentResearchService,
-  mode: IAgentAitpModeService,
-  cmd: ResearchCommand,
-): Promise<void> {
-  switch (cmd.kind) {
-    case 'enter_mode':
-      await mode.enter({ actor: cmd.actor, lineSlug: cmd.lineSlug });
-      break;
-    case 'exit_mode':
-      await mode.exit();
-      break;
-    case 'pause_loop':
-      mode.pauseLoop(cmd.expectedRevision);
-      break;
-    case 'resume_loop':
-      mode.resumeLoop(cmd.expectedRevision);
-      break;
-    case 'create_question':
-      research.createQuestion({
-        lineSlug: cmd.lineSlug,
-        wording: cmd.wording,
-        assessment: cmd.assessment,
-        priority: cmd.priority,
-        neededEvidence: cmd.neededEvidence,
-      });
-      break;
-    case 'create_line':
-      research.createLine({
-        slug: cmd.slug,
-        title: cmd.title,
-        objective: cmd.objective,
-        assessment: cmd.assessment,
-      });
-      break;
-    case 'update_line':
-      research.updateLine({
-        slug: cmd.lineSlug,
-        expectedRevision: cmd.expectedRevision,
-        title: cmd.title,
-        objective: cmd.objective,
-        status: cmd.status,
-        assessment: cmd.assessment,
-        reason: cmd.reason,
-      });
-      break;
-    case 'update_question':
-      research.updateQuestion({
-        questionId: cmd.questionId,
-        expectedRevision: cmd.expectedRevision,
-        wording: cmd.wording,
-        assessment: cmd.assessment,
-        priority: cmd.priority,
-        workflow: cmd.workflow,
-        epistemic: cmd.epistemic,
-        neededEvidence: cmd.neededEvidence,
-        nextBoundedAction: cmd.nextBoundedAction,
-        reason: cmd.reason,
-      });
-      break;
-    case 'set_focus':
-      research.setFocus(cmd.questionId, cmd.boundedAction, cmd.expectedRevision);
-      break;
-    case 'switch_line':
-      research.switchLine(cmd.lineSlug, cmd.expectedRevision);
-      break;
-    case 'reopen_question':
-      research.reopenQuestion(cmd.questionId, cmd.reason, cmd.expectedRevision);
-      break;
-    case 'defer_question':
-      research.steer({
-        kind: 'defer_question',
-        questionId: cmd.questionId,
-        expectedRevision: cmd.expectedRevision,
-        reason: cmd.reason,
-      });
-      break;
-    case 'block_question':
-      research.steer({
-        kind: 'block_question',
-        questionId: cmd.questionId,
-        expectedRevision: cmd.expectedRevision,
-        reason: cmd.reason,
-      });
-      break;
-    case 'close_question':
-      research.steer({
-        kind: 'close_question',
-        questionId: cmd.questionId,
-        expectedRevision: cmd.expectedRevision,
-        reason: cmd.reason,
-      });
-      break;
-    case 'propose_checkpoint':
-      research.proposeCheckpoint({
-        expectedRevision: cmd.expectedRevision,
-        localConclusionId: cmd.localConclusionId,
-        confirmedBy: cmd.confirmedBy,
-        questionId: cmd.questionId,
-        lineSlug: cmd.lineSlug,
-        assessment: cmd.assessment,
-        nextAction: cmd.nextAction,
-      });
-      break;
-    case 'discard_historical_checkpoint':
-      research.discardHistoricalCheckpoint({
-        checkpointId: cmd.checkpointId,
-        expectedRevision: cmd.expectedRevision,
-      });
-      break;
-    case 'commit_checkpoint':
-      await research.commitCheckpoint({
-        checkpointId: cmd.checkpointId,
-        entryId: cmd.entryId,
-      });
-      break;
-    case 'resolve_decision':
-      research.resolveHumanDecision({
-        gateId: cmd.gateId,
-        resolution: cmd.resolution,
-        nextPhase: cmd.nextPhase,
-      });
-      break;
-    case 'review_evidence':
-      research.reviewEvidencePacket(cmd.packet, cmd.expectedRevision);
-      break;
-    case 'observe_run':
-      research.observeRun({
-        actionId: cmd.actionId,
-        expectedRevision: cmd.expectedRevision,
-        campaign: cmd.campaign,
-        jobId: cmd.jobId,
-        sourcePin: cmd.sourcePin,
-        binaryPin: cmd.binaryPin,
-        stage: cmd.stage,
-        schedulerState: cmd.schedulerState,
-        nextCheckAt: cmd.nextCheckAt,
-        terminalState: cmd.terminalState,
-        artifactRefs: cmd.artifactRefs,
-      });
-      break;
-    case 'acknowledge_alert':
-      research.acknowledgeAlert(cmd.fingerprint);
-      break;
-    case 'begin_action':
-      research.planAndStartAction({
-        actionId: cmd.actionId,
-        questionId: cmd.questionId,
-        lineSlug: cmd.lineSlug,
-        kind: cmd.actionKind,
-        purpose: cmd.purpose,
-        expectedEvidence: cmd.expectedEvidence,
-        stopCondition: cmd.stopCondition,
-        allowedToolKinds: cmd.allowedToolKinds,
-        retryOfEntryId: cmd.retryOfEntryId,
-        requiresHumanApproval: cmd.requiresHumanApproval,
-        planningLevel: cmd.planningLevel,
-        researchPlanId: cmd.researchPlanId,
-        researchPlanRevision: cmd.researchPlanRevision,
-        milestoneId: cmd.milestoneId,
-        actionPlanId: cmd.actionPlanId,
-        actionPlanRevision: cmd.actionPlanRevision,
-      });
-      break;
-    case 'start_action':
-      research.startAction(cmd.actionId);
-      break;
-    case 'complete_action':
-      research.completeAction(cmd.actionId, cmd.status);
-      break;
-    case 'conclude_action':
-      research.concludeAction({
-        actionId: cmd.actionId,
-        status: cmd.status,
-        progress: {
-          headline: cmd.headline,
-          question: cmd.question,
-          motivation: cmd.motivation,
-          workPerformed: cmd.workPerformed,
-          result: cmd.result,
-          mainlineImpact: cmd.mainlineImpact,
-          uncertainties: cmd.uncertainties,
-          nextAction: cmd.nextAction,
-          detail: cmd.detail,
-        },
-        durability: cmd.durability,
-      });
-      break;
-    case 'prepare_plan':
-      await research.prepareResearchPlan({
-        planId: cmd.planId,
-        lineSlug: cmd.lineSlug,
-        questionId: cmd.questionId,
-        objective: cmd.objective,
-        steps: cmd.steps,
-        expectedEvidence: cmd.expectedEvidence,
-        stopCondition: cmd.stopCondition,
-        usePlanMode: cmd.usePlanMode,
-      });
-      break;
-    case 'finalize_plan':
-      await research.finalizeResearchPlan();
-      break;
-    case 'discard_plan':
-      research.discardResearchPlan();
-      break;
-    case 'confirm_line_workstream_binding':
-      await research.confirmLineWorkstreamBinding({
-        lineSlug: cmd.lineSlug,
-        workstream: cmd.workstream,
-        expectedRevision: cmd.expectedRevision,
-        confirmedBy: 'user',
-      });
-      break;
-    case 'clear_line_workstream_binding':
-      research.clearLineWorkstreamBinding({
-        lineSlug: cmd.lineSlug,
-        expectedConfirmationId: cmd.expectedConfirmationId,
-        expectedRevision: cmd.expectedRevision,
-      });
-      break;
-    case 'set_planning_policy':
-      research.setPlanningPolicy(cmd.policy, cmd.expectedRevision);
-      break;
-    case 'prepare_plan_v2':
-      research.prepareResearchPlanV2({
-        planId: cmd.planId,
-        expectedRevision: cmd.expectedRevision,
-        objective: cmd.objective,
-        completionCriterion: cmd.completionCriterion,
-        milestones: cmd.milestones,
-        evidenceRequirements: cmd.evidenceRequirements,
-        decisionPoints: cmd.decisionPoints,
-        assumptions: cmd.assumptions,
-        currentMilestoneId: cmd.currentMilestoneId,
-        stopConditions: cmd.stopConditions,
-        replanConditions: cmd.replanConditions,
-      });
-      break;
-    case 'activate_plan_v2':
-      research.activateResearchPlanV2({
-        planId: cmd.planId,
-        expectedRevision: cmd.expectedRevision,
-      });
-      break;
-    case 'complete_plan_v2':
-      research.completeResearchPlanV2({
-        planId: cmd.planId,
-        expectedRevision: cmd.expectedRevision,
-      });
-      break;
-    case 'discard_plan_v2':
-      research.discardResearchPlanV2({
-        planId: cmd.planId,
-        expectedRevision: cmd.expectedRevision,
-      });
-      break;
-    case 'confirm_goal_alignment':
-      research.confirmGoalAlignment({
-        relation: cmd.relation,
-        expectedRevision: cmd.expectedRevision,
-        goalId: cmd.goalId,
-        topicId: cmd.topicId,
-        observedRevision: cmd.observedRevision,
-      });
-      break;
-    case 'clear_goal_alignment':
-      research.clearGoalAlignment({
-        expectedRevision: cmd.expectedRevision,
-        goalId: cmd.goalId,
-        topicId: cmd.topicId,
-        observedRevision: cmd.observedRevision,
-      });
-      break;
+function sendResearchError(reply: { send(payload: unknown): unknown }, requestId: string, error: unknown): void {
+  if (isError2(error)) {
+    const code = error.code === 'session.not_found' || error.code === 'agent.not_found'
+      ? ErrorCode.SESSION_NOT_FOUND
+      : error.code === 'research.retired' || error.code === 'aitp.mode_not_main_agent'
+        ? ErrorCode.VALIDATION_FAILED
+        : ErrorCode.INTERNAL_ERROR;
+    reply.send(errEnvelope(code, `${error.code}: ${error.message}`, requestId));
+    return;
   }
-}
-
-/** Engine error codes that are client-actionable (revision stale, not
- * found, plan conflict, ...). Mapped onto VALIDATION_FAILED — the same 4xx
- * envelope used for `validation.failed` / `request.invalid`. */
-const RESEARCH_CLIENT_ERRORS: ReadonlySet<string> = new Set([
-  'aitp.mode_already_active',
-  'aitp.mode_inactive',
-  'aitp.mode_not_main_agent',
-  'aitp.mode_plan_conflict',
-  'aitp.checkpoint_pending',
-  'aitp.checkpoint_degraded',
-  'research.revision_stale',
-  'research.question_not_found',
-  'research.line_not_found',
-  'research.action_not_found',
-  'research.action_status_invalid',
-  'research.loop_paused',
-  'research.phase_transition_invalid',
-  'research.gate_pending',
-  'research.human_approval_required',
-  'research.human_gate_not_found',
-  'research.human_gate_already_resolved',
-  'research.goal-alignment.confirmation_required',
-  'research.goal-alignment.stale',
-  'research.goal-alignment.conflict',
-]);
-
-function sendResearchError(
-  reply: { send(payload: unknown): unknown },
-  requestId: string,
-  err: unknown,
-): void {
-  if (isError2(err)) {
-    const code = err.code;
-    if (code === 'session.not_found' || code === 'agent.not_found') {
-      reply.send(
-        errEnvelope(ErrorCode.SESSION_NOT_FOUND, err.message, requestId, err.stack),
-      );
-      return;
-    }
-    if (RESEARCH_CLIENT_ERRORS.has(code)) {
-      reply.send(errEnvelope(ErrorCode.VALIDATION_FAILED, err.message, requestId, err.stack));
-      return;
-    }
-  }
-  reply.send(
-    errEnvelope(
-      ErrorCode.INTERNAL_ERROR,
-      err instanceof Error ? err.message : String(err),
-      requestId,
-      err instanceof Error ? err.stack : undefined,
-    ),
-  );
+  reply.send(errEnvelope(ErrorCode.INTERNAL_ERROR, error instanceof Error ? error.message : String(error), requestId));
 }

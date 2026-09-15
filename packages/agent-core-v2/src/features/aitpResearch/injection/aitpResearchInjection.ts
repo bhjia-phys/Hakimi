@@ -1,71 +1,44 @@
 /**
- * `aitpResearch` domain — Research Mode context injection.
+ * `aitpResearch` domain — brief local knowledge and research memory guidance.
  *
- * Owns the `aitp_research` context-injection provider: while AITP Research
- * Mode is active and the current turn has an interactive or autonomous
- * Research lease, it injects a trimmed scientific Research Loop state —
- * current question, phase, action and run digest, latest progress digest, the
- * single effective next step, the pending human gate, and the attention the
- * model must handle. System / subagent / cron / unclassified turns abstain
- * (zero disclosure) even while the mode is active. Verbosity is Brief (full
- * trimmed state) on a new turn or when phase / progress / action / run / next
- * step / attention semantically changed since the last disclosure, Delta (only
- * the changed attention) when only attention moved, and nothing at all when
- * there is no semantic change — duplicate text is never appended. The
- * disclosure carries the snapshot revision / phase / progress timestamp plus
- * action / run / next-step / attention fingerprints so the next step can
- * deduplicate; compaction and undo both drop the prior disclosure or re-arm
- * the new-turn flag, so they re-inject the trimmed state. Inactive mode
- * injects nothing (zero disclosure), and AITP entry / hash / revision /
- * checkpoint ids, receipts, checkpoint history, and finding details never leak
- * into the injected text. Bound at Agent scope.
+ * Reconciles through contextInjector and reads only the mode toggle. Reuses
+ * the old injection variant to supersede stale execution instructions after
+ * cold restore, compaction, or exit. No research executor or turn lease.
  */
 
 import { Service } from '#/_base/di/service';
-import {
-  IAgentContextInjectorService,
-  type ContextInjectionContext,
-  type ContextInjectionResult,
-} from '#/agent/contextInjector/contextInjector';
-import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
-import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
-import { IResearchTurnAdmission } from '#/features/aitpResearch/loop/researchTurnAdmission';
-
+import { IAgentContextInjectorService } from '#/agent/contextInjector/contextInjector';
+import { systemReminderContent } from '#/agent/systemReminder/systemReminder';
+import { IAgentAitpModeService } from '../mode/agentAitpMode';
 import type { IAitpResearchInjection } from './aitpResearchInjectionContract';
-import {
-  renderResearchInjection,
-  resolveResearchVerbosity,
-  type InjectionDisclosure,
-} from './researchInjectionPresenter';
 
-const AITP_RESEARCH_INJECTION_VARIANT = 'aitp_research';
+const RETIRED = 'Earlier Research phase, Begin/Conclude, checkpoint, loop, and Goal-alignment instructions are retired. Ordinary tools need no Research action; normal Goal, Plan, approvals, and path permissions still apply.';
+const ENABLED = [
+  'Research Mode: local knowledge + research long-term memory.',
+  'Read the project entry points and existing knowledge first, using ordinary file tools. Use official AITP Skills and their CLI fallback to recover relevant evidence and decisions; the Skill owns CLI version and path resolution.',
+  'Save only genuinely new knowledge or meaningful progress, decisions, failures, and corrections, with sources and necessary links to current knowledge. No delta means no write. Do not force an Entry → Note → card pipeline, scan the whole workspace, or start background maintenance.',
+  RETIRED,
+].join('\n');
+const DISABLED = `Research Mode is off. ${RETIRED}`;
 
 export class AitpResearchInjection extends Service implements IAitpResearchInjection {
   declare readonly _serviceBrand: undefined;
+
   constructor(
     @IAgentContextInjectorService injector: IAgentContextInjectorService,
-    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
-    @IAgentResearchService private readonly research: IAgentResearchService,
-    @IResearchTurnAdmission private readonly admission: IResearchTurnAdmission,
+    @IAgentAitpModeService mode: IAgentAitpModeService,
   ) {
     super();
-
-    this._register(
-      injector.register<InjectionDisclosure>(
-        AITP_RESEARCH_INJECTION_VARIANT,
-        (context) => this.render(context),
-      ),
-    );
-  }
-
-  private render(
-    context: ContextInjectionContext<InjectionDisclosure>,
-  ): ContextInjectionResult<InjectionDisclosure> | undefined {
-    if (!this.mode.isActive) return undefined;
-    if (!this.admission.isCurrentResearchTurn()) return undefined;
-    const snapshot = this.research.getSnapshot();
-    const verbosity = resolveResearchVerbosity(context, snapshot);
-    if (verbosity === undefined) return undefined;
-    return renderResearchInjection(snapshot, verbosity);
+    this._register(injector.register('aitp_research', async (context) => {
+      const previous = context.lastInjection === undefined
+        ? undefined : systemReminderContent(context.lastInjection);
+      const snapshot = await mode.getSnapshot();
+      const content = snapshot.enabled
+        ? `${ENABLED}${snapshot.skillsAvailable ? '' : '\nOfficial AITP Skills are unavailable. Install or enable the official plugin before using research memory; CLI health has not been checked.'}`
+        : DISABLED;
+      if (!snapshot.enabled && previous === undefined) return undefined;
+      if (previous === content) return undefined;
+      return { content };
+    }));
   }
 }

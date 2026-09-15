@@ -42,6 +42,19 @@ export function defaultThinkingLevelFor(
   return 'on';
 }
 
+/** Settings keep an explicit global effort visible, even after a model change. */
+export function defaultThinkingEffortState(
+  model: ModelThinkingInfo | undefined,
+  configuredEffort: string | undefined,
+): { efforts: readonly string[]; value: string | undefined; unsupported: boolean } {
+  const efforts = modelThinkingAvailability(model) === 'unsupported' ? [] : effortsOf(model);
+  return {
+    efforts,
+    value: configuredEffort ?? (efforts.length > 0 ? defaultThinkingLevelFor(model) : undefined),
+    unsupported: configuredEffort !== undefined && !efforts.includes(configuredEffort),
+  };
+}
+
 /**
  * UI segments (left → right) for a model's thinking control:
  *  - unsupported       → ['off']

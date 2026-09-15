@@ -160,6 +160,7 @@ import {
   IAgentToolActivationService,
   IAgentUserToolService,
   IAgentUsageService,
+  IAgentAitpModeService,
   ISessionWorkspaceContext,
   IWorkspaceStateService,
   AgentLLMRequesterService,
@@ -1461,6 +1462,7 @@ export class AgentTestContext {
     const permissionRules = this.get(IAgentPermissionRulesService);
     const cron = this.get(ISessionCronService);
     const plan = this.get(IAgentPlanService);
+    void this.get(IAgentAitpModeService).getSnapshot();
     void this.get(IAgentToolActivationService).activate();
     this.get(IAgentToolDedupeService);
     this.get(IAgentExternalHooksService);

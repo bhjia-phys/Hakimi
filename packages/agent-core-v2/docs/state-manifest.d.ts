@@ -23,7 +23,7 @@
 // references become '(circular)', and class instances collapse to a '(ClassName)'
 // marker — the wire shape of an entry is the JSON projection of the type here.
 //
-// Index (App: 0 keys · Workspace: 6 keys · Session: 18 keys · Agent: 70 keys)
+// Index (App: 0 keys · Workspace: 6 keys · Session: 18 keys · Agent: 71 keys)
 //   App
 //   Workspace
 //     workspaceDirs.ephemeralDirs          src/workspace/workspaceDirs/workspaceDirsService.ts
@@ -82,6 +82,7 @@
 //     goal.pendingContinuationGoals                   src/agent/goal/goalService.ts
 //     goal.resumeContinuation                         src/agent/goal/goalService.ts
 //     llmRequester.emittedThinkingEffortWarnings      src/agent/llmRequester/llmRequesterService.ts
+//     llmRequester.encryptedStrippedTurns             src/agent/llmRequester/llmRequesterService.ts
 //     llmRequester.lastConfigLogSignature             src/agent/llmRequester/llmRequesterService.ts
 //     llmRequester.mediaDegradedTurns                 src/agent/llmRequester/llmRequesterService.ts
 //     llmRequester.mediaStrippedTurns                 src/agent/llmRequester/llmRequesterService.ts
@@ -1103,6 +1104,7 @@ export interface AgentStateSnapshot {
   } | undefined;
   // src/agent/llmRequester/llmRequesterService.ts
   'llmRequester.emittedThinkingEffortWarnings': Set<string>;
+  'llmRequester.encryptedStrippedTurns': Set<number>;
   'llmRequester.lastConfigLogSignature': string | undefined;
   'llmRequester.mediaDegradedTurns': Set<number>;
   'llmRequester.mediaStrippedTurns': Map<number, /* MediaStripSnapshot — packages/agent-core-v2/src/agent/contextProjector/contextProjector.ts */ {

@@ -14,7 +14,7 @@ import {
 import type { MarkdownIt } from 'markstream-vue';
 import { useIsDark } from '../../composables/useIsDark';
 import type { FilePreviewRequest } from '../../types';
-import { collectFilePathAliases, findFilePathLinks } from '../../lib/filePathLinks';
+import { collectFilePathAliases, findFilePathLinks, hrefToFilePath } from '../../lib/filePathLinks';
 import { markdownRenderPlan } from '../../lib/markdownPerformance';
 import { copyCodeBlockFallback, copyTextToClipboard } from '../../lib/clipboard';
 import * as katexWorkerModule from 'markstream-vue/workers/katexRenderer.worker?worker&type=module';
@@ -256,17 +256,6 @@ function isLocalLink(href: string): boolean {
   return true;
 }
 
-/** Strip `?query` and `#fragment` from a link path so it can be opened as a
-    workspace file. Pure `#anchor` links are skipped upstream by isLocalLink. */
-function stripFragmentAndQuery(href: string): string {
-  let cut = href.length;
-  for (const sep of ['#', '?']) {
-    const idx = href.indexOf(sep);
-    if (idx !== -1 && idx < cut) cut = idx;
-  }
-  return href.slice(0, cut);
-}
-
 function processMarkdownLinks(): void {
   if (!mdRef.value || !props.openFile || props.streaming) return;
   const links = mdRef.value.querySelectorAll<HTMLAnchorElement>('a[href]');
@@ -281,7 +270,9 @@ function processMarkdownLinks(): void {
     link.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      props.openFile?.({ path: stripFragmentAndQuery(href) });
+      // The href is a URI: strip query/fragment, then percent-decode ONCE so
+      // non-ASCII filenames (e.g. `ppt/a%20b.pptx`) resolve to the real file.
+      props.openFile?.({ path: hrefToFilePath(href) });
     });
   }
 }

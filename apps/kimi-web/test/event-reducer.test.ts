@@ -1153,20 +1153,9 @@ describe('reduceAppEvent toolOutput — outputText accumulation', () => {
 
 describe('reduceAppEvent researchUpdated', () => {
   const snapshot = {
-    mode: 'ready',
-    loopStatus: 'active',
-    planningPolicy: 'collaborative',
-    lineWorkstreamBindings: [],
-    phase: 'idle',
-    questions: [],
-    lines: [],
-    openQuestionCount: 0,
-    activeQuestionCount: 0,
-    blockedQuestionCount: 0,
-    alerts: [],
-    aitpHealth: { phase: 'ready' },
-    revision: 2,
-  } satisfies import('../src/api/types').ResearchStatusSnapshot;
+    enabled: true,
+    skillsAvailable: true,
+  } satisfies import('../src/api/types').ResearchModeSnapshot;
 
   it('stores snapshots and increments the live version monotonically', () => {
     const state = createInitialState();
@@ -1177,11 +1166,11 @@ describe('reduceAppEvent researchUpdated', () => {
     );
     const twice = reduceAppEvent(
       once,
-      { type: 'researchUpdated', sessionId: 's1', snapshot: { ...snapshot, revision: 3 } },
+      { type: 'researchUpdated', sessionId: 's1', snapshot: { ...snapshot, skillsAvailable: false } },
       { sessionId: 's1', seq: 2 },
     );
 
-    expect(twice.researchBySession['s1']?.revision).toBe(3);
+    expect(twice.researchBySession['s1']?.skillsAvailable).toBe(false);
     expect(twice.researchVersionBySession['s1']).toBe(2);
   });
 

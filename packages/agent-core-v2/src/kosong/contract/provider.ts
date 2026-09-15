@@ -102,6 +102,7 @@ export interface GenerateOptions {
   onRequestSent?: () => void;
   onStreamEnd?: (stats?: StreamDecodeStats) => void;
   onTraceId?: (traceId: string | null) => void;
+  onUsage?: (usage: TokenUsage | null) => void;
 }
 
 export interface ChatProvider {

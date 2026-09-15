@@ -1,6 +1,7 @@
 import type { AppTurnProgress } from '../api/types';
 import type { ChatTurn, TaskItem, ToolCall } from '../types';
 import { normalizeToolName } from './toolMeta';
+import { effectiveToolStatus, isTaskRunning, resolveExactAgentTask } from './agentTaskResolver';
 
 export const TURN_PROGRESS_REVEAL_DELAY_MS = 8_000;
 export const TURN_PROGRESS_FRAME_INTERVAL_MS = 250;
@@ -75,6 +76,7 @@ export function formatTurnProgressElapsed(elapsedSeconds: number): string {
 export function activeTurnProgressToolId(
   turns: readonly ChatTurn[],
   turnActive: boolean,
+  tasks: readonly TaskItem[] = [],
 ): string | null {
   if (!turnActive) return null;
 
@@ -94,7 +96,11 @@ export function activeTurnProgressToolId(
     const tools = turnTools(turn);
     for (let toolIndex = tools.length - 1; toolIndex >= 0; toolIndex -= 1) {
       const tool = tools[toolIndex];
-      if (tool?.status === 'running') return tool.id;
+      if (!tool || normalizeToolName(tool.name) === 'agentswarm') continue;
+      // A detached Agent may outlive its successful launch receipt, but must
+      // not own the main turn's progress while it works in the background.
+      if (resolveExactAgentTask(tasks, tool.id)?.runInBackground === true) continue;
+      if (effectiveToolStatus(tool, (id) => resolveExactAgentTask(tasks, id)) === 'running') return tool.id;
     }
     return null;
   }
@@ -114,7 +120,6 @@ export function hasActiveForegroundAgentSwarm(
 ): boolean {
   if (!turnActive) return false;
 
-  const swarmToolIds = new Set<string>();
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
     if (turn?.role === 'user' || turn?.role === 'cron') break;
@@ -122,17 +127,13 @@ export function hasActiveForegroundAgentSwarm(
 
     for (const tool of turnTools(turn)) {
       if (normalizeToolName(tool.name) !== 'agentswarm') continue;
-      if (tool.status === 'running') return true;
-      swarmToolIds.add(tool.id);
+      const linked = tasks.filter((task) => task.kind === 'subagent' && task.parentToolCallId === tool.id);
+      if (linked.length > 0) {
+        if (linked.some((task) => !task.runInBackground && isTaskRunning(task))) return true;
+      } else if (effectiveToolStatus(tool) === 'running') {
+        return true;
+      }
     }
   }
-
-  return tasks.some(
-    (task) =>
-      task.kind === 'subagent' &&
-      task.state === 'run' &&
-      !task.runInBackground &&
-      task.parentToolCallId !== undefined &&
-      swarmToolIds.has(task.parentToolCallId),
-  );
+  return false;
 }

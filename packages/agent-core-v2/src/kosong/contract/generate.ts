@@ -66,119 +66,123 @@ export async function generate(
     options?.onTraceId?.(stream.traceId);
   }
 
-  await throwIfAborted(options?.signal, stream);
+  try {
+    await throwIfAborted(options?.signal, stream);
 
-  let serverDecodeMs = 0;
-  let clientConsumeMs = 0;
-  let firstPartAt: number | undefined;
-  let lastResumeAt = 0;
+    let serverDecodeMs = 0;
+    let clientConsumeMs = 0;
+    let firstPartAt: number | undefined;
+    let lastResumeAt = 0;
 
-  for await (const part of stream) {
-    const arrivedAt = Date.now();
-    if (firstPartAt === undefined) {
-      firstPartAt = arrivedAt;
-    } else {
-      serverDecodeMs += arrivedAt - lastResumeAt;
-    }
+    for await (const part of stream) {
+      const arrivedAt = Date.now();
+      if (firstPartAt === undefined) {
+        firstPartAt = arrivedAt;
+      } else {
+        serverDecodeMs += arrivedAt - lastResumeAt;
+      }
 
-    try {
-      await throwIfAborted(options?.signal, stream);
-
-      if (callbacks?.onMessagePart !== undefined) {
-        await callbacks.onMessagePart(deepCopyPart(part));
+      try {
         await throwIfAborted(options?.signal, stream);
-      }
 
-      if (
-        isToolCallPart(part) &&
-        part.index !== undefined &&
-        !isPendingToolCallAtIndex(pendingPart, part.index)
-      ) {
-        const arrayIdx = toolCallIndexMap.get(part.index);
-        if (arrayIdx !== undefined) {
-          const target = message.toolCalls[arrayIdx];
-          if (target !== undefined && part.argumentsPart !== null) {
-            target.arguments =
-              target.arguments === null
-                ? part.argumentsPart
-                : target.arguments + part.argumentsPart;
-          }
-          continue;
+        if (callbacks?.onMessagePart !== undefined) {
+          await callbacks.onMessagePart(deepCopyPart(part));
+          await throwIfAborted(options?.signal, stream);
         }
+
+        if (
+          isToolCallPart(part) &&
+          part.index !== undefined &&
+          !isPendingToolCallAtIndex(pendingPart, part.index)
+        ) {
+          const arrayIdx = toolCallIndexMap.get(part.index);
+          if (arrayIdx !== undefined) {
+            const target = message.toolCalls[arrayIdx];
+            if (target !== undefined && part.argumentsPart !== null) {
+              target.arguments =
+                target.arguments === null
+                  ? part.argumentsPart
+                  : target.arguments + part.argumentsPart;
+            }
+            continue;
+          }
+        }
+
+        if (pendingPart === null) {
+          pendingPart = part;
+        } else if (!mergeInPlace(pendingPart, part)) {
+          flushPart(message, pendingPart, toolCallIndexMap);
+          pendingPart = part;
+        }
+      } finally {
+        lastResumeAt = Date.now();
+        clientConsumeMs += lastResumeAt - arrivedAt;
       }
+    }
 
-      if (pendingPart === null) {
-        pendingPart = part;
-      } else if (!mergeInPlace(pendingPart, part)) {
-        flushPart(message, pendingPart, toolCallIndexMap);
-        pendingPart = part;
+    await throwIfAborted(options?.signal, stream);
+    if (firstPartAt !== undefined) {
+      serverDecodeMs += Date.now() - lastResumeAt;
+    }
+    options?.onStreamEnd?.(
+      firstPartAt === undefined ? undefined : { serverDecodeMs, clientConsumeMs },
+    );
+
+    if (pendingPart !== null) {
+      flushPart(message, pendingPart, toolCallIndexMap);
+    }
+    if (message.content.length === 0 && message.toolCalls.length === 0) {
+      throw new APIEmptyResponseError(
+        'The API returned an empty response (no content, no tool calls).' +
+          formatFinishReasonHint(stream) +
+          ` Provider: ${provider.name}, model: ${provider.modelName}`,
+        {
+          finishReason: stream.finishReason,
+          rawFinishReason: stream.rawFinishReason,
+        },
+      );
+    }
+
+    const hasThink = message.content.some((p) => p.type === 'think');
+    const hasText = message.content.some((p) => p.type === 'text' && p.text.trim().length > 0);
+    const hasToolCalls = message.toolCalls.length > 0;
+
+    if (hasThink && !hasText && !hasToolCalls) {
+      throw new APIEmptyResponseError(
+        'The API returned a response containing only thinking content ' +
+          'without any text or tool calls. This usually indicates the ' +
+          'stream was interrupted or the output token budget was exhausted ' +
+          'during reasoning.' +
+          formatFinishReasonHint(stream) +
+          ` Provider: ${provider.name}, model: ${provider.modelName}`,
+        {
+          finishReason: stream.finishReason,
+          rawFinishReason: stream.rawFinishReason,
+        },
+      );
+    }
+
+    if (callbacks?.onToolCall !== undefined) {
+      for (const toolCall of message.toolCalls) {
+        await throwIfAborted(options?.signal, stream);
+        await callbacks.onToolCall(toolCall);
       }
-    } finally {
-      lastResumeAt = Date.now();
-      clientConsumeMs += lastResumeAt - arrivedAt;
     }
-  }
 
-  await throwIfAborted(options?.signal, stream);
-  if (firstPartAt !== undefined) {
-    serverDecodeMs += Date.now() - lastResumeAt;
-  }
-  options?.onStreamEnd?.(
-    firstPartAt === undefined ? undefined : { serverDecodeMs, clientConsumeMs },
-  );
-
-  if (pendingPart !== null) {
-    flushPart(message, pendingPart, toolCallIndexMap);
-  }
-  if (message.content.length === 0 && message.toolCalls.length === 0) {
-    throw new APIEmptyResponseError(
-      'The API returned an empty response (no content, no tool calls).' +
-        formatFinishReasonHint(stream) +
-        ` Provider: ${provider.name}, model: ${provider.modelName}`,
-      {
-        finishReason: stream.finishReason,
-        rawFinishReason: stream.rawFinishReason,
-      },
-    );
-  }
-
-  const hasThink = message.content.some((p) => p.type === 'think');
-  const hasText = message.content.some((p) => p.type === 'text' && p.text.trim().length > 0);
-  const hasToolCalls = message.toolCalls.length > 0;
-
-  if (hasThink && !hasText && !hasToolCalls) {
-    throw new APIEmptyResponseError(
-      'The API returned a response containing only thinking content ' +
-        'without any text or tool calls. This usually indicates the ' +
-        'stream was interrupted or the output token budget was exhausted ' +
-        'during reasoning.' +
-        formatFinishReasonHint(stream) +
-        ` Provider: ${provider.name}, model: ${provider.modelName}`,
-      {
-        finishReason: stream.finishReason,
-        rawFinishReason: stream.rawFinishReason,
-      },
-    );
-  }
-
-  if (callbacks?.onToolCall !== undefined) {
-    for (const toolCall of message.toolCalls) {
-      await throwIfAborted(options?.signal, stream);
-      await callbacks.onToolCall(toolCall);
+    const result: GenerateResult = {
+      id: stream.id,
+      message,
+      usage: stream.usage,
+      finishReason: stream.finishReason,
+      rawFinishReason: stream.rawFinishReason,
+    };
+    if (stream.traceId !== undefined) {
+      return { ...result, traceId: stream.traceId };
     }
+    return result;
+  } finally {
+    options?.onUsage?.(stream.usage);
   }
-
-  const result: GenerateResult = {
-    id: stream.id,
-    message,
-    usage: stream.usage,
-    finishReason: stream.finishReason,
-    rawFinishReason: stream.rawFinishReason,
-  };
-  if (stream.traceId !== undefined) {
-    return { ...result, traceId: stream.traceId };
-  }
-  return result;
 }
 
 type CancelableStream = StreamedMessage & {

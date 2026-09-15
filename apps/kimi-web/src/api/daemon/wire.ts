@@ -151,693 +151,21 @@ export interface WireGoalSnapshot {
   };
 }
 
-// GET /sessions/{id}/research and `research.updated` are camelCase protocol
-// shapes. They are mirrored locally so the browser remains decoupled from Core.
-export type WireResearchModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
-export type WireResearchLoopStatus = 'active' | 'paused';
-export type WireResearchPlanningPolicy = 'collaborative' | 'dreaming';
-export type WireResearchQuestionWorkflow =
-  | 'open'
-  | 'active'
-  | 'deferred'
-  | 'blocked'
-  | 'closed'
-  | 'cancelled';
-export type WireResearchQuestionEpistemic =
-  | 'unknown'
-  | 'candidate'
-  | 'supported'
-  | 'contradicted'
-  | 'inconclusive';
-export type WireResearchQuestionPersistence =
-  | 'working'
-  | 'pending_commit'
-  | 'committed'
-  | 'degraded';
-export type WireResearchLineStatus = 'active' | 'paused' | 'completed' | 'blocked';
-export type WireResearchAlertKind =
-  | 'contradiction'
-  | 'blocked'
-  | 'reopened'
-  | 'commit_failed'
-  | 'degraded'
-  | 'stale';
-export type WireResearchNextStepSource =
-  | 'research_action'
-  | 'research_run'
-  | 'human_gate'
-  | 'aitp_maintenance'
-  | 'question';
-export type WireResearchNextStepFreshness = 'current' | 'stale' | 'blocked';
-export type WireResearchAlertClassification =
-  | 'active_blocker'
-  | 'historical_unresolved'
-  | 'superseded_by_retry'
-  | 'warning';
-export type WireResearchAlertSource =
-  | 'question'
-  | 'aitp_failure'
-  | 'aitp_check'
-  | 'adapter'
-  | 'checkpoint';
-export type WireResearchAlertState = 'active' | 'acknowledged' | 'cleared' | 'superseded';
-export type WireAitpMaintenanceStatus = 'ready' | 'degraded';
-export type WireAitpMaintenanceMemoryStatus =
-  | 'available'
-  | 'partial'
-  | 'not_established'
-  | 'unknown';
-export type WireAitpMaintenanceDegradedReason =
-  | 'adapter_not_ready'
-  | 'adapter_degraded'
-  | 'enter_failed'
-  | 'check_unavailable'
-  | 'stale_generation'
-  | 'workstream_unbound';
-export type WireResearchPhase =
-  | 'idle'
-  | 'orienting'
-  | 'gap_analysis'
-  | 'action_planned'
-  | 'action_executing'
-  | 'evaluating'
-  | 'state_updated'
-  | 'checkpoint_pending'
-  | 'awaiting_human';
-export type WireResearchActionKind =
-  | 'experiment'
-  | 'derivation'
-  | 'literature_review'
-  | 'data_analysis'
-  | 'simulation'
-  | 'other';
-export type WireResearchActionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
-export type WireResearchRunStage =
-  | 'queued'
-  | 'running'
-  | 'scf'
-  | 'band'
-  | 'analyzing'
-  | 'completed'
-  | 'failed'
-  | 'unknown';
-export type WireResearchSchedulerState =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'unknown';
-export type WireResearchHumanGateKind = 'approval' | 'review' | 'decision';
-
-export interface WireResearchLine {
-  slug: string;
-  title: string;
-  objective?: string;
-  assessment?: string;
-  status: WireResearchLineStatus;
-  createdAt: number;
-  revision: number;
+// GET /sessions/{id}/research and `research_mode.updated` carry the
+// camelCase mode snapshot. Mirrored locally so the browser stays decoupled
+// from Core. The legacy executor payload is retired server-side; historical
+// records are read-only and not part of this wire surface.
+export interface WireResearchModeSnapshot {
+  enabled: boolean;
+  skillsAvailable: boolean;
 }
-
-export interface WireResearchLineWorkstreamBinding {
-  confirmationId: string;
-  lineSlug: string;
-  workstream: string;
-  topicId: string;
-  observedRevision: number;
-  confirmedBy: 'user' | 'main_agent';
-  confirmedAt: number;
-}
-
-export type WireResearchLineWorkstreamBindingStatus =
-  | 'unbound'
-  | 'unavailable'
-  | 'bound'
-  | 'stale'
-  | 'conflict';
-
-export interface WireResearchLineWorkstreamAlignment {
-  lineSlug: string;
-  status: WireResearchLineWorkstreamBindingStatus;
-  reason: string;
-  binding?: WireResearchLineWorkstreamBinding;
-}
-
-export interface WireResearchQuestion {
-  id: string;
-  lineSlug: string;
-  wording: string;
-  assessment?: string;
-  priority: number;
-  neededEvidence: string[];
-  evidenceRefs: string[];
-  falsifierRefs: string[];
-  nextBoundedAction?: string;
-  workflow: WireResearchQuestionWorkflow;
-  epistemic: WireResearchQuestionEpistemic;
-  persistence: WireResearchQuestionPersistence;
-  revision: number;
-}
-
-export interface WireResearchEffectiveNextStep {
-  text: string;
-  source: WireResearchNextStepSource;
-  freshness: WireResearchNextStepFreshness;
-  observedAt: number;
-  derivedFrom: {
-    actionId?: string;
-    entryId?: string;
-    questionId?: string;
-    lineSlug?: string;
-  };
-}
-
-export interface WireResearchAlert {
-  fingerprint: string;
-  kind: WireResearchAlertKind;
-  classification?: WireResearchAlertClassification;
-  source?: WireResearchAlertSource;
-  state?: WireResearchAlertState;
-  message: string;
-  questionId?: string;
-  lineSlug?: string;
-  relatedEntryId?: string;
-  workstream?: string;
-  retryOfEntryId?: string;
-  reason?: string;
-  createdAt: number;
-  acknowledgedAt?: number;
-}
-
-export interface WireAitpAdapterHealth {
-  phase: WireResearchModePhase;
-  contractVersion?: string;
-  pluginVersion?: string;
-  pythonVersion?: string;
-  lastCheckAt?: number;
-  lastError?: string;
-  notInitialized?: boolean;
-}
-
-export interface WireAitpMaintenanceFailureSummary {
-  entryId: string;
-  kind: 'observation' | 'result' | 'failure' | 'decision' | 'source' | 'code_change' | 'run' | 'closeout';
-  summary: string;
-  source: string;
-  authority: 'human' | 'agent' | 'source' | 'tool';
-  createdAt?: number;
-  workstream?: string;
-}
-
-export interface WireAitpMaintenanceNextAction {
-  text: string;
-  entryId: string;
-  authority: 'human' | 'agent' | 'source' | 'tool';
-  createdAt?: number;
-  source: string;
-}
-
-export interface WireResearchProgramTopic {
-  id: string;
-  title: string;
-  goalText: string;
-  goalSource: string;
-}
-
-export interface WireAitpMaintenanceReceipt {
-  status: WireAitpMaintenanceStatus;
-  refreshedAt: number;
-  memoryStatus: WireAitpMaintenanceMemoryStatus;
-  workstream?: string;
-  topic?: WireResearchProgramTopic;
-  latestWorkingNoteAt?: number;
-  activeNewerThanWorkingNote: boolean | null;
-  unresolvedFailureCount: number;
-  unresolvedFailures: WireAitpMaintenanceFailureSummary[];
-  nextAction?: string;
-  nextActionDetails?: WireAitpMaintenanceNextAction;
-  warningSummaries: Array<{ level: 'warning'; code: string }>;
-  check: {
-    status: 'clean' | 'findings' | 'unavailable';
-    counts?: { entries: number; notes: number; errors: number; warnings: number };
-    findingCodes: string[];
-  };
-  degradedReason?: WireAitpMaintenanceDegradedReason;
-}
-
-export interface WireResearchCheckpointCheckReceipt {
-  status: 'clean' | 'findings';
-  errors: number;
-  warnings: number;
-  findingFingerprints: string[];
-  errorFindingFingerprints: string[];
-  newErrorFindingFingerprints?: string[];
-  preExistingErrorFindingFingerprints?: string[];
-  checkedAt: number;
-}
-
-export type WireResearchCheckpointPrepareReceipt =
-  | {
-      status: 'prepared';
-      id: string;
-      path: string;
-      idempotencyKey?: string;
-      workstreams?: string[];
-    }
-  | {
-      status: 'existing';
-      id?: string;
-      path: string;
-      idempotencyKey: string;
-      workstreams?: string[];
-    };
-
-export interface WireResearchCheckpointSaveReceipt {
-  status: 'saved' | 'already_saved';
-  draftPath: string;
-  path: string;
-  source?: 'record_save' | 'prepare_existing';
-}
-
-export interface WireResearchCheckpointReceipt {
-  prepare?: WireResearchCheckpointPrepareReceipt;
-  save?: WireResearchCheckpointSaveReceipt;
-  preSaveCheck?: WireResearchCheckpointCheckReceipt;
-  postSaveCheck?: WireResearchCheckpointCheckReceipt;
-}
-
-export interface WireResearchDurableCommitCandidate {
-  sourceActionId: string;
-  progressRecordedAt: number;
-  entryKind: 'observation' | 'result' | 'failure' | 'decision' | 'source' | 'code_change' | 'run' | 'closeout';
-  authority: 'human' | 'agent' | 'source' | 'tool';
-  provenance: 'agent_verification' | 'tool_verification' | 'source_assessment' | 'human_assertion' | 'human_decision';
-  rationale: string;
-}
-
-export interface WireResearchCommittedCursor {
-  checkpointId: string;
-  entryId?: string;
-  receipt?: WireResearchCheckpointReceipt;
-  committedAt: number;
-}
-
-export interface WireResearchLocalConclusion {
-  action: WireResearchActionSpec;
-  progress: WireResearchProgressReport;
-  candidate: WireResearchDurableCommitCandidate;
-  program?: WireResearchProgram;
-  line?: WireResearchLine;
-}
-
-export interface WireResearchCheckpoint {
-  checkpointId: string;
-  committedEntryId?: string;
-  questionId?: string;
-  questionRevision?: number;
-  lineSlug?: string;
-  workstreamBinding?: WireResearchLineWorkstreamBinding;
-  commitCandidate?: WireResearchDurableCommitCandidate;
-  assessment?: string;
-  nextAction?: string;
-  idempotencyKey: string;
-  persistence: WireResearchQuestionPersistence;
-  receipt?: WireResearchCheckpointReceipt;
-  createdAt: number;
-}
-
-export interface WireResearchRunState {
-  actionId: string;
-  campaign: string;
-  jobId: string;
-  sourcePin?: string;
-  binaryPin?: string;
-  stage: WireResearchRunStage;
-  schedulerState: WireResearchSchedulerState;
-  lastObservedAt: number;
-  nextCheckAt?: number;
-  terminalState?: 'completed' | 'failed' | 'cancelled';
-  artifactRefs: string[];
-}
-
-export interface WireResearchEvidencePacket {
-  packet_id: string;
-  kind: 'observation' | 'result' | 'failure' | 'derivation' | 'literature';
-  claim: string;
-  evidence: string;
-  question_id?: string;
-  line_slug?: string;
-  action_id?: string;
-  method?: string;
-  assumptions: string[];
-  tests: string[];
-  artifact_refs: string[];
-  source_refs: string[];
-  limitations: string[];
-  confidence: 'low' | 'medium' | 'high';
-}
-
-export interface WireResearchActionSpec {
-  actionId: string;
-  questionId?: string;
-  questionRevision?: number;
-  lineSlug?: string;
-  lineRevision?: number;
-  kind: WireResearchActionKind;
-  purpose: string;
-  expectedEvidence: string[];
-  stopCondition: string;
-  allowedToolKinds: string[];
-  retryOfEntryId?: string;
-  status: WireResearchActionStatus;
-  createdAt: number;
-  completedAt?: number;
-  requiresHumanApproval: boolean;
-  researchPlanBinding?: { planId: string; planRevision: number; milestoneId: string };
-  actionPlanBinding?: {
-    schema: 'hakimi/action-plan-binding-0.1';
-    kind: 'minimal' | 'reviewed_plan';
-    planId: string;
-    planRevision: number;
-  };
-  run?: WireResearchRunState;
-}
-
-export interface WireResearchProgressDetail {
-  assumptions?: string[];
-  derivation?: string;
-  tests?: string[];
-  observations?: string[];
-  sources?: string[];
-  limitations?: string[];
-  detailHint?: string;
-  artifactRefs?: string[];
-}
-
-export interface WireResearchProgressReport {
-  headline: string;
-  question?: string;
-  motivation: string;
-  workPerformed: string;
-  result: string;
-  mainlineImpact: string;
-  uncertainties: string[];
-  nextAction?: string;
-  phaseChange?: { from: WireResearchPhase; to: WireResearchPhase };
-  humanDecision?: string;
-  detail?: WireResearchProgressDetail;
-  recordedAt: number;
-}
-
-export interface WireResearchStateChange {
-  beforePhase: WireResearchPhase;
-  afterPhase: WireResearchPhase;
-  actionId?: string;
-  summary: string;
-  changedAt: number;
-}
-
-export interface WireResearchHumanGate {
-  gateId: string;
-  kind: WireResearchHumanGateKind;
-  actionId?: string;
-  questionId?: string;
-  prompt: string;
-  resolvedAt?: number;
-  resolution?: string;
-  createdAt: number;
-}
-
-export interface WireResearchProgram {
-  topicId: string;
-  title: string;
-  goalText: string;
-  goalSource: string;
-  establishedAt: number;
-  observedRevision: number;
-}
-
-export interface WireResearchGoalProgramBinding {
-  relation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program' | 'unrelated';
-  goalId: string;
-  topicId: string;
-  observedRevision: number;
-  confirmedAt: number;
-}
-
-export interface WireResearchGoalAlignment {
-  status: 'unavailable' | 'confirmation_required' | 'aligned' | 'stale' | 'conflict';
-  reason: string;
-  binding?: WireResearchGoalProgramBinding;
-}
-
-export interface WireResearchPeriod {
-  id: string;
-  lineSlug: string;
-  startedAt: number;
-  endedAt?: number;
-  loopCount: number;
-  currentQuestionId?: string;
-  summary?: string;
-}
-
-export interface WireResearchStatusProjection {
-  currentLineSlug?: string;
-  currentQuestionId?: string;
-  currentActionId?: string;
-  phase: WireResearchPhase;
-  nextStep?: string;
-  health: 'ok' | 'attention' | 'degraded' | 'blocked';
-  attention: string[];
-}
-
-export interface WireResearchPlanResolution {
-  planId: string;
-  planRevision: number;
-  outcome: 'approved';
-  selectedLabel?: string;
-}
-
-export interface WireResearchPlan {
-  planId: string;
-  researchRevision: number;
-  programId?: string;
-  periodId?: string;
-  lineSlug?: string;
-  questionId?: string;
-  lineRevision?: number;
-  questionRevision?: number;
-  objective: string;
-  steps: string[];
-  expectedEvidence: string[];
-  stopCondition: string;
-  status: 'draft' | 'finalized' | 'discarded';
-  resolution?: WireResearchPlanResolution;
-}
-
-export interface WireResearchPlanV2 {
-  schema: 'hakimi/research-plan-0.2';
-  planId: string;
-  revision: number;
-  goalId: string;
-  programId: string;
-  programObservedRevision: number;
-  goalRelation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program';
-  objective: string;
-  completionCriterion?: string;
-  milestones: Array<{
-    milestoneId: string;
-    title: string;
-    objective: string;
-    completionCriterion: string;
-    evidenceRequirements: string[];
-  }>;
-  evidenceRequirements: string[];
-  decisionPoints: Array<{
-    decisionId: string;
-    milestoneId: string;
-    prompt: string;
-    condition: string;
-  }>;
-  assumptions: string[];
-  currentMilestoneId: string;
-  stopConditions: string[];
-  replanConditions: string[];
-  status: 'draft' | 'active' | 'completed' | 'discarded';
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface WireResearchGoalProjection {
-  schema: 'hakimi/research-goal-0.1';
-  goalId: string;
-  objective: string;
-  completionCriterion?: string;
-  scope: {
-    programTopicId?: string;
-    lineSlug?: string;
-    questionId?: string;
-  };
-  nonGoals: string[];
-  budget: {
-    tokenBudget: number | null;
-    turnBudget: number | null;
-    wallClockBudgetMs: number | null;
-    remainingTokens: number | null;
-    remainingTurns: number | null;
-    remainingWallClockMs: number | null;
-    tokenBudgetReached: boolean;
-    turnBudgetReached: boolean;
-    wallClockBudgetReached: boolean;
-    overBudget: boolean;
-  };
-  stopConditions: Array<{ code: string; reached: boolean; reason: string }>;
-  status: 'active' | 'paused' | 'blocked' | 'complete';
-  terminalReason?: string;
-  waitingFor?: { taskIds: string[]; policy: 'any' | 'all' };
-  continuation?: WireGoalContinuation;
-  programRelation: WireResearchGoalAlignment;
-  humanGates: WireResearchHumanGate[];
-  persistenceGuards: Array<{
-    code: string;
-    status: 'clear' | 'blocked' | 'inactive';
-    reason: string;
-  }>;
-  researchRevision: number;
-}
-
-export interface WireResearchStatusSnapshot {
-  mode: WireResearchModePhase;
-  loopStatus: WireResearchLoopStatus;
-  currentLineSlug?: string;
-  currentWorkstreamBinding?: WireResearchLineWorkstreamAlignment;
-  lineWorkstreamBindings: WireResearchLineWorkstreamBinding[];
-  currentFocus?: { questionId: string; boundedAction?: string; revision: number };
-  currentQuestion?: WireResearchQuestion;
-  questions: WireResearchQuestion[];
-  lines: WireResearchLine[];
-  openQuestionCount: number;
-  activeQuestionCount: number;
-  blockedQuestionCount: number;
-  alerts: WireResearchAlert[];
-  effectiveNextStep?: WireResearchEffectiveNextStep;
-  goalSummary?: {
-    /** The current Goal milestone, distinct from the ResearchPlan objective. */
-    goalId?: string;
-    objective: string;
-    completionCriterion?: string;
-    status: 'active' | 'paused' | 'blocked' | 'complete';
-    turnBudget?: number;
-    remainingTurns?: number;
-    terminalReason?: string;
-    waitingFor?: { taskIds: string[]; policy: 'any' | 'all' };
-  };
-  researchGoal?: WireResearchGoalProjection;
-  goalAlignment?: WireResearchGoalAlignment;
-  aitpHealth: WireAitpAdapterHealth;
-  aitpMaintenance?: WireAitpMaintenanceReceipt;
-  pendingCheckpoint?: WireResearchCheckpoint;
-  localConclusion?: WireResearchLocalConclusion;
-  latestCommittedCheckpoint?: WireResearchCommittedCursor;
-  committedCheckpointHistory?: WireResearchCommittedCursor[];
-  distillationAttention?: WireResearchDistillationAttention;
-  phase: WireResearchPhase;
-  currentAction?: WireResearchActionSpec;
-  currentRun?: WireResearchRunState;
-  latestProgress?: WireResearchProgressReport;
-  recentStateChange?: WireResearchStateChange;
-  humanGate?: WireResearchHumanGate;
-  program?: WireResearchProgram;
-  period?: WireResearchPeriod;
-  researchPlan?: WireResearchPlan;
-  actionPlan?: WireResearchPlan;
-  researchPlanV2?: WireResearchPlanV2;
-  planningPolicy: WireResearchPlanningPolicy;
-  status?: WireResearchStatusProjection;
-  revision: number;
-}
-
-export type WireResearchDistillationAttention =
-  | {
-      schema: 'hakimi/research-distillation-attention-0.1';
-      status: 'review_requested';
-      checkpointId: string;
-      entryId: string;
-      recordedAt: number;
-    }
-  | {
-      schema: 'hakimi/research-distillation-attention-0.1';
-      status: 'handoff_unavailable';
-      checkpointId: string;
-      entryId: string;
-      reason: string;
-      recordedAt: number;
-    };
 
 export type WireResearchCommand =
   | { kind: 'enter_mode'; actor: 'user' | 'model'; lineSlug?: string }
-  | { kind: 'exit_mode' }
-  | { kind: 'pause_loop'; expectedRevision: number; reason?: string }
-  | { kind: 'resume_loop'; expectedRevision: number; reason?: string }
-  | { kind: 'create_question'; lineSlug: string; wording: string; assessment?: string; priority?: number; neededEvidence?: string[] }
-  | { kind: 'update_question'; questionId: string; expectedRevision: number; wording?: string; assessment?: string; priority?: number; workflow?: WireResearchQuestionWorkflow; epistemic?: WireResearchQuestionEpistemic; neededEvidence?: string[]; nextBoundedAction?: string; reason?: string }
-  | { kind: 'set_focus'; questionId: string; expectedRevision: number; boundedAction?: string; reason?: string }
-  | { kind: 'switch_line'; lineSlug: string; expectedRevision: number; reason?: string }
-  | { kind: 'reopen_question'; questionId: string; expectedRevision: number; reason?: string }
-  | { kind: 'defer_question'; questionId: string; expectedRevision: number; reason?: string }
-  | { kind: 'block_question'; questionId: string; expectedRevision: number; reason?: string }
-  | { kind: 'close_question'; questionId: string; expectedRevision: number; reason?: string }
-  | { kind: 'create_line'; slug: string; title: string; objective?: string; assessment?: string }
-  | { kind: 'update_line'; lineSlug: string; expectedRevision: number; title?: string; objective?: string; status?: WireResearchLineStatus; assessment?: string; reason?: string }
-  | { kind: 'propose_checkpoint'; expectedRevision: number; localConclusionId?: string; confirmedBy?: 'user'; questionId?: string; lineSlug?: string; assessment?: string; nextAction?: string }
-  | { kind: 'discard_historical_checkpoint'; checkpointId: string; expectedRevision: number }
-  | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
-  | { kind: 'confirm_goal_alignment'; relation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program' | 'unrelated'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
-  | { kind: 'clear_goal_alignment'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
-  | { kind: 'resolve_decision'; gateId: string; resolution: string; nextPhase: WireResearchPhase }
-  | { kind: 'review_evidence'; packet: WireResearchEvidencePacket; expectedRevision: number }
-  | {
-      kind: 'observe_run';
-      actionId: string;
-      expectedRevision: number;
-      campaign: string;
-      jobId: string;
-      sourcePin?: string;
-      binaryPin?: string;
-      stage: WireResearchRunStage;
-      schedulerState: WireResearchSchedulerState;
-      nextCheckAt?: number;
-      terminalState?: 'completed' | 'failed' | 'cancelled';
-      artifactRefs: string[];
-    }
-  | { kind: 'acknowledge_alert'; fingerprint: string }
-  | { kind: 'confirm_line_workstream_binding'; lineSlug: string; workstream: string; expectedRevision: number }
-  | {
-      kind: 'clear_line_workstream_binding';
-      lineSlug: string;
-      expectedConfirmationId: string;
-      expectedRevision: number;
-    }
-  | { kind: 'set_planning_policy'; policy: WireResearchPlanningPolicy; expectedRevision: number }
-  | {
-      kind: 'prepare_plan_v2';
-      planId?: string;
-      expectedRevision?: number;
-      objective: string;
-      completionCriterion?: string;
-      milestones: WireResearchPlanV2['milestones'];
-      evidenceRequirements: string[];
-      decisionPoints: WireResearchPlanV2['decisionPoints'];
-      assumptions: string[];
-      currentMilestoneId: string;
-      stopConditions: string[];
-      replanConditions: string[];
-    }
-  | { kind: 'activate_plan_v2' | 'complete_plan_v2' | 'discard_plan_v2'; planId: string; expectedRevision: number };
+  | { kind: 'exit_mode' };
 
 export interface WireResearchCommandResponse {
-  snapshot: WireResearchStatusSnapshot;
+  snapshot: WireResearchModeSnapshot;
 }
 
 // GET /sessions/{id}/warnings — session-level warnings (e.g. oversized AGENTS.md).
@@ -1292,6 +620,45 @@ export interface WireProviderExtraUsage {
   currency: string;
 }
 
+export interface WireProviderMeteredBalance {
+  currency: 'CNY' | 'USD';
+  total: string;
+  granted: string;
+  topped_up: string;
+}
+
+export type WireProviderMeteredBalanceResult =
+  | { kind: 'ok'; is_available: boolean; balances: WireProviderMeteredBalance[] }
+  | { kind: 'error'; message: string; status?: number };
+
+export interface WireProviderMeteredPeriod {
+  start_at: string;
+  end_at: string;
+  request_count: number;
+  measured_request_count: number;
+  pending_request_count: number;
+  missing_usage_request_count: number;
+  unpriced_request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  total_tokens: number;
+  estimated_cost: string | null;
+  is_partial: boolean;
+}
+
+export interface WireProviderMeteredUsage {
+  source: 'local';
+  cost_source: 'estimated';
+  currency: 'CNY';
+  timezone: 'Asia/Shanghai';
+  tracking_started_at: string | null;
+  degraded: boolean;
+  today: WireProviderMeteredPeriod;
+  month: WireProviderMeteredPeriod;
+  balance: WireProviderMeteredBalanceResult;
+}
+
 export type WireProviderUsageItem =
   | {
       provider: string;
@@ -1299,6 +666,7 @@ export type WireProviderUsageItem =
       summary: WireProviderUsageRow | null;
       limits: WireProviderUsageRow[];
       extra_usage: WireProviderExtraUsage | null;
+      metered_usage?: WireProviderMeteredUsage;
     }
   | {
       provider: string;
@@ -1623,8 +991,8 @@ type WireEventSessionHistoryCompacted = WireEventBase<'event.session.history_com
   reason: 'auto_compact' | 'manual_compact' | 'history_rewrite';
   summary_message_id?: string;
 }>;
-type WireEventResearchUpdated = WireEventBase<'event.research.updated', {
-  snapshot: WireResearchStatusSnapshot;
+type WireEventResearchUpdated = WireEventBase<'event.research_mode.updated', {
+  snapshot: WireResearchModeSnapshot;
 }>;
 
 // Workspace lifecycle (global — not session-scoped)

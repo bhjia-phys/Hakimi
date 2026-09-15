@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { AppSubagentPhase } from '../src/api/types';
+import type { AgentPhase } from '../src/types';
 import type { SwarmMember } from '../src/composables/swarmGroups';
 import type { SwarmResult } from '../src/lib/parseSwarmResult';
 import { buildSwarmCardRows, swarmMemberActivity } from '../src/lib/swarmCardRows';
+import { swarmCardStatus } from '../src/lib/agentTaskResolver';
+import { createI18n } from 'vue-i18n';
+import enTools from '../src/i18n/locales/en/tools';
+import zhTools from '../src/i18n/locales/zh/tools';
 
 function member(
   id: string,
   name: string,
   opts: {
-    phase?: AppSubagentPhase;
+    phase?: AgentPhase;
     subagentType?: string;
     model?: string;
     thinkingEffort?: string;
@@ -43,6 +47,55 @@ function result(subagents: SwarmResult['subagents']): SwarmResult {
     subagents,
   };
 }
+
+describe('swarmCardStatus', () => {
+  it.each(['running', 'ok', 'unknown', 'error'] as const)('live working overrides transcript %s without terminal evidence', (status) => {
+    expect(swarmCardStatus(status, [member('a', 'Worker')], null)).toBe('running');
+  });
+
+  it.each([
+    ['suspended', 'suspended'], ['queued', 'queued'],
+  ] as const)('uses live phase %s instead of the transcript', (phase, expected) => {
+    expect(swarmCardStatus('unknown', [member('a', 'Worker', { phase })], null)).toBe(expected);
+  });
+
+  it.each(['running', 'unknown'] as const)('preserves %s while visible terminal tasks may be only a partial batch', (status) => {
+    for (const phase of ['completed', 'failed', 'cancelled'] as const) {
+      // A three-item invocation has only spawned one or two tasks so far.
+      const first = member('a', 'First item', { phase });
+      const second = member('b', 'Second item', { phase });
+      expect(swarmCardStatus(status, [first], null)).toBe(status);
+      expect(swarmCardStatus(status, [first, second], null)).toBe(status);
+    }
+  });
+
+  it('only turns a terminal member collection into batch cancellation with terminal evidence', () => {
+    const cancelled = [member('a', 'Worker', { phase: 'cancelled' })];
+    expect(swarmCardStatus('unknown', cancelled, null)).toBe('unknown');
+    expect(swarmCardStatus('unknown', cancelled, result([{ outcome: 'aborted', body: 'Stopped' }]))).toBe('cancelled');
+    expect(swarmCardStatus('cancelled', cancelled, null)).toBe('cancelled');
+  });
+
+  it('keeps all-suspended swarms static but mixed working swarms running', () => {
+    expect(swarmCardStatus('running', [member('a', 'A', { phase: 'suspended' })], null)).toBe('suspended');
+    expect(swarmCardStatus('ok', [member('a', 'A', { phase: 'suspended' }), member('b', 'B')], null)).toBe('running');
+  });
+
+  it('uses real result counts, not an assumed success, when no tasks survive', () => {
+    expect(swarmCardStatus('unknown', [], null)).toBe('unknown');
+    expect(swarmCardStatus('ok', [], result([{ outcome: 'aborted', body: 'Stopped' }]))).toBe('cancelled');
+    expect(swarmCardStatus('unknown', [], result([{ outcome: 'failed', body: 'Failed' }]))).toBe('error');
+    expect(swarmCardStatus('unknown', [], result([{ outcome: 'completed', body: 'Done' }]))).toBe('ok');
+  });
+
+  it('reports cancelled separately from failed in both locale summaries', () => {
+    const translator = createI18n({ legacy: false, locale: 'en', messages: { en: enTools, zh: zhTools } });
+    const counts = { completed: 1, failed: 0, cancelled: 2 };
+    expect(translator.global.t('swarm.doneSub', counts)).toBe('1 completed · 0 failed · 2 cancelled');
+    translator.global.locale.value = 'zh';
+    expect(translator.global.t('swarm.doneSub', counts)).toBe('完成 1 · 失败 0 · 取消 2');
+  });
+});
 
 describe('swarmMemberActivity', () => {
   it('prefers streamed subagent text over outputLines and summary', () => {
@@ -104,10 +157,11 @@ describe('buildSwarmCardRows', () => {
       result([
         { outcome: 'completed', item: 'A', body: 'A body' },
         { outcome: 'failed', item: 'B', body: 'B body' },
+        { outcome: 'aborted', item: 'C', body: 'C body' },
       ]),
     );
-    expect(rows.map((r) => r.name)).toEqual(['A', 'B']);
-    expect(rows.map((r) => r.phase)).toEqual(['completed', 'failed']);
+    expect(rows.map((r) => r.name)).toEqual(['A', 'B', 'C']);
+    expect(rows.map((r) => r.phase)).toEqual(['completed', 'failed', 'cancelled']);
     expect(rows.every((r) => r.subagentType === undefined && r.model === undefined)).toBe(true);
   });
 
@@ -124,7 +178,8 @@ describe('buildSwarmCardRows', () => {
       ]),
     );
     expect(rows.map((r) => r.id)).toEqual(['a1', 'a2', 'C']);
-    expect(rows[2]?.phase).toBe('failed');
+    // Aborted is an interruption, not a failure — the row renders as cancelled.
+    expect(rows[2]?.phase).toBe('cancelled');
     expect(rows[2]?.body).toBe('C never started');
   });
 

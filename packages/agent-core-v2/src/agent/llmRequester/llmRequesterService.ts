@@ -19,7 +19,8 @@
  * handler — rewriting duplicate provider tool call ids into per-agent unique
  * ones through `ToolCallIdNormalizer`, since self-hosted endpoints may
  * renumber ids per response and every downstream keying assumes uniqueness —
- * records `usage` through `IAgentUsageService`, resolves to an
+ * records `usage` through `IAgentUsageService`, records best-effort metered
+ * attempt facts (start/finish) through `providerUsageLedger`, resolves to an
  * `AgentLLMRequestFinish` on the `finish` event, logs the request lifecycle
  * (config deduplicated by content, request/response/failure lines, plus
  * per-request fields) through `log`, publishes advisory model-capability
@@ -27,7 +28,8 @@
  * through `wire`, reports each request's `x-trace-id` to its caller, and
  * reports provider failures through `telemetry`. The mutable request state
  * (`lastConfigLogSignature`, `turnConfigs`, `mediaDegradedTurns`,
- * `mediaStrippedTurns`, `emittedThinkingEffortWarnings`) is registered into
+ * `mediaStrippedTurns`, `encryptedStrippedTurns`,
+ * `emittedThinkingEffortWarnings`) is registered into
  * `agentState` (`IAgentStateService`) and read/written through it. Bound at
  * Agent scope.
  */
@@ -49,11 +51,16 @@ import { IAgentToolSelectService } from '#/agent/toolSelect/toolSelect';
 import { IAgentVideoResolverService } from '#/agent/media/videoResolver';
 import { IAgentUsageService } from '#/agent/usage/usage';
 import { IConfigService } from '#/app/config/config';
+import {
+  IProviderUsageLedgerService,
+  type MeteredAttemptOutcome,
+} from '#/app/providerUsageLedger/providerUsageLedger';
 import { IEventBus } from '#/app/event/eventBus';
 import {
   APIRequestTooLargeError,
   APIStatusError,
   classifyApiError,
+  isEncryptedReasoningVerificationError,
   isImageFormatError,
   isRecoverableRequestStructureError,
   isRetryableGenerateError,
@@ -127,7 +134,12 @@ interface ResolvedLLMRequest {
   readonly logFields: AgentLLMRequestLogFields;
 }
 
-type RequestProjection = 'normal' | 'strict' | 'media-degraded' | 'media-stripped';
+type RequestProjection =
+  | 'normal'
+  | 'strict'
+  | 'media-degraded'
+  | 'media-stripped'
+  | 'encrypted-stripped';
 
 interface LLMRequestLogInput {
   readonly protocol: Protocol;
@@ -164,6 +176,10 @@ export const llmRequesterMediaStrippedTurnsKey = defineState<Map<number, MediaSt
   'llmRequester.mediaStrippedTurns',
   () => new Map(),
 );
+export const llmRequesterEncryptedStrippedTurnsKey = defineState<Set<number>>(
+  'llmRequester.encryptedStrippedTurns',
+  () => new Set(),
+);
 export const llmRequesterEmittedThinkingEffortWarningsKey = defineState<Set<string>>(
   'llmRequester.emittedThinkingEffortWarnings',
   () => new Set(),
@@ -191,11 +207,13 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
     @IWireService private readonly wire: IWireService,
     @IEventBus private readonly eventBus: IEventBus,
     @IAgentStateService private readonly states: IAgentStateService,
+    @IProviderUsageLedgerService private readonly providerUsageLedger: IProviderUsageLedgerService,
   ) {
     this.states.register(llmRequesterLastConfigLogSignatureKey);
     this.states.register(llmRequesterTurnConfigsKey);
     this.states.register(llmRequesterMediaDegradedTurnsKey);
     this.states.register(llmRequesterMediaStrippedTurnsKey);
+    this.states.register(llmRequesterEncryptedStrippedTurnsKey);
     this.states.register(llmRequesterEmittedThinkingEffortWarningsKey);
   }
 
@@ -217,6 +235,10 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
 
   private get mediaStrippedTurns(): Map<number, MediaStripSnapshot> {
     return this.states.get(llmRequesterMediaStrippedTurnsKey);
+  }
+
+  private get encryptedStrippedTurns(): Set<number> {
+    return this.states.get(llmRequesterEncryptedStrippedTurnsKey);
   }
 
   private get emittedThinkingEffortWarnings(): Set<string> {
@@ -357,7 +379,9 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
                     (mediaStripSnapshot ??=
                       this.projector.captureMediaStripSnapshot(shaped)),
                   )
-                : this.projector.project(shaped),
+                : projection === 'encrypted-stripped'
+                  ? this.projector.projectEncryptedStripped(shaped)
+                  : this.projector.project(shaped),
       };
     };
 
@@ -402,6 +426,21 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
         const normalized = traceId ?? undefined;
         onRequestTrace(normalized);
       };
+
+      let attemptId: string | undefined;
+      try {
+        attemptId = this.providerUsageLedger.startAttempt({
+          providerName: request.model.providerName,
+          providerType: request.model.providerType,
+          modelName: request.model.name,
+          modelAlias: request.modelAlias,
+          baseUrl: request.model.baseUrl,
+          startedAtEpochMs: Date.now(),
+        });
+      } catch {
+        attemptId = undefined;
+      }
+      let outcome: MeteredAttemptOutcome = 'success';
 
       try {
         for await (const event of request.requester.request(input, signal, {
@@ -448,7 +487,17 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
         }
       } catch (error) {
         toolCallIds.rollback();
+        outcome = isAbortError(error) || signal?.aborted === true ? 'cancelled' : 'error';
         throw error;
+      } finally {
+        if (attemptId !== undefined) {
+          try {
+            this.providerUsageLedger.finishAttempt(attemptId, { usage: usage ?? null, outcome });
+          } catch {
+            // The best-effort ledger must never override the model result or
+            // the original request error.
+          }
+        }
       }
 
       this.usage.record(request.modelAlias, usage ?? emptyUsage(), request.source);
@@ -476,7 +525,9 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
       ? 'media-stripped'
       : this.isRecoveryTurn(this.mediaDegradedTurns, request.source)
         ? 'media-degraded'
-        : 'normal';
+        : this.isRecoveryTurn(this.encryptedStrippedTurns, request.source)
+          ? 'encrypted-stripped'
+          : 'normal';
     let projection: RequestProjection = initialProjection;
     for (;;) {
       try {
@@ -534,6 +585,19 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
             ...request.logFields,
           });
           projection = 'strict';
+          continue;
+        }
+        if (projection === 'normal' && isEncryptedReasoningVerificationError(raw)) {
+          signal?.throwIfAborted();
+          this.log.warn(
+            'provider could not verify encrypted reasoning content; resending with encrypted thinking stripped',
+            {
+              model: request.model.name,
+              ...request.logFields,
+            },
+          );
+          this.markRecoveryTurn(this.encryptedStrippedTurns, request.source);
+          projection = 'encrypted-stripped';
           continue;
         }
         throw error;

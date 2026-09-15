@@ -231,6 +231,9 @@ export function createMemoryDispatcher(root: ScopeLike): MemoryDispatcher {
         // then clone so arguments cross the same JSON boundary a socket
         // transport imposes (zod passes `z.unknown()` leaves by reference).
         const wireArgs = wireClone(parseInput(name, procedure, args));
+        if (service === 'agentResearchService' && method !== 'getSnapshot') {
+          throw new RPCError(REQUEST_INVALID, 'research.retired: Research execution APIs are retired; historical records are preserved. Use project knowledge files and official AITP Skills.', { code: 'research.retired' });
+        }
         const resolved = await resolveScope(scope);
         const instance = resolveService(resolved, service);
         const member = instance[method];

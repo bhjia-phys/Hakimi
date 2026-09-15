@@ -27,7 +27,7 @@ import type {
   ProviderUsageResult,
   QuestionResponse,
   ResearchCommand,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
 } from '../../api/types';
 import {
   loadWorkspaceNameOverrides,
@@ -245,7 +245,7 @@ export interface UseWorkspaceStateDeps {
   hasLoadedMessages: (sessionId: string) => boolean;
   refreshSessionStatus: (sessionId: string) => Promise<void>;
   refreshSessionGoal: (sessionId: string) => Promise<void>;
-  refreshSessionResearch: (sessionId: string) => Promise<ResearchStatusSnapshot | null>;
+  refreshSessionResearch: (sessionId: string) => Promise<ResearchModeSnapshot | null>;
   researchRequests: ResearchRequestCoordinator;
   /** Persist profile fields to the daemon. Resolves false (after surfacing the
    *  failure itself) when the daemon rejected the patch — awaited callers that
@@ -2381,7 +2381,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
 
   async function refreshResearchById(
     sessionId: string,
-  ): Promise<ResearchStatusSnapshot | null> {
+  ): Promise<ResearchModeSnapshot | null> {
     if (rawState.backend !== 'v2') return null;
     return refreshSessionResearch(sessionId);
   }
@@ -2395,7 +2395,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   async function commandResearchById(
     sessionId: string,
     command: ResearchCommand,
-  ): Promise<ResearchStatusSnapshot | null> {
+  ): Promise<ResearchModeSnapshot | null> {
     if (rawState.backend !== 'v2') return null;
     try {
       // The coordinator serializes same-session POSTs and blocks sidecar GETs
@@ -2419,7 +2419,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
 
   async function commandResearch(
     command: ResearchCommand,
-  ): Promise<ResearchStatusSnapshot | null> {
+  ): Promise<ResearchModeSnapshot | null> {
     const sessionId = rawState.activeSessionId;
     if (!sessionId) return null;
     return commandResearchById(sessionId, command);
@@ -2831,6 +2831,15 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     return getKimiWebApi().getFileDownloadUrl(sid, path);
   }
 
+  /** Authenticated byte download of a workspace file. The bare download URL
+   *  carries no Bearer token (40101 for <iframe>/save-as flows), so previews
+   *  and downloads fetch through this and wrap the Blob in an object URL. */
+  async function downloadWorkspaceFile(path: string): Promise<Blob> {
+    const sid = rawState.activeSessionId;
+    if (!sid) throw new Error('no active session');
+    return getKimiWebApi().getWorkspaceFileBlob(sid, path);
+  }
+
   async function openWorkspaceFile(path: string, line?: number): Promise<boolean> {
     const sid = rawState.activeSessionId;
     if (!sid) return false;
@@ -3005,6 +3014,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     listDir,
     readFileContent,
     getFileDownloadUrl,
+    downloadWorkspaceFile,
     openWorkspaceFile,
     openInApp,
     revealWorkspaceFile,

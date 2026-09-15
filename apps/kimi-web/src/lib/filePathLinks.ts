@@ -13,6 +13,35 @@ export interface FindFilePathLinksOptions {
   aliases?: ReadonlyMap<string, string>;
 }
 
+/**
+ * Convert a Markdown link href into a workspace file-path candidate. This is
+ * the ONLY place percent-decoding happens: an href is a URI, so a filename
+ * with non-ASCII characters arrives percent-encoded (e.g. `ppt/a%20b.pptx`),
+ * while raw text paths and tool/file-tree paths are already literal file names
+ * (a real `%20` there is a literal character) and must never be decoded.
+ *
+ * `?query` / `#fragment` are stripped BEFORE decoding so an encoded `%3F` /
+ * `%23` survives as a literal filename character instead of being mistaken
+ * for URI syntax. Decoding runs exactly once — `%25` is the escape for `%`
+ * itself, so a single pass can never turn a literal `%20` sequence into a
+ * space (no double-decode). A malformed percent sequence keeps the undecoded
+ * path instead of throwing; any decoded `..` traversal is still rejected by
+ * the downstream workspace validation (useFilePreview.normalizePreviewPath).
+ */
+export function hrefToFilePath(href: string): string {
+  let cut = href.length;
+  for (const sep of ['#', '?']) {
+    const idx = href.indexOf(sep);
+    if (idx !== -1 && idx < cut) cut = idx;
+  }
+  const path = href.slice(0, cut);
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 const COMMON_FILE_EXTENSIONS = [
   'cjs',
   'css',

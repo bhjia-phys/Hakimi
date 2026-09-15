@@ -1,18 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { nextTick, ref, type Ref } from 'vue';
-import type { AppSkill, ResearchStatusSnapshot } from '../src/api/types';
+import type { AppSkill, ResearchModeSnapshot } from '../src/api/types';
 import { useSlashMenu } from '../src/composables/useSlashMenu';
 import {
-  isResearchIdleOnlyBusy,
   parseResearchSlashCommand,
-  planModeToggleResearchDecision,
-  researchCommandFromSlash,
-  researchCommandResolutionError,
   researchComposerEntryState,
   researchEnterSlashOutcome,
-  researchSlashAllowedWhileBusy,
   researchSlashInputToRestore,
-  researchSlashNeedsSnapshot,
   researchSlashSessionIsCurrent,
   runResearchModeEnter,
   submitResearchSlashCommand,
@@ -165,113 +159,22 @@ describe('parseSlash', () => {
 });
 
 describe('Research slash command', () => {
-  const snapshot: ResearchStatusSnapshot = {
-    mode: 'ready',
-    loopStatus: 'active',
-    planningPolicy: 'collaborative',
-    lineWorkstreamBindings: [],
-    currentLineSlug: 'line-a',
-    questions: [
-      {
-        id: 'q_1',
-        lineSlug: 'line-a',
-        wording: 'Old wording',
-        priority: 1,
-        neededEvidence: [],
-        evidenceRefs: [],
-        falsifierRefs: [],
-        workflow: 'active',
-        epistemic: 'candidate',
-        persistence: 'working',
-        revision: 7,
-      },
-    ],
-    lines: [
-      {
-        slug: 'line-a',
-        title: 'Line A',
-        status: 'active',
-        createdAt: 1,
-        revision: 5,
-      },
-      {
-        slug: 'line-b',
-        title: 'Line B',
-        status: 'active',
-        createdAt: 2,
-        revision: 6,
-      },
-    ],
-    openQuestionCount: 1,
-    activeQuestionCount: 1,
-    blockedQuestionCount: 0,
-    alerts: [],
-    aitpHealth: { phase: 'ready' },
-    revision: 13,
-  };
-  const inactiveSnapshot: ResearchStatusSnapshot = {
-    ...snapshot,
-    mode: 'inactive',
-    aitpHealth: { phase: 'inactive' },
-  };
-  const alignmentSnapshot: ResearchStatusSnapshot = {
-    ...snapshot,
-    researchGoal: {
-      schema: 'hakimi/research-goal-0.1',
-      goalId: 'goal-1',
-      objective: 'Finish the Goal',
-      scope: {
-        programTopicId: 'topic-1',
-        lineSlug: 'line-a',
-        questionId: 'q_1',
-      },
-      nonGoals: [],
-      budget: {
-        tokenBudget: null,
-        turnBudget: null,
-        wallClockBudgetMs: null,
-        remainingTokens: null,
-        remainingTurns: null,
-        remainingWallClockMs: null,
-        tokenBudgetReached: false,
-        turnBudgetReached: false,
-        wallClockBudgetReached: false,
-        overBudget: false,
-      },
-      stopConditions: [],
-      status: 'active',
-      programRelation: {
-        status: 'aligned',
-        reason: 'Confirmed as goal_parent_of_program.',
-      },
-      humanGates: [],
-      persistenceGuards: [],
-      researchRevision: 13,
-    },
-    program: {
-      topicId: 'topic-1',
-      title: 'Observed topic',
-      goalText: 'Resolve the bounded problem',
-      goalSource: 'TOPIC.md',
-      establishedAt: 1,
-      observedRevision: 4,
-    },
-  };
+  const snapshot: ResearchModeSnapshot = { enabled: true, skillsAvailable: true };
+  const inactiveSnapshot: ResearchModeSnapshot = { enabled: false, skillsAvailable: true };
 
-  it('hides the Composer entry when disabled and starts from missing or inactive state', () => {
+  it('hides the Composer entry when disabled and toggles from the mode state', () => {
     expect(researchComposerEntryState(false, undefined)).toBe('hidden');
-    expect(researchComposerEntryState(false, 'ready')).toBe('hidden');
+    expect(researchComposerEntryState(false, true)).toBe('hidden');
     expect(researchComposerEntryState(true, undefined)).toBe('start');
     expect(researchComposerEntryState(true, null)).toBe('start');
-    expect(researchComposerEntryState(true, 'inactive')).toBe('start');
+    expect(researchComposerEntryState(true, false)).toBe('start');
+    expect(researchComposerEntryState(true, true)).toBe('stop');
   });
 
   it('rejects local entry guards before refreshing Research', async () => {
     const state = {
       researchEnabled: true,
       activeSessionId: 'session-a',
-      busy: false,
-      planMode: false,
     };
     const pending = new Set<string>();
     const refreshResearch = vi.fn(async () => inactiveSnapshot);
@@ -294,20 +197,12 @@ describe('Research slash command', () => {
     state.activeSessionId = 'session-a';
     state.researchEnabled = false;
     await expect(run('session-a')).resolves.toEqual({ kind: 'rejected', reason: 'disabled' });
-    state.researchEnabled = true;
-    state.busy = true;
-    await expect(run('session-a')).resolves.toEqual({ kind: 'rejected', reason: 'busy' });
-    state.busy = false;
-    state.planMode = true;
-    await expect(run('session-a')).resolves.toEqual({
-      kind: 'rejected', reason: 'plan_conflict',
-    });
 
     expect(refreshResearch).not.toHaveBeenCalled();
     expect(commandResearch).not.toHaveBeenCalled();
   });
 
-  it('returns an authoritative active snapshot without sending enter_mode', async () => {
+  it('returns an authoritative enabled snapshot without sending enter_mode', async () => {
     const commandResearch = vi.fn(async () => snapshot);
     const result = await runResearchModeEnter({
       sessionId: 'session-a',
@@ -315,8 +210,6 @@ describe('Research slash command', () => {
       getState: () => ({
         researchEnabled: true,
         activeSessionId: 'session-a',
-        busy: false,
-        planMode: false,
       }),
       refreshResearch: async () => snapshot,
       commandResearch,
@@ -327,18 +220,15 @@ describe('Research slash command', () => {
   });
 
   it('deduplicates concurrent enter calls from different UI entry points', async () => {
-    const refresh = deferred<ResearchStatusSnapshot | null>();
+    const refresh = deferred<ResearchModeSnapshot | null>();
     const pending = new Set<string>();
     const commandResearch = vi.fn(async () => snapshot);
     const options = {
       sessionId: 'session-a',
-      lineSlug: 'new-line',
       pending,
       getState: () => ({
         researchEnabled: true,
         activeSessionId: 'session-a',
-        busy: false,
-        planMode: false,
       }),
       refreshResearch: vi.fn(() => refresh.promise),
       commandResearch,
@@ -356,7 +246,6 @@ describe('Research slash command', () => {
     expect(commandResearch).toHaveBeenCalledWith('session-a', {
       kind: 'enter_mode',
       actor: 'user',
-      lineSlug: 'new-line',
     });
     expect(pending.has('session-a')).toBe(false);
   });
@@ -368,21 +257,12 @@ describe('Research slash command', () => {
     expect(researchEnterSlashOutcome({ kind: 'entered', snapshot })).toBe('handled');
   });
 
-  it('blocks enabling Plan while the current session has a pending Research enter', () => {
-    expect(planModeToggleResearchDecision(false, 'inactive', true)).toBe('plan_conflict');
-    expect(planModeToggleResearchDecision(false, 'ready', false)).toBe('plan_conflict');
-    expect(planModeToggleResearchDecision(false, 'inactive', false)).toBe('allow');
-    expect(planModeToggleResearchDecision(true, 'ready', true)).toBe('allow');
-  });
-
   it('does not POST enter_mode when the session switches during refresh', async () => {
     const state = {
       researchEnabled: true,
       activeSessionId: 'session-a',
-      busy: false,
-      planMode: false,
     };
-    const refresh = deferred<ResearchStatusSnapshot | null>();
+    const refresh = deferred<ResearchModeSnapshot | null>();
     const pending = new Set<string>();
     const commandResearch = vi.fn(async () => snapshot);
     const result = runResearchModeEnter({
@@ -405,11 +285,9 @@ describe('Research slash command', () => {
     const state = {
       researchEnabled: true,
       activeSessionId: 'session-a',
-      busy: false,
-      planMode: false,
     };
     const postStarted = deferred<void>();
-    const postResponse = deferred<ResearchStatusSnapshot | null>();
+    const postResponse = deferred<ResearchModeSnapshot | null>();
     const pending = new Set<string>();
     const commandResearch = vi.fn(() => {
       postStarted.resolve(undefined);
@@ -439,8 +317,6 @@ describe('Research slash command', () => {
       getState: () => ({
         researchEnabled: true,
         activeSessionId: 'session-a',
-        busy: false,
-        planMode: false,
       }),
       refreshResearch: async () => null,
       commandResearch: async () => snapshot,
@@ -457,8 +333,6 @@ describe('Research slash command', () => {
       getState: () => ({
         researchEnabled: true,
         activeSessionId: 'session-a',
-        busy: false,
-        planMode: false,
       }),
       refreshResearch: async () => inactiveSnapshot,
       commandResearch: async () => null,
@@ -481,172 +355,59 @@ describe('Research slash command', () => {
     expect(slash.items.value.map((item) => item.name)).not.toContain('/research');
   });
 
-  it('parses control, line, edit, focus, and workflow actions', () => {
+  it('parses only the mode toggle grammar', () => {
     expect(parseResearchSlashCommand('')).toEqual({ kind: 'toggle' });
-    expect(parseResearchSlashCommand('on -- line-a')).toEqual({ kind: 'on', lineSlug: 'line-a' });
+    expect(parseResearchSlashCommand('on')).toEqual({ kind: 'on' });
     expect(parseResearchSlashCommand('off')).toEqual({ kind: 'off' });
-    expect(parseResearchSlashCommand('pause')).toEqual({ kind: 'pause' });
-    expect(parseResearchSlashCommand('resume')).toEqual({ kind: 'resume' });
-    expect(parseResearchSlashCommand('manage')).toEqual({ kind: 'manage' });
-    expect(parseResearchSlashCommand('align same_program_goal')).toEqual({
-      kind: 'align', relation: 'same_program_goal',
-    });
-    expect(parseResearchSlashCommand('align clear')).toEqual({ kind: 'clear_alignment' });
-    expect(parseResearchSlashCommand('line line-b')).toEqual({ kind: 'line', lineSlug: 'line-b' });
-    expect(parseResearchSlashCommand('edit q_1 -- New wording')).toEqual({
-      kind: 'edit', questionId: 'q_1', wording: 'New wording',
-    });
-    expect(parseResearchSlashCommand('focus q_1 -- Check the archive')).toEqual({
-      kind: 'focus', questionId: 'q_1', boundedAction: 'Check the archive',
-    });
-    expect(parseResearchSlashCommand('block q_1 -- Missing source')).toEqual({
-      kind: 'block', questionId: 'q_1', reason: 'Missing source',
-    });
+    expect(parseResearchSlashCommand('status')).toEqual({ kind: 'status' });
   });
 
-  it.each([
-    [false, false, false],
-    [true, false, true],
-    [false, true, true],
-    [true, true, true],
-  ])('treats main-turn work=%s and compaction=%s as idle-only busy=%s', (working, compacting, busy) => {
-    expect(isResearchIdleOnlyBusy(working, compacting)).toBe(busy);
+  it('parses retired executor subcommands as explicitly unsupported', () => {
+    for (const name of [
+      'pause',
+      'resume',
+      'manage',
+      'align',
+      'line',
+      'edit',
+      'focus',
+      'defer',
+      'block',
+      'close',
+      'reopen',
+      'discard-checkpoint',
+      'adopt-conclusion',
+    ]) {
+      expect(parseResearchSlashCommand(name)).toEqual({ kind: 'unsupported', subcommand: name });
+      expect(parseResearchSlashCommand(`${name} with args`)).toEqual({
+        kind: 'unsupported', subcommand: name,
+      });
+    }
   });
 
-  it.each([
-    ['', false],
-    ['status', true],
-    ['pause', true],
-    ['resume', true],
-    ['on', false],
-    ['off', false],
-    ['manage', false],
-    ['align same_program_goal', false],
-    ['align clear', false],
-    ['line line-b', false],
-    ['edit q_1 -- New wording', false],
-    ['focus q_1 -- Read', false],
-    ['defer q_1', false],
-    ['block q_1', false],
-    ['close q_1', false],
-    ['reopen q_1', false],
-    ['unknown', false],
-  ])('allows only status, pause, and resume while idle-only commands are busy: %j', (args, allowed) => {
-    expect(researchSlashAllowedWhileBusy(parseResearchSlashCommand(args))).toBe(allowed);
+  it('rejects unexpected arguments and unknown subcommands', () => {
+    expect(parseResearchSlashCommand('on -- line-a')).toEqual({
+      kind: 'error', code: 'unexpected_arguments',
+    });
+    expect(parseResearchSlashCommand('status please')).toEqual({
+      kind: 'error', code: 'unexpected_arguments',
+    });
+    expect(parseResearchSlashCommand('frobnicate')).toEqual({
+      kind: 'error', code: 'unknown_subcommand',
+    });
   });
 
   it('parses Research arguments separated by Unicode whitespace', () => {
-    expect(parseResearchSlashCommand('line\tline-b')).toEqual({ kind: 'line', lineSlug: 'line-b' });
-    expect(parseResearchSlashCommand('edit\nq_1\u00A0--\tNew wording')).toEqual({
-      kind: 'edit', questionId: 'q_1', wording: 'New wording',
-    });
-  });
-
-  it('rejects malformed or overlong free text', () => {
-    expect(parseResearchSlashCommand('edit q_1')).toEqual({ kind: 'error', code: 'missing_separator' });
-    expect(parseResearchSlashCommand('focus q_1 --')).toEqual({ kind: 'error', code: 'missing_text' });
-    expect(parseResearchSlashCommand(`edit q_1 -- ${'x'.repeat(2001)}`)).toEqual({
-      kind: 'error', code: 'text_too_long',
-    });
-  });
-
-  it.each([
-    '/research close q-1 accidental',
-    '/research block q-1 ignored-text -- Missing source',
-    '/research edit q-1 ignored-text -- New wording',
-    '/research focus q-1 ignored-text -- Check the archive',
-  ])('rejects question arguments before the documented separator: %s', (input) => {
-    const parsed = parseSlash(input);
-    expect(parsed.cmd).toBe('/research');
-    expect(parseResearchSlashCommand(parsed.arg ?? '')).toEqual({
+    expect(parseResearchSlashCommand('off\t')).toEqual({ kind: 'off' });
+    expect(parseResearchSlashCommand('on\u00A0now')).toEqual({
       kind: 'error', code: 'unexpected_arguments',
     });
   });
 
-  it('allows enter_mode to create an explicit line without a snapshot', () => {
-    const parsed = parseResearchSlashCommand('on -- new-line');
-
-    expect(researchSlashNeedsSnapshot(parsed)).toBe(false);
-    expect(researchCommandResolutionError(parsed, null)).toBeNull();
-    expect(researchCommandFromSlash(parsed, null)).toEqual({
-      kind: 'enter_mode', actor: 'user', lineSlug: 'new-line',
-    });
-  });
-
-  it('resolves bare /research against a fresh snapshot as an enter/exit toggle', () => {
-    const parsed = parseResearchSlashCommand('');
-
-    expect(researchSlashNeedsSnapshot(parsed)).toBe(true);
-    expect(researchCommandResolutionError(parsed, null)).toBe('snapshot_unavailable');
-    expect(researchCommandFromSlash(parsed, inactiveSnapshot)).toEqual({
-      kind: 'enter_mode', actor: 'user',
-    });
-    expect(researchCommandFromSlash(parsed, snapshot)).toEqual({ kind: 'exit_mode' });
-  });
-
   it('restores the original slash spelling only for rejected execution', () => {
-    const original = '/research\tedit q_missing -- New wording';
+    const original = '/research\tstatus';
     expect(researchSlashInputToRestore(original, 'rejected')).toBe(original);
     expect(researchSlashInputToRestore(original, 'handled')).toBeNull();
-  });
-
-  it('reports unavailable snapshots and missing command targets', () => {
-    expect(researchCommandResolutionError(parseResearchSlashCommand('pause'), null)).toBe(
-      'snapshot_unavailable',
-    );
-    expect(
-      researchCommandResolutionError(parseResearchSlashCommand('edit q_missing -- New'), snapshot),
-    ).toBe('question_not_found');
-    expect(
-      researchCommandResolutionError(parseResearchSlashCommand('line missing-line'), snapshot),
-    ).toBe('line_not_found');
-    expect(
-      researchCommandResolutionError(parseResearchSlashCommand('align same_program_goal'), snapshot),
-    ).toBe('goal_alignment_unavailable');
-    expect(
-      researchCommandResolutionError(parseResearchSlashCommand('align same_program_goal'), alignmentSnapshot),
-    ).toBeNull();
-  });
-
-  it('uses the authoritative snapshot revision and identities for Goal alignment commands', () => {
-    expect(researchSlashNeedsSnapshot(parseResearchSlashCommand('align same_program_goal'))).toBe(true);
-    expect(researchSlashNeedsSnapshot(parseResearchSlashCommand('align clear'))).toBe(true);
-    expect(researchCommandFromSlash(
-      parseResearchSlashCommand('align goal_parent_of_program'),
-      alignmentSnapshot,
-    )).toEqual({
-      kind: 'confirm_goal_alignment',
-      relation: 'goal_parent_of_program',
-      expectedRevision: 13,
-      goalId: 'goal-1',
-      topicId: 'topic-1',
-      observedRevision: 4,
-    });
-    expect(researchCommandFromSlash(
-      parseResearchSlashCommand('align clear'),
-      alignmentSnapshot,
-    )).toEqual({
-      kind: 'clear_goal_alignment',
-      expectedRevision: 13,
-      goalId: 'goal-1',
-      topicId: 'topic-1',
-      observedRevision: 4,
-    });
-  });
-
-  it('uses question revision for edits and snapshot revision for steering', () => {
-    expect(researchCommandFromSlash(parseResearchSlashCommand('edit q_1 -- New'), snapshot)).toEqual({
-      kind: 'update_question', questionId: 'q_1', expectedRevision: 7, wording: 'New',
-    });
-    expect(researchCommandFromSlash(parseResearchSlashCommand('focus q_1 -- Read'), snapshot)).toEqual({
-      kind: 'set_focus', questionId: 'q_1', expectedRevision: 13, boundedAction: 'Read',
-    });
-    expect(researchCommandFromSlash(parseResearchSlashCommand('line line-b'), snapshot)).toEqual({
-      kind: 'switch_line', lineSlug: 'line-b', expectedRevision: 13,
-    });
-    expect(researchCommandFromSlash(parseResearchSlashCommand('defer q_1'), snapshot)).toEqual({
-      kind: 'defer_question', questionId: 'q_1', expectedRevision: 13, reason: undefined,
-    });
   });
 
   it('invalidates the submitted session when an awaited refresh switches sessions', async () => {
@@ -671,8 +432,8 @@ describe('Research slash command', () => {
 
   it('does not restore input when a successful POST resolves after switching sessions', async () => {
     const activeSessionId = ref<string | undefined>('session-a');
-    let resolvePost!: (value: ResearchStatusSnapshot) => void;
-    const postResponse = new Promise<ResearchStatusSnapshot>((resolve) => {
+    let resolvePost!: (value: ResearchModeSnapshot) => void;
+    const postResponse = new Promise<ResearchModeSnapshot>((resolve) => {
       resolvePost = resolve;
     });
     let postSent = false;
@@ -691,6 +452,6 @@ describe('Research slash command', () => {
     resolvePost(snapshot);
 
     await expect(outcome).resolves.toBe('handled');
-    expect(researchSlashInputToRestore('/research pause', await outcome)).toBeNull();
+    expect(researchSlashInputToRestore('/research off', await outcome)).toBeNull();
   });
 });

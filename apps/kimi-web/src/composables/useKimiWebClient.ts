@@ -17,6 +17,7 @@ import { mergeWorkspaces } from '../lib/mergeWorkspaces';
 import { workspaceRootKey } from '../lib/rootKey';
 import { mergeSnapshotMessages } from '../lib/snapshotMessages';
 import { mergeSnapshotSubagents } from '../lib/taskMerge';
+import { taskDisplayStatus } from '../lib/agentTaskResolver';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
 import {
   loadUnread,
@@ -72,7 +73,7 @@ import type {
   KimiEventConnection,
   KimiEventMeta,
   ProviderUsageResult,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
   ThinkingLevel,
 } from '../api/types';
 import { createInitialState, reduceAppEvent, type CompactionStatus, type KimiClientState } from '../api/daemon/eventReducer';
@@ -740,7 +741,7 @@ async function refreshSessionGoal(sessionId: string): Promise<void> {
 
 async function refreshSessionResearch(
   sessionId: string,
-): Promise<ResearchStatusSnapshot | null> {
+): Promise<ResearchModeSnapshot | null> {
   // Research routes exist only on the v2 backend. Re-check the generation both
   // before queueing and before issuing I/O because a dev-proxy backend switch
   // can land while this read is waiting behind a mutation.
@@ -1591,7 +1592,7 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
     // so the ring converges on the live value.
     if (snapUsagePlaceholder) void refreshSessionStatus(sessionId);
     // Research is a sidecar, not part of the transcript snapshot. A resync can
-    // therefore recover the transcript while still missing a research.updated
+    // therefore recover the transcript while still missing a research_mode.updated
     // frame from the same gap; pull its authoritative snapshot after the main
     // snapshot has committed.
     if (wasResync) void refreshSessionResearch(sessionId);
@@ -1946,22 +1947,25 @@ export function toUiTask(task: AppTask): TaskItem {
     state = 'run';
   } else if (task.status === 'completed') {
     state = 'done';
+  } else if (task.status === 'cancelled') {
+    // Cancelled is its own terminal state — never fold it into 'fail', or an
+    // interrupted task becomes indistinguishable from a genuine failure.
+    state = 'cancelled';
   } else {
     state = 'fail';
   }
 
-  // Compute timing string
-  let timing = '';
-  if (task.status === 'running' && task.startedAt) {
-    const elapsed = Math.round((Date.now() - new Date(task.startedAt).getTime()) / 1000);
+  const displayStatus = taskDisplayStatus({ state, phase: task.subagentPhase });
+  const statusLabel = i18n.global.t(`tools.status.${displayStatus}`);
+  let timing = statusLabel;
+  if (displayStatus === 'running' && task.startedAt) {
+    const elapsed = Math.max(0, Math.round((Date.now() - new Date(task.startedAt).getTime()) / 1000));
     const m = Math.floor(elapsed / 60);
     const s = elapsed % 60;
-    timing = i18n.global.t('tasks.timingRunning', { time: `${m}:${String(s).padStart(2, '0')}` });
-  } else if (task.completedAt && task.startedAt) {
-    const elapsed = Math.round((new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) / 1000);
-    timing = i18n.global.t('tasks.timingDone', { sec: elapsed });
-  } else {
-    timing = task.status;
+    timing = i18n.global.t('tasks.timingWithStatus', { status: statusLabel, time: `${m}:${String(s).padStart(2, '0')}` });
+  } else if (state !== 'run' && task.completedAt && task.startedAt) {
+    const elapsed = Math.max(0, Math.round((new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) / 1000));
+    timing = i18n.global.t('tasks.timingWithStatus', { status: statusLabel, time: `${elapsed}s` });
   }
 
   const output: string[] | undefined =
@@ -1982,6 +1986,7 @@ export function toUiTask(task: AppTask): TaskItem {
     name: task.description,
     kind: task.kind,
     state,
+    phase: task.subagentPhase,
     timing,
     meta,
     output,
@@ -2122,7 +2127,7 @@ const goal = computed<AppGoal | null>(() => {
 
 // Research Mode graduated from its experimental flag and is available on v2.
 const researchEnabled = computed<boolean>(() => rawState.backend === 'v2');
-const research = computed<ResearchStatusSnapshot | null>(() => {
+const research = computed<ResearchModeSnapshot | null>(() => {
   if (!researchEnabled.value) return null;
   const sid = rawState.activeSessionId;
   if (!sid) return null;
@@ -3065,6 +3070,7 @@ export function useKimiWebClient() {
     listDir: workspaceState.listDir,
     readFileContent: workspaceState.readFileContent,
     getFileDownloadUrl: workspaceState.getFileDownloadUrl,
+    downloadWorkspaceFile: workspaceState.downloadWorkspaceFile,
     openWorkspaceFile: workspaceState.openWorkspaceFile,
     openInApp: workspaceState.openInApp,
     revealWorkspaceFile: workspaceState.revealWorkspaceFile,

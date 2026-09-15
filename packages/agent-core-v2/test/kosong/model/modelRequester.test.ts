@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { isError2 } from '#/_base/errors/errors';
-import { APIStatusError, createAbortError } from '#/kosong/contract/errors';
+import { APIEmptyResponseError, APIStatusError, createAbortError } from '#/kosong/contract/errors';
 import type { Message, StreamedMessagePart } from '#/kosong/contract/message';
 import type {
   ChatProvider,
@@ -285,6 +285,25 @@ describe('ModelRequesterImpl request execution', () => {
     provider.handler = () => Promise.reject(abort);
     const aborted = await collect(requester.request(INPUT)).catch((error: unknown) => error);
     expect(aborted).toBe(abort);
+  });
+
+  it('delivers observed usage before rethrowing an empty-response error', async () => {
+    const provider = new FakeChatProvider();
+    provider.handler = () =>
+      Promise.resolve(streamOf([], { usage: { ...emptyUsage(), output: 9 } }));
+    const requester = new ModelRequesterImpl(modelWith(staticAuth()), registryReturning(provider));
+
+    const events: ModelRequestEvent[] = [];
+    let failure: unknown;
+    try {
+      for await (const event of requester.request(INPUT)) events.push(event);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(APIEmptyResponseError);
+    expect(events.map((e) => e.type)).toEqual(['usage']);
+    expect(events[0]).toMatchObject({ usage: { output: 9 }, model: 'fake-model' });
   });
 
   it('uploadVideo presence is the capability declaration', async () => {

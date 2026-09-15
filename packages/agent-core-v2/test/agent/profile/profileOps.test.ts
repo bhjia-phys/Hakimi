@@ -1,4 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+/**
+ * `profile` tests — wire-backed profile configuration and request intent.
+ *
+ * The DeepSeek cases resolve the real Profile service through DI, then pass
+ * its public request params to the real requester/base with only fetch mocked.
+ * Model lookup is a fixture here; catalog refresh is covered in catalog.test.ts.
+ * Run: pnpm --filter @moonshot-ai/agent-core-v2 test test/agent/profile/profileOps.test.ts
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ModelRequesterImpl } from '#/kosong/model/modelRequesterImpl';
+import { ProtocolAdapterRegistry } from '#/kosong/provider/protocolAdapterRegistry';
+import '#/kosong/provider/bases/openai/index';
+import '#/kosong/provider/providers/deepseek/deepseek.contrib';
 
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { DisposableStore } from '#/_base/di/lifecycle';
@@ -183,7 +197,7 @@ let svc: IAgentProfileService;
 let configValues: Record<string, unknown>;
 let modelCatalog: IModelCatalog;
 
-function buildHost(key: string): {
+function buildHost(key: string, protocolRegistry = createProtocolRegistryStub()): {
   ix: TestInstantiationService;
   wire: IWireService;
   svc: IAgentProfileService;
@@ -200,7 +214,7 @@ function buildHost(key: string): {
   );
   host.stub(IConfigService, createConfigStub());
   host.stub(IModelCatalog, modelCatalog);
-  host.stub(IProtocolAdapterRegistry, createProtocolRegistryStub());
+  host.stub(IProtocolAdapterRegistry, protocolRegistry);
   host.stub(IHostEnvironment, stubUnused());
   host.stub(IHostFileSystem, stubUnused());
   host.stub(IBootstrapService, stubUnused());
@@ -544,6 +558,53 @@ describe('AgentProfileService (wire-backed config.update)', () => {
       thinkingEffort: 'high',
       thinkingKeep: 'all',
     });
+  });
+
+  it.each([
+    ['on', 'low', 'enabled'],
+    ['off', 'off', 'disabled'],
+  ])('resolves DeepSeek profile thinking %s before encoding the request', async (requested, effective, type) => {
+    const model: Model = {
+      ...createTestModel({ id: 'flash', providerType: 'deepseek' }),
+      name: 'deepseek-flash', providerName: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      supportEfforts: ['low', 'high', 'max'], defaultEffort: 'low',
+      authProvider: { getAuth: async () => ({ apiKey: 'profile-test-key' }) },
+    };
+    modelCatalog = createModelCatalogStub({ flash: model });
+    const registry = new ProtocolAdapterRegistry();
+    const host = buildHost(`profile-deepseek-${requested}`, registry);
+    host.svc.update({ modelAlias: 'flash', thinkingLevel: 'high' });
+    host.svc.setThinking(requested);
+    const params = host.svc.resolveRequestParams();
+    expect(host.svc.getEffectiveThinkingLevel()).toBe(effective);
+    expect(params.thinkingEffort).toBe(effective);
+
+    let body: unknown;
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      body = await new Request(input, init).json();
+      return new Response(
+        'data: {"id":"profile-test","choices":[{"index":0,"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\n' +
+          'data: [DONE]\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    });
+    try {
+      const requester = new ModelRequesterImpl(model, registry);
+      for await (const event of requester.request({
+        systemPrompt: '', tools: [],
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello.' }], toolCalls: [] }],
+      }, undefined, params)) void event;
+      expect(body).toMatchObject({ model: 'deepseek-flash', thinking: { type } });
+      if (requested === 'on') {
+        expect(body).toMatchObject({ reasoning_effort: 'low' });
+      } else {
+        expect(body).not.toHaveProperty('reasoning_effort');
+      }
+      expect(body).not.toHaveProperty('thinking.keep');
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   it('uses the resolved Kimi effort instead of the configured default', () => {

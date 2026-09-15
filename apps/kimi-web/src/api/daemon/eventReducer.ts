@@ -24,7 +24,7 @@ import type {
   AppTask,
   AppTurnProgress,
   CompactionMarkerMetadata,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
   SubagentPresetMarkerMetadata,
 } from '../types';
 import { COMPACTION_MARKER_METADATA_KEY, SUBAGENT_PRESET_MARKER_METADATA_KEY } from '../types';
@@ -71,9 +71,9 @@ export interface KimiClientState {
    *  including delete/clear ones — so an async recovery read can detect that a
    *  live event won the race even when the goal entry stayed absent. */
   goalVersionBySession: Record<string, number>;
-  researchBySession: Record<string, ResearchStatusSnapshot>;
+  researchBySession: Record<string, ResearchModeSnapshot>;
   /** Monotonic live-event generation used to keep a cold GET from replacing a
-   *  newer `research.updated` snapshot. HTTP command responses do not bump it. */
+   *  newer `research_mode.updated` snapshot. HTTP command responses do not bump it. */
   researchVersionBySession: Record<string, number>;
   /** Shared GET/mutation generation. Only the latest Research request for a
    *  session may commit, regardless of which response arrives first. */

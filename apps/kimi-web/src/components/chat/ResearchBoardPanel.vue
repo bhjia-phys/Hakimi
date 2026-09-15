@@ -1,20 +1,15 @@
 <script setup lang="ts">
 import { nextTick, ref, useId, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ResearchGoalAlignmentRelation, ResearchStatusSnapshot } from '../../api/types';
+import type { ResearchModeSnapshot } from '../../api/types';
 import ResearchBoard from './ResearchBoard.vue';
 import Button from '../ui/Button.vue';
 import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
 
 const props = defineProps<{
-  snapshot: ResearchStatusSnapshot;
+  snapshot: ResearchModeSnapshot;
   forceExpanded?: number;
-}>();
-const emit = defineEmits<{
-  manage: [];
-  align: [relation: ResearchGoalAlignmentRelation];
-  clearAlignment: [];
 }>();
 const { t } = useI18n();
 const open = ref(false);
@@ -57,10 +52,6 @@ watch(() => props.forceExpanded, () => { void expand(); });
       :id="panelId"
       class="research-floating-board"
       :snapshot="snapshot"
-      :force-expanded="forceExpanded"
-      @manage="emit('manage')"
-      @align="emit('align', $event)"
-      @clear-alignment="emit('clearAlignment')"
     >
       <template #panel-actions>
         <IconButton ref="closeButton" size="lg" :label="t('research.hidePanel')" @click="collapse">
@@ -107,10 +98,5 @@ watch(() => props.forceExpanded, () => { void expand(); });
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-}
-
-.research-floating-board :deep(.research-expanded) {
-  max-height: none;
-  overflow: visible;
 }
 </style>

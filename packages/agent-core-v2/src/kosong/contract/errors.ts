@@ -457,6 +457,35 @@ export function isRecoverableRequestStructureError(error: unknown): boolean {
   return STRUCTURAL_REQUEST_MESSAGE_PATTERNS.some((pattern) => pattern.test(lowerMessage));
 }
 
+const ENCRYPTED_REASONING_CONTENT_PATTERN = /encrypted content/;
+
+const ENCRYPTED_REASONING_VERIFY_MESSAGE_PATTERNS = [
+  /could not be verified/,
+  /could not be decrypted/,
+  /could not be parsed/,
+] as const;
+
+export function isEncryptedReasoningVerificationError(error: unknown): boolean {
+  if (error instanceof APIStatusError) {
+    if (error instanceof APIContextOverflowError) return false;
+    if (error instanceof APIRequestTooLargeError) return false;
+    if (error.statusCode !== 400 && error.statusCode !== 422) return false;
+    const lowerMessage = error.message.toLowerCase();
+    return (
+      ENCRYPTED_REASONING_CONTENT_PATTERN.test(lowerMessage) &&
+      ENCRYPTED_REASONING_VERIFY_MESSAGE_PATTERNS.some((pattern) => pattern.test(lowerMessage))
+    );
+  }
+  if (error instanceof ChatProviderError) {
+    const lowerMessage = error.message.toLowerCase();
+    return (
+      ENCRYPTED_REASONING_CONTENT_PATTERN.test(lowerMessage) &&
+      ENCRYPTED_REASONING_VERIFY_MESSAGE_PATTERNS.some((pattern) => pattern.test(lowerMessage))
+    );
+  }
+  return false;
+}
+
 export function isProviderRateLimitError(error: unknown): boolean {
   if (error instanceof APIProviderQuotaExhaustedError) return false;
   if (error instanceof APIProviderRateLimitError) return true;

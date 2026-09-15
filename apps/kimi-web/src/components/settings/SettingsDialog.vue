@@ -10,6 +10,7 @@ import { useDialogFocus } from '../../composables/useDialogFocus';
 import LanguageSwitcher from './LanguageSwitcher.vue';
 import { serverEndpointLabel } from '../../api/config';
 import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
+import { defaultThinkingEffortState, effortLabel } from '../../lib/modelThinking';
 import {
   autoSubagentPresetEnabled,
   autoSubagentPresetFlagOverridden,
@@ -484,7 +485,37 @@ function thinkingEnabled(): boolean {
 }
 
 function toggleDefaultThinking(): void {
+  if (props.configSaving) return;
   emit('updateConfig', { thinking: { enabled: !thinkingEnabled() } } as Partial<AppConfig>);
+}
+
+const defaultThinkingModel = computed(() =>
+  props.models?.find((model) => model.id === props.config?.defaultModel),
+);
+const defaultThinkingEffort = computed(() =>
+  defaultThinkingEffortState(defaultThinkingModel.value, props.config?.thinking?.effort),
+);
+const defaultThinkingEffortHint = computed(() => {
+  if (!defaultThinkingModel.value) return t('settings.defaultThinkingEffortModelUnavailable');
+  if (defaultThinkingEffort.value.efforts.length === 0) {
+    return t('settings.defaultThinkingEffortUnavailable');
+  }
+  if (defaultThinkingEffort.value.unsupported) {
+    return t('settings.defaultThinkingEffortUnsupportedHint');
+  }
+  return t('settings.defaultThinkingEffortHint');
+});
+
+function setDefaultThinkingEffort(effort: string): void {
+  if (
+    props.configSaving ||
+    !props.config ||
+    !defaultThinkingEffort.value.efforts.includes(effort) ||
+    effort === props.config.thinking?.effort
+  ) return;
+  // Unlike composer picks, an explicit default persists even the highest tier.
+  // Patch effort alone so disabled thinking and other config fields stay intact.
+  emit('updateConfig', { thinking: { effort } });
 }
 
 // Telemetry is opt-out: undefined and `true` both mean enabled, only explicit
@@ -1069,6 +1100,35 @@ function archiveTime(iso: string): string {
                   :label="t('settings.defaultThinking')"
                   @update:model-value="toggleDefaultThinking()"
                 />
+              </div>
+
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.defaultThinkingEffort') }}
+                  <span id="default-thinking-effort-hint" class="hint">{{ defaultThinkingEffortHint }}</span>
+                </span>
+                <div class="select-wrap">
+                  <Select
+                    :model-value="config.thinking?.effort ?? ''"
+                    :disabled="configSaving || defaultThinkingEffort.efforts.length === 0"
+                    :aria-label="t('settings.defaultThinkingEffort')"
+                    aria-describedby="default-thinking-effort-hint"
+                    @update:model-value="setDefaultThinkingEffort"
+                  >
+                    <!-- Separate inheritance from an explicit pick, even for single-effort models. -->
+                    <option v-if="config.thinking?.effort === undefined" value="" disabled selected>
+                      {{ defaultThinkingEffort.value === undefined
+                        ? t('settings.defaultThinkingEffortNotAvailable')
+                        : t('settings.defaultThinkingEffortModelDefault', { effort: effortLabel(defaultThinkingEffort.value) }) }}
+                    </option>
+                    <option v-if="defaultThinkingEffort.unsupported" :value="defaultThinkingEffort.value" disabled>
+                      {{ t('settings.defaultThinkingEffortUnsupported', { effort: effortLabel(defaultThinkingEffort.value ?? '') }) }}
+                    </option>
+                    <option v-for="effort in defaultThinkingEffort.efforts" :key="effort" :value="effort">
+                      {{ effortLabel(effort) }}
+                    </option>
+                  </Select>
+                </div>
               </div>
 
               <div class="row">

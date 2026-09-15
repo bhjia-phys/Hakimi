@@ -325,6 +325,14 @@ describe('OAuthService', () => {
     expect(models['openai-codex/gpt-5.6-luna']).toMatchObject({
       supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     });
+    expect(models['openai-codex/gpt-6-astra']).toMatchObject({
+      provider: OPENAI_OAUTH_PROVIDER,
+      model: 'gpt-6-astra',
+      maxContextSize: 1_050_000,
+      maxInputSize: 922_000,
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+      defaultEffort: 'low',
+    });
     expect(
       Object.keys(models)
         .filter((id) => id.startsWith('openai-codex/'))
@@ -333,6 +341,7 @@ describe('OAuthService', () => {
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
+      'gpt-6-astra',
     ]);
     expect(defaultModel).toBe('openai-codex/gpt-5.6-sol');
   });

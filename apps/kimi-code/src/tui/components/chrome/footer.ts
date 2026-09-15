@@ -151,25 +151,14 @@ function formatBadgeElapsed(ms: number): string {
 }
 
 /**
- * Footer research badge. Driven by `researchModePhase` (the accurate AITP
- * phase), not the legacy boolean:
- * - `probing` / `ready` + loop active → `[Research]` (primary)
- * - loop `paused` → `[Research paused]` (textMuted)
- * - `degraded` → `[Research degraded]` (warning)
- * - `inactive` / undefined → no badge
+ * Footer research badge. Research Mode is a plain memory-mode toggle now:
+ * `researchMode === true` → `[Research]` (primary); otherwise no badge.
  */
 function formatResearchBadge(
   state: AppState,
   colors: ColorPalette,
 ): string | null {
-  const phase = state.researchModePhase;
-  if (phase === undefined || phase === 'inactive') return null;
-  if (phase === 'degraded') {
-    return chalk.hex(colors.warning)('[Research degraded]');
-  }
-  if (state.researchLoopStatus === 'paused') {
-    return chalk.hex(colors.textMuted)('[Research paused]');
-  }
+  if (state.researchMode !== true) return null;
   return chalk.hex(colors.primary)('[Research]');
 }
 

@@ -10,7 +10,8 @@ The `type` field in the `providers` table determines which protocol implementati
 | --- | --- | --- |
 | `kimi` | OpenAI-compatible | Kimi Code managed service, Kimi Platform API key |
 | `anthropic` | Anthropic Messages | Claude model family |
-| `openai` | OpenAI Chat Completions | OpenAI and compatible services, DeepSeek, Qwen, etc. |
+| `openai` | OpenAI Chat Completions | OpenAI and generic compatible services, Qwen, etc. |
+| `deepseek` | OpenAI Chat Completions | DeepSeek V4.1 Flash with native thinking controls and image support |
 | `openai_responses` | OpenAI Responses API | OpenAI's newer Responses interface |
 | `google-genai` | Google GenAI | Gemini API |
 | `vertexai` | Google GenAI on Vertex | Google Cloud Vertex AI |
@@ -95,39 +96,46 @@ api_key = "sk-xxxxx"
 
 ### DeepSeek
 
-DeepSeek uses the same `openai` provider path. Add the provider with a `source.kind = "deepseek"` marker so Hakimi can refresh its official model list from the provider's `/models` endpoint. The `/model` picker and the startup refresh both use that list, so newly published models can appear without rewriting `config.toml` by hand.
+Use `type = "deepseek"` for DeepSeek V4.1 Flash. It uses OpenAI Chat Completions with DeepSeek-specific thinking controls and model capabilities. The official model ID is `deepseek-flash`; the compatible names `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are also recognized as supporting images, thinking, and tool calls. Unknown model names are not automatically assumed to support images.
 
 ```toml
 [providers.deepseek]
-type = "openai"
-base_url = "https://api.deepseek.com"
+type = "deepseek"
+base_url = "https://api.deepseek.com/v1"
 api_key = "YOUR_API_KEY"
 source = { kind = "deepseek" }
 
-[models."deepseek/deepseek-v4-pro"]
+[models."deepseek/deepseek-flash"]
 provider = "deepseek"
-model = "deepseek-v4-pro"
+model = "deepseek-flash"
 max_context_size = 1000000
-max_output_size = 384000
-capabilities = ["thinking", "tool_use"]
-display_name = "DeepSeek V4 Pro"
+overrides = { max_output_size = 65536 }
+capabilities = ["image_in", "thinking", "tool_use"]
+display_name = "DeepSeek V4.1 Flash"
+support_efforts = ["low", "high", "max"]
+default_effort = "low"
 ```
 
-`deepseek-v4-flash-vision-exp` is recognized as a vision model. It is added automatically when the official `/models` response includes it, or can be configured directly:
+The `source.kind = "deepseek"` marker retains model-list refresh from the provider's `/models` endpoint. It does not select the request adapter: the `type` field does that. Existing `type = "openai"` providers keep their generic behavior; naming a provider `deepseek` does not activate the dedicated adapter. After updating Hakimi, change that provider's `type` to `deepseek` to opt in, preserving its API key, model aliases, and other settings. An explicit model `protocol` must be `openai` for this adapter.
+
+The example fixes the output budget at 65,536 tokens, including thinking, through `overrides.max_output_size`. This keeps the chosen budget when model-list refresh updates upstream metadata; setting only the top-level `max_output_size` on a generated alias would allow refresh to replace it. This budget is not the model's maximum.
+
+`low`, `high`, and `max` are sent unchanged as `reasoning_effort` with thinking enabled. Selecting `off` explicitly disables thinking. In a Hakimi session, `on` resolves to the model's default effort (`low` in this example); it does not force the API's default `high`. Use `thinking`, not `always_thinking`, in model capabilities if you want to turn thinking off. Existing global or session thinking preferences still take precedence over the model's `default_effort`.
+
+Hakimi sends images using DeepSeek's OpenAI-compatible `image_url` content blocks. Paste an image or use the media tools after selecting Flash. Base64 and public-URL images work through the adapter; Files API uploads are not required for the basic flow. DeepSeek's image limits still apply, including the 48 MiB request-body limit and 32 MiB limit for an inline or public-URL image.
+
+DeepSeek reasoning responses use `reasoning_content`, which is retained when assistant history is sent back with tool calls. If a gateway changes the reasoning field name, set `reasoning_key` on the model alias. The dedicated adapter covers Chat Completions; it does not enable DeepSeek-specific behavior on the Responses or Anthropic protocols.
+
+Experimental usage accounting is available for the official DeepSeek endpoint. Enable it in `config.toml`, then restart the Hakimi server:
 
 ```toml
-[models."deepseek/deepseek-v4-flash-vision-exp"]
-provider = "deepseek"
-model = "deepseek-v4-flash-vision-exp"
-max_context_size = 1000000
-max_output_size = 384000
-capabilities = ["image_in", "thinking", "tool_use"]
-display_name = "DeepSeek V4 Flash Vision Exp"
+[experimental]
+deepseek_usage = true
 ```
 
-Hakimi sends images using DeepSeek's OpenAI-compatible `image_url` content blocks. Paste an image or use the media tools after selecting the vision model. The provider's base64 and public-URL image forms work through the existing OpenAI adapter; Files API uploads are not required for the basic flow. DeepSeek's image limits still apply, including the 48 MiB request-body limit and 32 MiB limit for an inline or public-URL image.
+Open **Provider usage** in Hakimi Web to see today's and this month's recorded tokens and estimated CNY cost, alongside the balance returned by DeepSeek. The calendar uses Beijing time (`Asia/Shanghai`). Input includes cached and uncached tokens; output already includes reasoning tokens, so they are not charged twice. The estimate uses the request's model and peak/off-peak period with a bundled snapshot of the [official pricing page](https://api-docs.deepseek.com/quick_start/pricing), not a live billing feed. Provider price changes can make estimates differ from the final official bill.
 
-DeepSeek reasoning responses use `reasoning_content`, and thinking effort is forwarded through the OpenAI-compatible provider. If a gateway changes the reasoning field name, set `reasoning_key` on the model alias.
+These are **local Hakimi records, not an official account bill**. Recording starts after the feature is enabled and covers requests through this Hakimi data directory, including subagents and context compaction. Turning it off stops token/cost recording; for previously tracked providers, only daily gap markers are retained so a restart cannot disguise missing usage as a complete period. It does not backfill old sessions or include API calls made by other programs. The panel shows the tracking start and marks partial periods, pending requests, missing usage, and unavailable prices; unknown amounts are not reported as zero. Records survive normal restarts, but a crash or storage failure can leave incomplete statistics. Accounting failures do not retry or block model requests. Official balance lookup can fail independently without hiding the local figures.
 
 ## `openai_responses`
 
@@ -198,7 +206,7 @@ Hakimi can also use a ChatGPT subscription through the OpenAI Codex OAuth provid
 hakimi login --provider openai-codex
 ```
 
-The command opens the device authorization page and provisions `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, and `openai-codex/gpt-5.6-luna` as the available Codex model aliases. On a headless machine or WSL environment where browser launching is unavailable, add `--no-open`; Hakimi prints the URL and user code without trying to open a browser.
+The command opens the device authorization page and provisions `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, `openai-codex/gpt-5.6-luna`, and `openai-codex/gpt-6-astra` as the available Codex model aliases. On a headless machine or WSL environment where browser launching is unavailable, add `--no-open`; Hakimi prints the URL and user code without trying to open a browser.
 
 ```sh
 hakimi login --provider openai-codex --no-open

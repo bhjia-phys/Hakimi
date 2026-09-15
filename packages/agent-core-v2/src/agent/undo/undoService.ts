@@ -118,7 +118,7 @@ export class AgentConversationUndoService
       this.telemetry.track2('conversation_undo', { count: turns });
       this.eventBus.publish({ type: 'context.undone', turns });
       // Synchronous undo-boundary subscribers may append non-checkpointed
-      // world fences (for example the public Research revision). Give any
+      // world fences. Give any
       // deliberately deferred boundary work one microtask, then make those
       // appends durable before the caller can issue a command with a stale
       // pre-undo token.

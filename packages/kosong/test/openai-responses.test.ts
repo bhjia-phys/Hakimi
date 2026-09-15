@@ -232,6 +232,33 @@ describe('OpenAIResponsesChatProvider', () => {
       ]);
     });
 
+    it('gpt-6-astra (and date suffixes) maps history system message to developer', async () => {
+      for (const model of ['gpt-6-astra', 'gpt-6-astra-2026-08-01']) {
+        const provider = new OpenAIResponsesChatProvider({
+          model,
+          apiKey: 'test-key',
+        });
+        const history: Message[] = [
+          { role: 'system', content: [{ type: 'text', text: 'Remember this.' }], toolCalls: [] },
+          { role: 'user', content: [{ type: 'text', text: 'hi' }], toolCalls: [] },
+        ];
+        const body = await captureRequestBody(provider, '', [], history);
+
+        expect(body['input']).toEqual([
+          {
+            content: [{ type: 'input_text', text: 'Remember this.' }],
+            role: 'developer',
+            type: 'message',
+          },
+          {
+            content: [{ type: 'input_text', text: 'hi' }],
+            role: 'user',
+            type: 'message',
+          },
+        ]);
+      }
+    });
+
     it('non-OpenAI model name keeps history system role unchanged', async () => {
       const provider = new OpenAIResponsesChatProvider({
         model: 'some-other-model',

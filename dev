@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+/**
+ * One-command source Web dev entry.
+ *
+ * `./dev` (or `pnpm dev`) starts this repository's source server plus the Vite
+ * dev server for apps/kimi-web against it, and opens the Web UI. The work
+ * happens in apps/kimi-code/scripts/dev-web/index.ts, which runs under the
+ * repo's own tsx so no build step is needed.
+ *
+ * This wrapper deliberately calls `node` directly (resolving the workspace's
+ * tsx from the repo root) instead of going through pnpm, so it behaves the same
+ * from any working directory — root `./dev` or `./Hakimi/dev` from the repo's
+ * parent — without Corepack picking a different pnpm version.
+ *
+ * The child is launched with tsx as an *in-process* loader (see
+ * apps/kimi-code/scripts/dev-web/launch-args.mjs) rather than the `tsx` CLI:
+ * the CLI would sit as an extra middle process whose signal relay SIGKILLs the
+ * real process ~100ms after Ctrl+C, cutting short the session's own graceful
+ * shutdown grace.
+ */
+
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { tsxChildEnv, tsxNodeArgs } from './apps/kimi-code/scripts/dev-web/launch-args.mjs';
+
+const REPO_ROOT = dirname(fileURLToPath(import.meta.url));
+const APP_ROOT = join(REPO_ROOT, 'apps', 'kimi-code');
+const require = createRequire(import.meta.url);
+
+function fail(message) {
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
+}
+
+if (!nodeSatisfies(process.versions.node, nodeFloor(REPO_ROOT))) {
+  fail(
+    `Hakimi dev needs Node ${nodeFloor(REPO_ROOT)} or newer, but this is Node ${process.versions.node}.\n` +
+      'Switch to a supported Node version (see .nvmrc) and retry.',
+  );
+}
+
+// Dependencies are intentionally never installed for you: a missing workspace
+// dependency is reported with the command that fixes it.
+try {
+  require.resolve('tsx', { paths: [REPO_ROOT] });
+} catch {
+  fail(
+    `Workspace dependencies are missing (cannot resolve tsx from ${REPO_ROOT}).\n` +
+      'Run `pnpm install` at the repository root and retry.',
+  );
+}
+try {
+  createRequire(join(REPO_ROOT, 'apps', 'kimi-web', 'package.json')).resolve('vite/package.json');
+} catch {
+  fail(
+    `Web dev dependencies are missing (cannot resolve vite from ${join(REPO_ROOT, 'apps', 'kimi-web')}).\n` +
+      'Run `pnpm install` at the repository root and retry.',
+  );
+}
+
+const child = spawn(
+  process.execPath,
+  tsxNodeArgs(join(APP_ROOT, 'scripts', 'dev-web', 'index.ts'), process.argv.slice(2)),
+  { cwd: REPO_ROOT, env: tsxChildEnv(process.env), stdio: 'inherit' },
+);
+
+child.on('error', (error) => {
+  fail(`Failed to start the Hakimi source dev session: ${error.message}`);
+});
+child.on('exit', (code, signal) => {
+  process.exit(signal !== null ? 1 : code ?? 0);
+});
+
+// Stay alive until the child has cleaned up: both processes are in the same
+// process group, so Ctrl+C reaches the session either way; forwarding keeps
+// this wrapper from exiting first and orphaning its own shutdown.
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill(signal);
+    }
+  });
+}
+
+/** Node floor from the repo's own `engines.node`, so the message cannot drift. */
+function nodeFloor(root) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    const match = /(\d+)\.(\d+)\.(\d+)/.exec(pkg.engines?.node ?? '');
+    if (match !== null) return `${match[1]}.${match[2]}.${match[3]}`;
+  } catch {
+    // Fall through to the same floor the workspace declares.
+  }
+  return '24.15.0';
+}
+
+function nodeSatisfies(actual, floor) {
+  const a = actual.split('.').map((part) => Number.parseInt(part, 10));
+  const b = floor.split('.').map((part) => Number.parseInt(part, 10));
+  for (let index = 0; index < 3; index += 1) {
+    const delta = (a[index] ?? 0) - (b[index] ?? 0);
+    if (delta !== 0) return delta > 0;
+  }
+  return true;
+}

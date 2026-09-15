@@ -1201,12 +1201,13 @@ describe('research facade routing', () => {
   it('routes getSnapshot to agentResearchService.getSnapshot', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);
-    channel.results.set('agentResearchService.getSnapshot', snapshot);
+    const memorySnapshot = { enabled: false, skillsAvailable: false };
+    channel.results.set('agentResearchService.getSnapshot', memorySnapshot);
 
     const agent = klient.session('s1').agent('main');
     const result = await agent.research.getSnapshot();
 
-    expect(result).toEqual(snapshot);
+    expect(result).toEqual(memorySnapshot);
     expect(channel.calls[0]).toMatchObject({
       service: 'agentResearchService',
       method: 'getSnapshot',

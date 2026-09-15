@@ -16,12 +16,14 @@ import {
   APIProviderOverloadedError,
   APIProviderQuotaExhaustedError,
   APIProviderRateLimitError,
+  APIRequestTooLargeError,
   APIStatusError,
   APITimeoutError,
   ChatProviderError,
   classifyApiError,
   createAbortError,
   isAbortError,
+  isEncryptedReasoningVerificationError,
   isRetryableGenerateError,
   normalizeAPIStatusError,
   throwIfAbortError,
@@ -128,6 +130,79 @@ describe('isRetryableGenerateError', () => {
   it('does not retry deterministic client failures', () => {
     expect(isRetryableGenerateError(new APIStatusError(400, 'Bad request'))).toBe(false);
     expect(isRetryableGenerateError(new APIStatusError(401, 'Unauthorized'))).toBe(false);
+  });
+});
+
+describe('isEncryptedReasoningVerificationError', () => {
+  it('matches 400/422 status errors about unverifiable encrypted content', () => {
+    expect(
+      isEncryptedReasoningVerificationError(
+        new APIStatusError(
+          400,
+          'The encrypted content could not be verified for a reasoning item in the conversation.',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isEncryptedReasoningVerificationError(
+        new APIStatusError(422, 'encrypted content could not be decrypted or parsed'),
+      ),
+    ).toBe(true);
+    expect(
+      isEncryptedReasoningVerificationError(
+        new APIStatusError(400, 'encrypted content could not be parsed'),
+      ),
+    ).toBe(true);
+  });
+
+  it('matches a statusless ChatProviderError with the same phrases', () => {
+    expect(
+      isEncryptedReasoningVerificationError(
+        new ChatProviderError('reasoning encrypted content could not be verified'),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects plain 400s, other status codes, and unrelated errors', () => {
+    expect(isEncryptedReasoningVerificationError(new APIStatusError(400, 'Bad request'))).toBe(
+      false,
+    );
+    expect(isEncryptedReasoningVerificationError(new APIStatusError(422, 'unprocessable'))).toBe(
+      false,
+    );
+    expect(isEncryptedReasoningVerificationError(new APIStatusError(401, 'unauthorized'))).toBe(
+      false,
+    );
+    expect(
+      isEncryptedReasoningVerificationError(
+        new APIStatusError(429, 'encrypted content could not be verified'),
+      ),
+    ).toBe(false);
+    expect(
+      isEncryptedReasoningVerificationError(
+        new APIStatusError(400, 'encrypted content is required'),
+      ),
+    ).toBe(false);
+    expect(isEncryptedReasoningVerificationError(new ChatProviderError('boom'))).toBe(false);
+    expect(
+      isEncryptedReasoningVerificationError(
+        new Error('encrypted content could not be verified'),
+      ),
+    ).toBe(false);
+    expect(isEncryptedReasoningVerificationError(undefined)).toBe(false);
+  });
+
+  it('rejects context overflow and request-too-large errors', () => {
+    expect(
+      isEncryptedReasoningVerificationError(
+        new APIContextOverflowError(400, 'context length exceeded'),
+      ),
+    ).toBe(false);
+    expect(
+      isEncryptedReasoningVerificationError(
+        new APIRequestTooLargeError(413, 'Request Entity Too Large'),
+      ),
+    ).toBe(false);
   });
 });
 

@@ -1,5 +1,54 @@
 # AITP 状态跟踪与交接清单
 
+## 2026-09-13 仓库边界 followup：一研究线一 Git 仓库 {#research-repo-boundary-20260913}
+
+**本地派生补丁，非上游 release；本节为后续补记。下面 memory-lite 0.10 的交付数据仍是此前时点的记录，历史原文不改。**
+
+宿主侧不变：ResearchMode 仍只提供 `enabled` + 官方 Skill 可见性，知识走普通文件、长期记忆走官方 AITP Skills 与 CLI；宿主代码与 SDK 未改，无需重建（上次构建仍有效）。
+
+AITP 侧装的是本地派生版 **`0.10.0+repo.1`**（base 仍为 commit `3bebd4cc0fe786ea30420ab45692d8968cc0990b`，`aitp/adapter-contract-0.3` 不变），不是上游 release。唯一行为变化在 AITP 自身的 `resolve_root`：现在在最近的 Git 根停下（`.git` 文件，或含 `HEAD` 的 `.git` 目录），不再跨 Git 边界向上找父 store。因此没有 local store 的 Git 仓库 `enter`/`check` 报 `not_initialized`，不借用上层 memory；显式 `init --adopt` 能在仓库根创建 store；已有 store 与仓库内子目录照常。无 Git（或空/损坏 `.git` 目录）仍保留原祖先继承。无新 CLI flags、registry、host hook 或数据库，也不宣称 OS 沙箱。仅升级当前 Hakimi managed 插件，未给其他 Codex home 安装。
+
+知识层建议一研究线一 Git 仓库，各仓库可沿用自己的目录名，不强制 `knowledge/` 布局。派生版的本地验证记录为 229 项测试通过，包含 Git 根边界与版本格式场景；这不是已发布上游基线的测试承诺。
+
+复核边界补丁时，应分别检查有本地 store、无本地 store、仓库内子目录，以及无有效 Git 元数据的目录；比较 `enter` / `check` 实际解析的根与作用域，并确认既有记录字节不变。没有可用的派生补丁时，按官方基线可能继承祖先 store 的行为处理，不能仅凭 Git 仓库边界认定隔离。
+
+剩余边界：完整 server+browser 端到端仍无实测；未执行 version/tag/publish；该边界修复属本地派生版，不是上游 release 承诺。
+
+## 2026-09-13 Research memory lite：已本地实现并安装（core 全套已收口） {#research-memory-lite-20260913}
+
+**本地实现、安装与全套测试收口完成；未声称正式发布。** 本次架构是「本地知识层＋研究长期记忆」，不是面板精简。以下说明记录当前后端与本地交付边界；本节之后的原文完整保留为历史证据，其中 H0–H6b、S1–S10、O1–O4 的 host adapter、Research Loop 和 veto 描述不再代表当前架构，也不构成第二套 legacy 执行模式。
+
+上游固定为 [AITP `main` 源码 commit `3bebd4cc0fe786ea30420ab45692d8968cc0990b`](https://github.com/bhjia-phys/AITP-Research-Protocol/tree/3bebd4cc0fe786ea30420ab45692d8968cc0990b)，0.10.0 / `aitp/adapter-contract-0.3`，Entry 与 Note 都采用官方原子 scoped save，源码归档 SHA256 为 `319bd18f7002d4d1f7fc97eb25bd5bddef8dd7b5fdf9491b491c7677035d750d`。取得的是源码归档，**未做 Git checkout**；后台 Git 询问已取消，没有 Git 写操作。这不是 release tag。
+
+后端契约为 `ResearchModeSnapshot = { enabled: boolean, skillsAvailable: boolean }`；SDK 保留 `Session.getResearch` / `commandResearch`，事件为 `research_mode.updated`。`skillsAvailable` 只报告 catalog 当前可见官方 Skill 是否存在，不表示 CLI 版本或健康，关闭模式时也可为 `true`；`enabled` 不随 conversation undo 回退。旧 mutation 返回 `research.retired`；旧记录不丢，但只通过原始会话日志或会话 export 只读读取，不再有结构化 Research history API 或 Manager。
+
+生产依赖图已确认不挂载 host ResearchService、Line/Question/Action、Research Plan、checkpoint/loop/maintenance/distillation、Research Goal veto、native adapter 或八个 `aitp_*` wrappers。`/research on`、`/research off`、`/research status` 只控制或读取轻量模式及官方 Skills 可见性；开关、状态读取、恢复和每轮边界均不自动 CLI 或写 ledger。只有新知识或值得记忆的进展才整理保存，普通追问无 delta 零写入。Goal、Plan、权限原有行为不变。
+
+该时点 SDK 声明文件、CLI 与 Web assets 的 canonical build 及字节复现已通过，CLI 版本仍为 0.21.0，未执行正式发布。源码构建不会替换已在运行的进程；使用本地构建的用户需要自行重启才能加载更新。
+
+### 验证记录与复核方法
+
+以下是 2026-09-13 的本地验证摘要，不替代待提交版本的 CI，也不是其他安装环境的保证。私人工作区、安装路径和临时验收文件不作为公共复核依赖。
+
+- 官方 0.10.0 源码在独立临时目录测试通过；测试目录应与已有 AITP store 隔离，避免祖先目录改变根解析结果。
+- PluginManager 安装后的 59 个 bundle 文件与固定上游源码逐字节一致；复核时应使用隔离的 `<HAKIMI_HOME>`，确认 catalog 可见性与 CLI 可用性分别成立。
+- 模式开关与跨进程恢复通过，未运行模型或改写知识与 ledger；只读记忆检索没有造成记录字节变化。一次只读任务不证明普遍模型适配能力或科学正确性。
+- 后端测试覆盖初始 catalog 快照发布、普通 plugin guidance 不被误刷新、snapshot 失败不阻断 wire 恢复，以及旧服务不进入生产依赖图。SDK、CLI、core 和 Web 对应测试与类型检查通过。
+- SDK 含声明文件的构建、CLI 构建及 521 个 Web assets 字节复现通过。浏览器验证使用组件 fixture，覆盖 light/dark/mobile，不等同于完整 server+browser 端到端验证。
+- `.changeset/research-knowledge-memory-lite.md` 记录 SDK major、CLI minor；新条目纳入 Git 跟踪后，应针对实际 PR 基线运行 changeset 校验，不能将忽略 untracked 条目的输出当作完整结果。
+
+复核代码可运行仓库 `pnpm run test`、`pnpm run typecheck`、`pnpm run build:web-assets -- --check` 和 `pnpm -C apps/kimi-web run test`。准备 `zip` 并隔离测试配置，记录未通过项与必要的重测；外部 AITP 验证须另行对照上述固定源码和实际部署构建。
+
+### 剩余边界
+
+- [ ] 完整 server+browser 端到端尚无实测；当前仅有 Playwright 组件 fixture。该边界不表示用户指南功能未交付。
+- [ ] 正式发布流程未执行：没有 version、tag、publish 或 Git 写操作；AITP Git checkout 状态仍未核验，源码归档不替代 checkout。
+- [ ] 已在运行的既有进程需自行重新启动才会加载新构建；未强行重启任何会话。
+
+详细边界见 [compatibility matrix 本次说明](compatibility-matrix.md#research-memory-lite-20260913)。以下历史记录原文保留，仅供追溯，不作为当前产品契约；H0–H6b/S1–S10/O1–O4 的旧控制层和未完成原生编排计划不继续执行。
+
+## 历史跟踪记录
+
 2026-09-05 Goal 预算恢复（已交付并 clean-build 安装）：恢复已耗尽的 paused/blocked
 Goal 时先报告未恢复，不短暂 active、不新建立即到期的 deadline；模型可以按
 原有预算收尾约束说明原因，不能自行加预算。用量、预算、已有 blocker 和异常

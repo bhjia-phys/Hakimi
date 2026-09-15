@@ -47,7 +47,6 @@ import type {
   ResearchPlan,
   ResearchPlanV2,
   ResearchPlanningPolicy,
-  ResearchStatusSnapshot,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
   ResearchEvidencePacket,
@@ -165,15 +164,15 @@ export interface AgentFacade {
    */
   compact(input?: { instruction?: string }): Promise<boolean>;
 
-  /** AITP Research Mode — snapshot read and steering command dispatch. */
+  /** Memory-mode snapshot; other historical Research methods reject as retired. */
   readonly research: ResearchFacade;
-  /** AITP Mode lifecycle — enter / exit / pause / resume. */
+  /** Research memory toggle and status; pause/resume are retired. */
   readonly aitpMode: AitpModeFacade;
   /** Main-agent goal lifecycle (`goal.updated` flows through `events`). */
   readonly goal: AgentGoalFacade;
 }
 
-export type ResearchSnapshot = ResearchStatusSnapshot;
+export type ResearchSnapshot = import('@moonshot-ai/agent-core-v2/features/aitpResearch/mode/agentAitpMode').ResearchModeSnapshot;
 export type { HumanSteeringCommand };
 
 export interface ConfirmLineWorkstreamBindingInput {
@@ -233,6 +232,7 @@ export interface ResearchFacade {
 }
 
 export interface AitpModeFacade {
+  getSnapshot(): Promise<ResearchSnapshot>;
   enter(options: AitpModeEntryOptions): Promise<void>;
   exit(): Promise<void>;
   pauseLoop(expectedRevision: number): Promise<void>;
@@ -438,6 +438,7 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
     },
 
     aitpMode: {
+      getSnapshot: () => call(scope, 'agentAitpModeService', 'getSnapshot', []) as Promise<ResearchSnapshot>,
       enter: (options) =>
         call(scope, 'agentAitpModeService', 'enter', [options]) as Promise<void>,
       exit: () => call(scope, 'agentAitpModeService', 'exit', []) as Promise<void>,

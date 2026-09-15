@@ -173,6 +173,46 @@ describe('active turn progress tool card', () => {
   });
 });
 
+describe('progress uses effective task state', () => {
+  const turns: ChatTurn[] = [{ id: 'turn', role: 'assistant', no: 1, text: '', tools: [
+    { id: 'call', name: 'Agent', arg: '{}', status: 'running' },
+  ] }];
+  const task: TaskItem = { id: 'agent', parentToolCallId: 'call', kind: 'subagent', name: 'Worker', state: 'run', timing: '' };
+
+  it.each(['suspended', 'queued', 'cancelled', 'failed', 'completed'] as const)('does not put running progress on a %s task', (phase) => {
+    expect(activeTurnProgressToolId(turns, true, [{ ...task, phase }])).toBeNull();
+  });
+
+  it.each(['cancelled', 'fail', 'done'] as const)('terminal state %s overrides stale working phase', (state) => {
+    expect(activeTurnProgressToolId(turns, true, [{ ...task, state, phase: 'working' }])).toBeNull();
+  });
+
+  it('routes progress to a live Agent even if its transcript status is unknown', () => {
+    const unknown: ChatTurn[] = [{ ...turns[0]!, tools: [{ ...turns[0]!.tools![0]!, status: 'unknown' }] }];
+    expect(activeTurnProgressToolId(unknown, true, [task])).toBe('call');
+  });
+
+  it.each(['ok', 'unknown', 'running'] as const)('never gives a detached Agent with transcript %s the main turn progress', (status) => {
+    const current: ChatTurn[] = [{ ...turns[0]!, tools: [{ ...turns[0]!.tools![0]!, status }] }];
+    const background = { ...task, phase: 'working' as const, runInBackground: true };
+    expect(activeTurnProgressToolId(current, true, [background])).toBeNull();
+    const withForeground: ChatTurn[] = [{ ...current[0]!, tools: [
+      { id: 'foreground', name: 'Read', arg: '{}', status: 'running' }, ...current[0]!.tools!,
+    ] }];
+    expect(activeTurnProgressToolId(withForeground, true, [background])).toBe('foreground');
+    expect(activeTurnProgressToolId(current, true, [{ ...background, runInBackground: false }])).toBe('call');
+  });
+
+  it('leaves generic progress outside a suspended/queued/terminal Swarm', () => {
+    const swarm: ChatTurn[] = [{ ...turns[0]!, tools: [{ ...turns[0]!.tools![0]!, name: 'AgentSwarm' }] }];
+    expect(activeTurnProgressToolId(swarm, true)).toBeNull();
+    for (const phase of ['suspended', 'queued', 'cancelled', 'failed', 'completed'] as const) {
+      expect(hasActiveForegroundAgentSwarm(swarm, true, [{ ...task, phase }])).toBe(false);
+    }
+    expect(hasActiveForegroundAgentSwarm(swarm, true, [{ ...task, phase: 'working' }])).toBe(true);
+  });
+});
+
 describe('useTurnProgress', () => {
   it('only schedules a timer for an active, visible source and disposes it with the scope', () => {
     vi.useFakeTimers();

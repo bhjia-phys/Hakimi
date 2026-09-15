@@ -4664,6 +4664,10 @@ function projectEventStream(events: readonly Event[], sessionId: string): unknow
         // 1:1 and is forwarded; full content parity is out of scope.
         case 'agent.status.updated':
           return [];
+        // Research Mode is v2-only; its initial snapshot is not part of the
+        // legacy event contract. Its payload is asserted separately below.
+        case 'research_mode.updated':
+          return [];
         case 'shell.output':
           return {
             type: event.type,
@@ -4742,6 +4746,12 @@ describe('v1↔v2 event & interaction parity', () => {
       );
       expect(v2Completed).toEqual([
         { type: 'shell.completed', commandId: 'cmd-ev', isError: false, hasTaskId: true },
+      ]);
+      expect(v2Events.filter((event) => event.type === 'research_mode.updated')).toEqual([
+        expect.objectContaining({
+          sessionId: input.sessionId,
+          snapshot: { enabled: false, skillsAvailable: false },
+        }),
       ]);
     } finally {
       await closeSessionPair(pair);

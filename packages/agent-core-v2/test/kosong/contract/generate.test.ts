@@ -189,22 +189,65 @@ describe('generate() stream normalization', () => {
     expect(sentTools.map((tool) => tool.name)).toEqual(['visible']);
   });
 
-  it('rejects an empty response with APIEmptyResponseError', async () => {
+  it('rejects an empty response with APIEmptyResponseError and reports usage via onUsage', async () => {
     const stream = new FakeStreamedMessage([]);
     const { provider } = createFakeProvider(stream);
+    const onUsage = vi.fn();
 
-    await expect(generate(provider, SYSTEM_PROMPT, NO_TOOLS, HISTORY)).rejects.toBeInstanceOf(
-      APIEmptyResponseError,
-    );
+    const error = (await generate(
+      provider,
+      SYSTEM_PROMPT,
+      NO_TOOLS,
+      HISTORY,
+      undefined,
+      { onUsage },
+    ).catch((e) => e)) as APIEmptyResponseError;
+
+    expect(error).toBeInstanceOf(APIEmptyResponseError);
+    expect(onUsage).toHaveBeenCalledWith(USAGE);
   });
 
-  it('rejects a thinking-only response with APIEmptyResponseError', async () => {
+  it('rejects a thinking-only response with APIEmptyResponseError and reports usage via onUsage', async () => {
     const stream = new FakeStreamedMessage([{ type: 'think', think: 'only thinking' }]);
     const { provider } = createFakeProvider(stream);
+    const onUsage = vi.fn();
 
-    await expect(generate(provider, SYSTEM_PROMPT, NO_TOOLS, HISTORY)).rejects.toBeInstanceOf(
-      APIEmptyResponseError,
+    const error = (await generate(
+      provider,
+      SYSTEM_PROMPT,
+      NO_TOOLS,
+      HISTORY,
+      undefined,
+      { onUsage },
+    ).catch((e) => e)) as APIEmptyResponseError;
+
+    expect(error).toBeInstanceOf(APIEmptyResponseError);
+    expect(onUsage).toHaveBeenCalledWith(USAGE);
+  });
+
+  it('reports the observed usage via onUsage before a mid-stream error terminates', async () => {
+    const onUsage = vi.fn();
+    const stream: StreamedMessage = {
+      id: 'gen-err',
+      usage: USAGE,
+      finishReason: 'completed',
+      rawFinishReason: 'stop',
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'text', text: 'partial' } as StreamedMessagePart;
+        throw new Error('socket hang up');
+      },
+    };
+    const provider: ChatProvider = {
+      name: 'fake',
+      modelName: 'fake-model',
+      thinkingEffort: null,
+      generate: async () => stream,
+    };
+
+    await generate(provider, SYSTEM_PROMPT, NO_TOOLS, HISTORY, undefined, { onUsage }).catch(
+      () => undefined,
     );
+    expect(onUsage).toHaveBeenCalledWith(USAGE);
   });
 
   it('forwards the trace id to onTraceId and the result', async () => {

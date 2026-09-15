@@ -33,7 +33,7 @@ cd /path/to/your/project
 hakimi
 ```
 
-Use `/login` in the TUI to authenticate with Kimi Code OAuth, a Kimi Platform API key, or a ChatGPT / OpenAI Codex OAuth account. Codex login provisions the `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, and `openai-codex/gpt-5.6-luna` model aliases; OAuth login is always explicit and never starts at launch. Common entry points include:
+Use `/login` in the TUI to authenticate with Kimi Code OAuth, a Kimi Platform API key, or a ChatGPT / OpenAI Codex OAuth account. Codex login provisions the `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, `openai-codex/gpt-5.6-luna`, and `openai-codex/gpt-6-astra` model aliases; OAuth login is always explicit and never starts at launch. Common entry points include:
 
 ```text
 /help              Show commands and keyboard shortcuts

@@ -153,16 +153,16 @@ describe('EditorKeyboardController double-Esc undo', () => {
   });
 });
 
-describe('EditorKeyboardController Ctrl-T research board priority', () => {
-  it('does not toggle the hidden TodoPanel while Research Board is visible', () => {
+describe('EditorKeyboardController Ctrl-T Todo expansion', () => {
+  it('toggles the TodoPanel alongside a visible Research Board', () => {
     const { editor, host } = createHarness();
     const isVisible = host.state.researchBoard.isVisible as ReturnType<typeof vi.fn>;
     isVisible.mockReturnValue(true);
     const toggle = host.toggleTodoPanelExpansion as ReturnType<typeof vi.fn>;
     const handler = editor['onToggleTodoExpand'] as unknown as () => boolean;
 
-    expect(handler()).toBe(false);
-    expect(toggle).not.toHaveBeenCalled();
+    expect(handler()).toBe(true);
+    expect(toggle).toHaveBeenCalledOnce();
   });
 
   it('keeps Ctrl-T Todo expansion in ordinary mode', () => {

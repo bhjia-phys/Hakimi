@@ -1,13 +1,13 @@
 /**
  * `aitpResearch` domain — `IAgentAitpModeService` contract.
  *
- * The Agent-scope (main-only) AITP mode state machine. Manages the mode
- * lifecycle (`inactive` → `probing` → `ready` / `degraded` → `inactive`),
- * explicit user entry vs model entry, adapter activation, and context
- * injection disclosure. Research Mode is a long-lived scientific context that
- * may be active alongside an active Plan overlay. The mode state is
- * checkpointed through wire so it follows conversation undo. Bound at Agent
- * scope.
+ * Agent-scope, main-only toggle for local knowledge and official AITP Skills.
+ * getSnapshot awaits catalog readiness and reports visibility, not CLI health.
+ * onDidChange signals only active/inactive transitions. Only enabled is persisted;
+ * general Goal, Plan, permissions, and conversation undo remain independent.
+ * Legacy phase/adapter/loop members are retained as retired source contracts
+ * for unmounted historical implementations; calling them throws. Entry with
+ * a legacy lineSlug also throws instead of creating or binding a Line.
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
@@ -26,9 +26,15 @@ export interface AitpModeEntryOptions {
   readonly lineSlug?: string;
 }
 
+export interface ResearchModeSnapshot {
+  readonly enabled: boolean;
+  readonly skillsAvailable: boolean;
+}
+
 export interface IAgentAitpModeService {
   readonly _serviceBrand: undefined;
   readonly onDidChange: Event<void>;
+  getSnapshot(): Promise<ResearchModeSnapshot>;
 
   readonly phase: AitpModePhase;
   readonly loopStatus: ResearchLoopStatus;

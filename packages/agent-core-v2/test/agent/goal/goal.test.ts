@@ -1,8 +1,8 @@
 /**
  * Scenario: goal lifecycle, durable wire records, continuation scheduling, and
- * the goal completion-guard / continuation-participant contribution seams,
- * including the AITP Research feature's real participant folded by
- * `AgentGoalService` through the Agent-scope collection.
+ * the goal completion-guard / continuation-participant contribution seams.
+ * Research memory mode must not contribute execution vetoes or replace the
+ * normal Goal continuation and Plan overlay behavior.
  * Responsibilities: verify public goal commands, replayable state, one-turn
  * admission, and guard/participant folding (deny, multiple guards, hold).
  * Wiring: real goal/wire services; loop is stubbed only for focused scheduling cases.
@@ -3613,785 +3613,92 @@ describe('AgentGoalService goal contribution seams', () => {
  * continuation while the Research loop is paused, the mode is degraded, or a
  * human gate is unresolved, abstaining otherwise (the Goal default wins).
  */
-describe('AITP Research goal contribution integration', () => {
-  function mutablePermissionMode(initialMode: PermissionMode): IAgentPermissionModeService {
-    let mode = initialMode;
-    const changed = new Emitter<{
-      readonly mode: PermissionMode;
-      readonly previousMode: PermissionMode;
-    }>();
-    const service: IAgentPermissionModeService = {
-      _serviceBrand: undefined,
-      get mode() {
-        return mode;
-      },
-      setMode: (nextMode) => {
-        const previousMode = mode;
-        if (nextMode === previousMode) return;
-        mode = nextMode;
-        changed.fire({ mode: nextMode, previousMode });
-      },
-      setModeAndBroadcast: (nextMode) => service.setMode(nextMode),
-      onDidChangeMode: changed.event,
-    };
-    return service;
-  }
+describe('Research memory mode leaves general Goal and Plan intact', () => {
+  let ctx: TestAgentContext;
+  afterEach(async () => { await ctx?.dispose(); });
 
-  function makeReadyAdapter(): ISessionAitpAdapter {
-    return {
-      _serviceBrand: undefined,
-      health: { phase: 'ready', contractVersion: '0.1', pluginVersion: '0.8.0' },
-      probe: async () => ({ phase: 'ready', contractVersion: '0.1', pluginVersion: '0.8.0' }),
-      enter: async () => ({
-        schema: 'aitp/enter-0.2', memory_status: 'available', root: '/w',
-        topic: { id: 't', title: 'T', goal: { text: 'g', source: 's' } },
-        recent_entries: [], unresolved_failures: [],
-        next_action: { status: 'not_established', source: null },
-        latest_working_note: null, recent_notes: [],
-        counts: { active: 0, superseded: 0, unresolved_failures: 0, malformed: 0, omitted_active: 0, active_newer_than_latest_working_note: null },
-        warnings: [],
-      }),
-      list: async () => ({ schema: 'aitp/list-0.1', root: '/w', count: 0, entries: [], warnings: [] }),
-      show: async () => ({ schema: 'aitp/show-0.1', root: '/w', id: 'e1', status: 'active', source: 's', legacy_derived: false, frontmatter: {}, body: '' }),
-      check: async () => ({ schema: 'aitp/check-report-0.1', root: '/w', status: 'clean', counts: { entries: 0, notes: 0, errors: 0, warnings: 0 }, findings: [] }),
-      recordPrepare: async () => ({ status: 'prepared', id: 'e', path: 'p', save_command: 'c' }),
-      recordSave: async () => ({ status: 'saved', path: 'p' }),
-      notePrepare: async () => ({ status: 'prepared', id: 'n', path: 'p', save_command: 'c' }),
-      noteSave: async () => ({ status: 'saved', path: 'p' }),
-      resolveContractIdentity: () => null,
-      isReady: () => true,
-      isDegraded: () => false,
-      reset: () => {},
-    };
-  }
-
-  function researchResearchAgent(
-    enabled: boolean,
-    useRealPlanService = false,
-  ): readonly TestAgentServiceOverride[] {
-    return [
-      appService(IFlagService, { enabled: () => enabled } as never),
-      sessionService(ISessionAitpAdapter, makeReadyAdapter()),
-      sessionService(ISessionAitpLifecycleCoordinator, {
-        _serviceBrand: undefined,
-        snapshot: () => undefined,
-        onDidUpdate: () => ({ dispose: () => {} }),
-        refresh: async (options?: { readonly workstream?: string }) => ({
-          status: 'ready',
-          refreshedAt: 1,
-          memoryStatus: 'available',
-          workstream: options?.workstream,
-          topic: { id: 't', title: 'T', goalText: 'g', goalSource: 's' },
-          activeNewerThanWorkingNote: false,
-          unresolvedFailureCount: 0,
-          unresolvedFailures: [],
-          warningSummaries: [],
-          check: { status: 'clean', errors: 0, warnings: 0, findingCodes: [] },
-        }),
-        reset: () => {},
-      } as never),
-      agentService(IEventBus, new EventBusService()),
-      agentService(IAgentAgentsMdReminderService, {
-        _serviceBrand: undefined,
-        seedInjected: () => {},
-      }),
-      agentService(IAgentStateService, new AgentStateService()),
-      agentService(IAgentProfileService, {
-        _serviceBrand: undefined,
-        data: () => ({
-          modelCapabilities: {},
-          thinkingLevel: 'off',
-          systemPrompt: '',
-          activeToolNames: [],
-          disallowedTools: [],
-        }),
-        update: () => {},
-        addActiveTool: () => {},
-        removeActiveTool: () => {},
-        getActiveToolNames: () => [],
-        getModelCapabilities: () => ({}),
-        resolveModelContext: () => ({
-          modelAlias: 'test-model',
-          modelCapabilities: {},
-          maxOutputSize: undefined,
-          alwaysThinking: undefined,
-          thinkingLevel: 'off',
-          reservedContextSize: undefined,
-          compactionTriggerRatio: undefined,
-        }),
-        getSystemPrompt: () => '',
-        hasProvider: () => true,
-        hasModel: () => true,
-        isRunnable: () => true,
-        refreshSystemPrompt: async () => {},
-        getEffectiveThinkingLevel: () => 'off',
-        resolveRequestParams: () => ({}),
-        getModel: () => 'test-model',
-      } as never),
-      ...(useRealPlanService ? [] : [agentService(IAgentPlanService, { status: async () => null } as never)]),
-    ];
-  }
-
-  let ctx: TestAgentContext | undefined;
-
-  afterEach(async () => {
-    await ctx?.dispose();
-  });
-
-  async function createResearchGoalAgent(
-    enabled: boolean,
-    loopService?: StubLoop,
-    useRealPlanService = false,
-    permissionMode: PermissionMode | IAgentPermissionModeService = 'auto',
-  ): Promise<{
-    goals: IAgentGoalService;
-    mode: IAgentAitpModeService;
-    research: IAgentResearchService;
-  }> {
+  function setup(loop = stubLoopWithHooks()) {
     ctx = createTestAgent(
-      ...researchResearchAgent(enabled, useRealPlanService),
-      ...(loopService === undefined ? [] : [agentService(IAgentLoopService, loopService)]),
-      typeof permissionMode === 'string'
-        ? permissionModeServices(permissionMode)
-        : agentService(IAgentPermissionModeService, permissionMode),
+      permissionModeServices('auto'),
+      agentService(IEventBus, new EventBusService()),
+      agentService(IAgentLoopService, loop),
     );
-    const goals = ctx.get(IAgentGoalService);
-    const mode = ctx.get(IAgentAitpModeService);
-    const research = ctx.get(IAgentResearchService);
-    return { goals, mode, research };
+    return { mode: ctx.get(IAgentAitpModeService), goals: ctx.get(IAgentGoalService), loop };
   }
 
-  function observeResearchProgram(): void {
-    ctx!.wire.dispatch(researchSetProgram({
-      topicId: 't',
-      title: 'T',
-      goalText: 'g',
-      goalSource: 's',
-      establishedAt: 1,
-    }));
-  }
-
-  function confirmResearchGoalAlignment(
-    research: IAgentResearchService,
-    goals: IAgentGoalService,
-  ): void {
-    const goal = goals.getGoal().goal;
-    const program = research.getProgram();
-    if (goal === null || program === null) throw new Error('expected a Goal and Research Program');
-    research.confirmGoalAlignment({
-      relation: 'same_program_goal',
-      expectedRevision: research.getSnapshot().revision,
-      goalId: goal.goalId,
-      topicId: program.topicId,
-      observedRevision: program.observedRevision,
-    });
-  }
-
-  async function confirmResearchWorkstreamBinding(
-    research: IAgentResearchService,
-  ): Promise<void> {
-    research.createLine({ slug: 'main', title: 'Main' });
-    research.switchLine('main');
-    await research.confirmLineWorkstreamBinding({
-      lineSlug: 'main',
-      workstream: 'main',
-      expectedRevision: research.getSnapshot().revision,
-      confirmedBy: 'main_agent',
-    });
-  }
-
-  it('keeps Research binding revisions usable across real Goal usage accounting', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
-    await mode.enter({ actor: 'user', lineSlug: 'main' });
-    observeResearchProgram();
+  it('allows completion without a Program, binding, adapter, or Research service', async () => {
+    const { mode, goals } = setup();
+    await mode.enter({ actor: 'user' });
+    expect(() => ctx.get(IAgentResearchService)).toThrow();
+    expect(() => ctx.get(ISessionAitpAdapter)).toThrow();
     await goals.createGoal({ objective: 'Complete a bounded derivation' });
-    await goals.setBudgetLimits({ budgetLimits: { tokenBudget: 1000, turnBudget: 10 } });
-    confirmResearchGoalAlignment(research, goals);
-    const turn = makeTurn(71);
-    const eventBus = ctx!.get(IEventBus);
-    eventBus.publish({ type: 'turn.started', turnId: turn.id, origin: USER_PROMPT_ORIGIN });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id, step: 1, firstStepOfTurn: true, signal: turn.signal,
+    expect(await goals.markComplete({}, 'model')).toMatchObject({ status: 'complete' });
+    expect(mode.isActive).toBe(true);
+  });
+
+  it('executes ordinary tools through the real executor without a Research action', async () => {
+    const { mode } = setup();
+    await mode.enter({ actor: 'user' });
+    const registration = ctx.get(IAgentToolRegistryService).register({
+      name: 'Read',
+      description: 'Read existing project knowledge',
+      parameters: { type: 'object', properties: {} },
+      resolveExecution: () => ({ description: 'Reading knowledge', approvalRule: 'Read', execute: async () => ({ output: 'Existing knowledge' }) }),
     });
-    const before = research.getSnapshot();
-    expect(before.revision).toBeGreaterThan(0);
-    expect(before.currentWorkstreamBinding?.status).toBe('unbound');
-    const snapshots: ReturnType<IAgentResearchService['getSnapshot']>[] = [];
-    const subscription = eventBus.subscribe('research.updated', ({ snapshot }) => snapshots.push(snapshot));
     try {
-      recordStepUsage(ctx!.get(IAgentUsageService), goals, turn, { ...zeroUsage, output: 41 });
-      recordStepUsage(ctx!.get(IAgentUsageService), goals, turn, { ...zeroUsage, output: 23 });
-
-      expect(goals.getGoal().goal?.tokensUsed).toBe(64);
-      expect(goals.getGoal().goal?.budget.remainingTokens).toBe(936);
-      expect(snapshots).toHaveLength(2);
-      expect(snapshots.map(({ revision }) => revision)).toEqual([before.revision, before.revision]);
-      expect(snapshots.at(-1)?.goalSummary?.status).toBe('active');
-      await expect(research.confirmLineWorkstreamBinding({
-        lineSlug: 'main', workstream: 'main',
-        expectedRevision: before.revision, confirmedBy: 'main_agent',
-      })).resolves.toMatchObject({ lineSlug: 'main', workstream: 'main', confirmedBy: 'main_agent' });
-      expect(research.getSnapshot().currentWorkstreamBinding?.status).toBe('bound');
-      expect(research.getSnapshot().revision).toBeGreaterThan(before.revision);
+      const results = await executeToolCall(ctx.get(IAgentToolExecutorService), makeTurn(1), {
+        type: 'function', id: 'read-knowledge', name: 'Read', arguments: '{}',
+      });
+      expect(results).toMatchObject([{ result: { output: 'Existing knowledge' } }]);
+      expect(results[0]?.result.isError).not.toBe(true);
     } finally {
-      subscription.dispose();
+      registration.dispose();
     }
   });
 
-  it('refreshes Research turn counters without invalidating its binding revision', async () => {
-    const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
-    await mode.enter({ actor: 'user', lineSlug: 'main' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'Complete a bounded derivation' });
-    await goals.setBudgetLimits({ budgetLimits: { turnBudget: 10 } });
-    const before = research.getSnapshot();
-
-    await (goals as GoalServiceTestManager).incrementTurn();
-
-    expect(research.getSnapshot()).toMatchObject({
-      revision: before.revision,
-      goalSummary: { remainingTurns: 9 },
-    });
-    await expect(research.confirmLineWorkstreamBinding({
-      lineSlug: 'main', workstream: 'main',
-      expectedRevision: before.revision, confirmedBy: 'main_agent',
-    })).resolves.toMatchObject({ workstream: 'main' });
-  });
-
-  it('invalidates a Research binding revision when Goal usage exhausts its budget', async () => {
-    const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
-    await mode.enter({ actor: 'user', lineSlug: 'main' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'Complete a bounded derivation' });
+  it('keeps Goal usage and budget enforcement independent of Research mode', async () => {
+    const { mode, goals } = setup();
+    await mode.enter({ actor: 'user' });
+    await goals.createGoal({ objective: 'Bound the work' });
     await goals.setBudgetLimits({ budgetLimits: { tokenBudget: 64 } });
-    const before = research.getSnapshot();
-
     await (goals as GoalServiceTestManager).recordTokenUsage(64);
-
-    expect(goals.getGoal().goal).toMatchObject({ status: 'blocked', budget: { overBudget: true } });
-    expect(research.getSnapshot().revision).toBeGreaterThan(before.revision);
-    await expect(research.confirmLineWorkstreamBinding({
-      lineSlug: 'main', workstream: 'main',
-      expectedRevision: before.revision, confirmedBy: 'main_agent',
-    })).rejects.toMatchObject({ code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE });
-  });
-
-  it.each(['pause', 'block', 'budget', 'replace', 'clear'] as const)(
-    'still rejects old Research binding revisions after Goal %s', async (change) => {
-      const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
-      await mode.enter({ actor: 'user', lineSlug: 'main' });
-      observeResearchProgram();
-      await goals.createGoal({ objective: 'Original objective' });
-      const before = research.getSnapshot();
-      if (change === 'pause') await goals.pauseGoal();
-      if (change === 'block') await goals.markBlocked({ reason: 'Required external input' });
-      if (change === 'budget') await goals.setBudgetLimits({ budgetLimits: { tokenBudget: 100 } });
-      if (change === 'replace') await goals.createGoal({ objective: 'Replacement objective', replace: true });
-      if (change === 'clear') await goals.cancelGoal();
-
-      expect(research.getSnapshot().revision).toBeGreaterThan(before.revision);
-      await expect(research.confirmLineWorkstreamBinding({
-        lineSlug: 'main', workstream: 'main',
-        expectedRevision: before.revision, confirmedBy: 'main_agent',
-      })).rejects.toMatchObject({ code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE });
-      expect(research.getSnapshot().currentWorkstreamBinding?.status).toBe('unbound');
-    },
-  );
-
-  it('still rejects old binding revisions after a Research mutation with unchanged Goal state', async () => {
-    const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
-    await mode.enter({ actor: 'user', lineSlug: 'main' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'Original objective' });
-    const before = research.getSnapshot();
-    research.createQuestion({ lineSlug: 'main', wording: 'A newly scoped question' });
-
-    await expect(research.confirmLineWorkstreamBinding({
-      lineSlug: 'main', workstream: 'main',
-      expectedRevision: before.revision, confirmedBy: 'main_agent',
-    })).rejects.toMatchObject({ code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE });
-    expect(research.getSnapshot().currentWorkstreamBinding?.status).toBe('unbound');
-  });
-
-  it('denies markComplete when the mode is active with an unresolved human gate', async () => {
-    const { goals, mode, research } = await createResearchGoalAgent(true);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'work' });
-    confirmResearchGoalAlignment(research, goals);
-    await confirmResearchWorkstreamBinding(research);
-    const gate = research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
-
-    await expect(goals.markComplete({}, 'model')).rejects.toMatchObject({
-      code: ErrorCodes.GOAL_STATUS_INVALID,
-      message: 'Goal completion is blocked: a Research human gate is unresolved. Resolve the gate before completing the goal.',
-      details: {
-        code: 'research.human-gate.unresolved',
-        owner: 'aitpResearch',
-        guard: 'AgentResearchService',
-        nextStep: 'ResolveResearchDecision',
-      },
-    });
-    expect(goals.getGoal().goal?.status).toBe('active');
-
-    research.resolveHumanDecision({ gateId: gate.gateId, resolution: 'ok', nextPhase: 'gap_analysis' });
-    const completed = await goals.markComplete({}, 'model');
-    expect(completed?.status).toBe('complete');
-  });
-
-  it('rejects markComplete through the UpdateGoal tool path too', async () => {
-    const { goals, mode, research } = await createResearchGoalAgent(true);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'work' });
-    confirmResearchGoalAlignment(research, goals);
-    research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
-
-    const tool = new UpdateGoalTool(goals);
-    const execution = tool.resolveExecution({ status: 'complete' });
-    if (!('execute' in execution)) {
-      throw new Error('expected a runnable UpdateGoal execution');
-    }
-
-    await expect(
-      execution.execute({
-        turnId: 1,
-        toolCallId: 'call_guard_deny',
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toMatchObject({ code: ErrorCodes.GOAL_STATUS_INVALID });
-
-    expect(goals.getGoal().goal?.status).toBe('active');
-  });
-
-  it('allows markComplete when the mode is inactive or the flag is off', async () => {
-    const { goals } = await createResearchGoalAgent(false);
-    await goals.createGoal({ objective: 'work' });
-
-    const completed = await goals.markComplete({}, 'model');
-
-    expect(completed?.status).toBe('complete');
-    expect(goals.getGoal().goal).toBeNull();
-  });
-
-  it('denies completion and holds continuation when an active Goal has no Research Program', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
-    await mode.enter({ actor: 'user' });
-    ctx!.wire.dispatch(researchSetProgram({ clear: true }));
-    await goals.createGoal({ objective: 'finish the task' });
-
-    await expect(goals.markComplete({}, 'model')).rejects.toMatchObject({
-      code: ErrorCodes.GOAL_STATUS_INVALID,
-      message: 'Goal completion is blocked: AITP Research Goal has not been observed.',
-      details: {
-        code: 'research.goal-alignment.unavailable',
-        owner: 'aitpResearch',
-        nextStep: 'ConfirmGoalAlignment',
-      },
-    });
-
-    const turn = makeTurn(78);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-    endTurn(ctx!.get(IEventBus), turn);
-    await flushMicrotasks();
-
-    expect(loopService.launches).toEqual([]);
-    expect(research.getSnapshot().goalAlignment).toMatchObject({ status: 'unavailable' });
-    expect(research.getSnapshot().effectiveNextStep).toMatchObject({
-      source: 'aitp_maintenance',
-      freshness: 'blocked',
-    });
-    expect(research.getSnapshot().status).toMatchObject({
-      health: 'blocked',
-      attention: [expect.stringContaining('No current AITP Research Goal')],
-    });
-  });
-
-  it('allows direct Plan entry while Research Mode is active and keeps Research state intact', async () => {
-    const { mode } = await createResearchGoalAgent(true, undefined, true);
-    await mode.enter({ actor: 'user' });
-    const plan = ctx!.get(IAgentPlanService);
-
-    await plan.enter('research-plan', false);
-
-    expect(await plan.status()).not.toBeNull();
+    expect(goals.getGoal().goal).toMatchObject({ status: 'blocked', tokensUsed: 64, budget: { overBudget: true } });
     expect(mode.isActive).toBe(true);
-    expect(mode.phase).not.toBe('inactive');
+    await mode.exit();
+    expect(goals.getGoal().goal?.status).toBe('blocked');
   });
 
-  it('holds the goal continuation while the research loop is paused and keeps the goal active', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
+  it('continues Goals normally while memory mode is enabled', async () => {
+    const { mode, goals, loop } = setup();
     await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
+    await goals.createGoal({ objective: 'Finish the task' });
     const turn = makeTurn(71);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-
-    research.steer({ kind: 'pause_loop', expectedRevision: 0 });
-    expect(mode.loopStatus).toBe('paused');
-    endTurn(ctx!.get(IEventBus), turn);
-
-    await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-    expect(loopService.hasPendingRequests()).toBe(false);
-    expect(goals.getGoal().goal).toMatchObject({
-      status: 'active',
-      continuation: {
-        state: 'held',
-        owner: 'aitpResearch',
-        reason: expect.stringContaining('research loop is paused'),
-      },
-    });
+    ctx.get(IEventBus).publish({ type: 'turn.started', turnId: turn.id, origin: USER_PROMPT_ORIGIN });
+    await loop.hooks.onWillBeginStep.run({ turnId: turn.id, step: 1, firstStepOfTurn: true, signal: turn.signal });
+    endTurn(ctx.get(IEventBus), turn);
+    await vi.waitFor(() => expect(loop.launches).toHaveLength(1));
+    expect(goals.getGoal().goal?.status).toBe('active');
   });
 
-  it('resumes the goal continuation when the research loop is active and no gate is pending', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
+  it('keeps the normal Plan overlay hold and release with memory mode enabled', async () => {
+    const { mode, goals, loop } = setup();
     await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-    const turn = makeTurn(72);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-    expect(mode.loopStatus).toBe('active');
-
-    endTurn(ctx!.get(IEventBus), turn);
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    expect(loopService.hasPendingRequests()).toBe(true);
-    expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
-  });
-
-  it('holds the goal continuation while an active Plan nests under Research Mode', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService, true);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-    const plan = ctx!.get(IAgentPlanService);
+    await goals.createGoal({ objective: 'Finish the task' });
+    const plan = ctx.get(IAgentPlanService);
     const turn = makeTurn(75);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-
-    await plan.enter('plan-under-research', false);
+    ctx.get(IEventBus).publish({ type: 'turn.started', turnId: turn.id, origin: USER_PROMPT_ORIGIN });
+    await loop.hooks.onWillBeginStep.run({ turnId: turn.id, step: 1, firstStepOfTurn: true, signal: turn.signal });
+    await plan.enter('plan-under-memory-mode', false);
     expect(mode.isActive).toBe(true);
-    endTurn(ctx!.get(IEventBus), turn);
-
+    endTurn(ctx.get(IEventBus), turn);
     await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-    expect(loopService.hasPendingRequests()).toBe(false);
-    expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
-
+    expect(loop.launches).toEqual([]);
+    expect(goals.getGoal().goal?.status).toBe('active');
     plan.exit();
     const nextTurn = makeTurn(76);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: nextTurn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: nextTurn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: nextTurn.signal,
-    });
-    endTurn(ctx!.get(IEventBus), nextTurn);
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
-  });
-
-  it('holds the goal continuation while a research human gate is unresolved', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-    const turn = makeTurn(73);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-    const gate = research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
-    expect(gate.gateId).toBeDefined();
-
-    endTurn(ctx!.get(IEventBus), turn);
-
-    await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-    expect(loopService.hasPendingRequests()).toBe(false);
-    expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
-  });
-
-  it('releases a held goal continuation when the research loop resumes', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-
-    const heldTurn = makeTurn(74);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: heldTurn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: heldTurn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: heldTurn.signal,
-    });
-    research.steer({ kind: 'pause_loop', expectedRevision: 0 });
-    endTurn(ctx!.get(IEventBus), heldTurn);
-    await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-    expect(goals.getGoal().goal?.status).toBe('active');
-
-    research.steer({ kind: 'resume_loop', expectedRevision: 0 });
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    expect(goals.getGoal().goal?.status).toBe('active');
-  });
-
-  it('abstains from the goal continuation decision when the flag is off or the mode is inactive', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode } = await createResearchGoalAgent(false, loopService);
-    await goals.createGoal({ objective: 'finish the task' });
-    expect(mode.isActive).toBe(false);
-
-    const turn = makeTurn(76);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-    endTurn(ctx!.get(IEventBus), turn);
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    expect(goals.getGoal().goal?.status).toBe('active');
-  });
-
-  it('resolves a pending human gate and then continues the goal automatically', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-
-    const heldTurn = makeTurn(77);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: heldTurn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: heldTurn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: heldTurn.signal,
-    });
-    const gate = research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
-    endTurn(ctx!.get(IEventBus), heldTurn);
-    await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-
-    research.resolveHumanDecision({
-      gateId: gate.gateId,
-      resolution: 'proceed',
-      nextPhase: 'gap_analysis',
-    });
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    expect(goals.getGoal().goal?.status).toBe('active');
-  });
-
-  it('releases exactly one held continuation when auto adopts a matching action approval', async () => {
-    const loopService = stubLoopWithHooks();
-    const permissionMode = mutablePermissionMode('manual');
-    const { goals, mode, research } = await createResearchGoalAgent(
-      true,
-      loopService,
-      false,
-      permissionMode,
-    );
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-
-    const heldTurn = makeTurn(81);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: heldTurn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: heldTurn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: heldTurn.signal,
-    });
-    const action = research.planAction({
-      kind: 'simulation',
-      purpose: 'run the bounded remote diagnostic',
-      stopCondition: 'the diagnostic artifact is available',
-      requiresHumanApproval: true,
-    });
-    research.requestHumanDecision({
-      kind: 'approval',
-      actionId: action.actionId,
-      prompt: 'Approve the bounded remote diagnostic',
-    });
-    endTurn(ctx!.get(IEventBus), heldTurn);
-    await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-
-    permissionMode.setMode('auto');
-
-    expect(research.getSnapshot()).toMatchObject({
-      phase: 'action_executing',
-      currentAction: { actionId: action.actionId, status: 'in_progress' },
-      humanGate: {
-        actionId: action.actionId,
-        resolution: expect.stringContaining('Standing auto permission applied'),
-        resolvedAt: expect.any(Number),
-      },
-    });
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    await flushMicrotasks();
-    expect(loopService.launches).toHaveLength(1);
-    expect(goals.getGoal().goal?.status).toBe('active');
-  });
-
-  it('releases a held goal continuation when Research recovers from degraded mode', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-    const turn = makeTurn(80);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-    mode.setPhase('degraded');
-    endTurn(ctx!.get(IEventBus), turn);
-    await flushMicrotasks();
-    expect(loopService.launches).toEqual([]);
-
-    mode.setPhase('ready');
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    expect(goals.getGoal().goal?.status).toBe('active');
-  });
-
-  it('resumes the loop with a matching research revision and rejects a stale one', async () => {
-    const loopService = stubLoopWithHooks();
-    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
-    await mode.enter({ actor: 'user' });
-    observeResearchProgram();
-    await goals.createGoal({ objective: 'finish the task' });
-    confirmResearchGoalAlignment(research, goals);
-    const turn = makeTurn(79);
-    ctx!.get(IEventBus).publish({
-      type: 'turn.started',
-      turnId: turn.id,
-      origin: USER_PROMPT_ORIGIN,
-    });
-    await loopService.hooks.onWillBeginStep.run({
-      turnId: turn.id,
-      step: 1,
-      firstStepOfTurn: true,
-      signal: turn.signal,
-    });
-    const researchRevision = research.getSnapshot().revision;
-    research.steer({ kind: 'pause_loop', expectedRevision: researchRevision });
-    expect(mode.loopStatus).toBe('paused');
-
-    expect(() =>
-      research.steer({ kind: 'resume_loop', expectedRevision: researchRevision - 1 }),
-    ).toThrow(
-      expect.objectContaining({ code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE }),
-    );
-    expect(mode.loopStatus).toBe('paused');
-
-    research.steer({
-      kind: 'resume_loop',
-      expectedRevision: research.getSnapshot().revision,
-    });
-    expect(mode.loopStatus).toBe('active');
-    endTurn(ctx!.get(IEventBus), turn);
-
-    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-    expect(goals.getGoal().goal?.status).toBe('active');
+    ctx.get(IEventBus).publish({ type: 'turn.started', turnId: nextTurn.id, origin: USER_PROMPT_ORIGIN });
+    await loop.hooks.onWillBeginStep.run({ turnId: nextTurn.id, step: 1, firstStepOfTurn: true, signal: nextTurn.signal });
+    endTurn(ctx.get(IEventBus), nextTurn);
+    await vi.waitFor(() => expect(loop.launches).toHaveLength(1));
   });
 });

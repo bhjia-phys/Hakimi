@@ -1,10 +1,12 @@
 // apps/kimi-web/src/lib/openFileAttachment.ts
-// Open a generic file attachment in a new tab — but ONLY types the browser
-// renders inertly (the whitelist below). A blob: URL inherits this origin, so
-// navigating a tab to an active document (HTML/SVG/JS/XML) would execute its
-// scripts with the app's credentials (the daemon token lives in localStorage)
-// and a live window.opener. Bytes come through the API client with auth — a
-// bare getFileUrl src 401s under daemon auth.
+// Open a generic file attachment: types the browser renders inertly (the
+// whitelist below) preview in a new tab; everything else downloads the
+// original file instead of failing silently. A blob: URL inherits this
+// origin, so navigating a tab to an active document (HTML/SVG/JS/XML) would
+// execute its scripts with the app's credentials (the daemon token lives in
+// localStorage) and a live window.opener — preview stays whitelisted, the
+// download fallback only WRITES the bytes. Bytes come through the API client
+// with auth — a bare getFileUrl src 401s under daemon auth.
 
 import { getKimiWebApi } from '../api';
 
@@ -23,7 +25,7 @@ const IMAGE_PREVIEW_EXT_RE = /^(png|jpe?g|gif|webp|avif|bmp|ico)$/i;
 
 const TEXT_PLAIN = 'text/plain;charset=utf-8';
 
-export type OpenFileAttachmentResult = 'previewed' | 'unsupported' | 'failed';
+export type OpenFileAttachmentResult = 'previewed' | 'downloaded' | 'failed';
 
 /**
  * The MIME to stamp on the preview blob when this attachment may open in a
@@ -44,8 +46,10 @@ function safePreviewMime(name: string | undefined, mediaType: string | undefined
 }
 
 /**
- * Preview a whitelisted file attachment in a new tab; anything else reports
- * 'unsupported' so the caller can tell the user the type can't be opened.
+ * Preview a whitelisted file attachment in a new tab; anything else is saved
+ * to disk instead (an authenticated blob download — saving an active document
+ * like HTML/SVG is inert, navigating to it is not). Reports 'previewed' /
+ * 'downloaded' / 'failed' so the caller can surface a failure.
  * The tab is opened synchronously with the click (popup blockers reject
  * window.open after an await), and a blocked popup falls back to a download.
  */
@@ -55,7 +59,7 @@ export async function openFileAttachment(
   mediaType?: string,
 ): Promise<OpenFileAttachmentResult> {
   const previewMime = safePreviewMime(name, mediaType);
-  if (previewMime === null) return 'unsupported';
+  if (previewMime === null) return downloadFileAttachment(fileId, name);
   // noopener can't go into window.open — it forfeits the handle we need to
   // navigate after the async fetch. Sever the opener right away instead; the
   // whitelist is what actually keeps the new tab inert.
@@ -69,14 +73,41 @@ export async function openFileAttachment(
   const url = URL.createObjectURL(new Blob([blob], { type: previewMime }));
   if (win !== null) {
     win.location.href = url;
-  } else {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name ?? fileId;
-    a.click();
+    scheduleRevoke(url);
+    return 'previewed';
   }
+  // Popup blocked — fall back to saving the bytes instead of previewing.
+  triggerDownload(url, name ?? fileId);
+  scheduleRevoke(url);
+  return 'downloaded';
+}
+
+/**
+ * Save the original file for types that must never be previewed in a tab.
+ * The bytes still come through the API client with auth; the anchor download
+ * writes them to disk without executing anything.
+ */
+async function downloadFileAttachment(
+  fileId: string,
+  name?: string,
+): Promise<OpenFileAttachmentResult> {
+  const blob = await getKimiWebApi().getFileBlob(fileId).catch(() => null);
+  if (blob === null) return 'failed';
+  const url = URL.createObjectURL(blob);
+  triggerDownload(url, name ?? fileId);
+  scheduleRevoke(url);
+  return 'downloaded';
+}
+
+function triggerDownload(url: string, name: string): void {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+}
+
+function scheduleRevoke(url: string): void {
   setTimeout(() => {
     URL.revokeObjectURL(url);
   }, 60_000);
-  return 'previewed';
 }

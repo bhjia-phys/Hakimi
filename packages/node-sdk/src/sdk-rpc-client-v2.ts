@@ -178,7 +178,7 @@ import {
   IAgentTaskService,
   IAgentTokenCountingService,
   IAgentProfileRegistry,
-  IAgentResearchService,
+  dispatchResearchModeCommand,
   IAgentAitpModeService,
   BUILTIN_AGENT_PROFILE_SOURCE_ID,
   IAgentToolPolicyService,
@@ -309,7 +309,7 @@ import type {
   ResumedSessionSummary,
   ResearchCommand,
   ResearchCommandResponse,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
   ResumeGoalInput,
   SessionPlan,
   SessionStatus,
@@ -2233,306 +2233,18 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     return agent.accessor.get(IAgentGoalService).cancelGoal();
   }
 
-  /**
-   * AITP Research Mode — the research surface is an agent-core-v2 feature
-   * (`aitpResearch` domain, Agent scope, main-only). The snapshot is read
-   * directly from `IAgentResearchService.getSnapshot()`; the command is
-   * dispatched through the engine's steering / mode / checkpoint methods,
-   * then the post-command snapshot is returned so the caller gets immediate
-   * confirmation. `enter_mode` / `exit_mode` / loop commands route to
-   * `IAgentAitpModeService`; focus, line, and question lifecycle commands use
-   * their dedicated Research methods. The engine enforces the
-   * `expectedRevision` optimistic-concurrency guard, and defer/block/close
-   * remain human steering operations. Goal alignment is only changed through
-   * explicit commands carrying the observed Goal / Program identities;
-   * `create_question` / `create_line` / `update_line` use their dedicated
-   * service methods; checkpoints use `proposeCheckpoint` / `commitCheckpoint`.
-   */
-  override async getResearch(input: SessionIdRpcInput): Promise<ResearchStatusSnapshot> {
+  /** Research memory-mode visibility only; never resolves the retired executor. */
+  override async getResearch(input: SessionIdRpcInput): Promise<ResearchModeSnapshot> {
     const agent = await this.agentScope(input.sessionId);
-    return agent.accessor.get(IAgentResearchService).getSnapshot();
+    return agent.accessor.get(IAgentAitpModeService).getSnapshot();
   }
 
   override async commandResearch(
     input: SessionIdRpcInput & { readonly command: ResearchCommand },
   ): Promise<ResearchCommandResponse> {
     const agent = await this.agentScope(input.sessionId);
-    const research = agent.accessor.get(IAgentResearchService);
     const mode = agent.accessor.get(IAgentAitpModeService);
-    const cmd = input.command;
-
-    switch (cmd.kind) {
-      case 'enter_mode':
-        await mode.enter({ actor: cmd.actor, lineSlug: cmd.lineSlug });
-        break;
-      case 'exit_mode':
-        await mode.exit();
-        break;
-      case 'pause_loop':
-        mode.pauseLoop(cmd.expectedRevision);
-        break;
-      case 'resume_loop':
-        mode.resumeLoop(cmd.expectedRevision);
-        break;
-      case 'create_question':
-        research.createQuestion({
-          lineSlug: cmd.lineSlug,
-          wording: cmd.wording,
-          assessment: cmd.assessment,
-          priority: cmd.priority,
-          neededEvidence: cmd.neededEvidence,
-        });
-        break;
-      case 'create_line':
-        research.createLine({
-          slug: cmd.slug,
-          title: cmd.title,
-          objective: cmd.objective,
-          assessment: cmd.assessment,
-        });
-        break;
-      case 'update_line':
-        research.updateLine({
-          slug: cmd.lineSlug,
-          expectedRevision: cmd.expectedRevision,
-          title: cmd.title,
-          objective: cmd.objective,
-          status: cmd.status,
-          assessment: cmd.assessment,
-          reason: cmd.reason,
-        });
-        break;
-      case 'update_question':
-        research.updateQuestion({
-          questionId: cmd.questionId,
-          expectedRevision: cmd.expectedRevision,
-          wording: cmd.wording,
-          assessment: cmd.assessment,
-          priority: cmd.priority,
-          workflow: cmd.workflow,
-          epistemic: cmd.epistemic,
-          neededEvidence: cmd.neededEvidence,
-          nextBoundedAction: cmd.nextBoundedAction,
-          reason: cmd.reason,
-        });
-        break;
-      case 'set_focus':
-        research.setFocus(cmd.questionId, cmd.boundedAction, cmd.expectedRevision);
-        break;
-      case 'switch_line':
-        research.switchLine(cmd.lineSlug, cmd.expectedRevision);
-        break;
-      case 'reopen_question':
-        research.reopenQuestion(cmd.questionId, cmd.reason, cmd.expectedRevision);
-        break;
-      case 'defer_question':
-        research.steer({
-          kind: 'defer_question',
-          questionId: cmd.questionId,
-          expectedRevision: cmd.expectedRevision,
-          reason: cmd.reason,
-        });
-        break;
-      case 'block_question':
-        research.steer({
-          kind: 'block_question',
-          questionId: cmd.questionId,
-          expectedRevision: cmd.expectedRevision,
-          reason: cmd.reason,
-        });
-        break;
-      case 'close_question':
-        research.steer({
-          kind: 'close_question',
-          questionId: cmd.questionId,
-          expectedRevision: cmd.expectedRevision,
-          reason: cmd.reason,
-        });
-        break;
-      case 'propose_checkpoint':
-        research.proposeCheckpoint({
-          expectedRevision: cmd.expectedRevision,
-          localConclusionId: cmd.localConclusionId,
-          confirmedBy: cmd.confirmedBy,
-          questionId: cmd.questionId,
-          lineSlug: cmd.lineSlug,
-          assessment: cmd.assessment,
-          nextAction: cmd.nextAction,
-        });
-        break;
-      case 'discard_historical_checkpoint':
-        research.discardHistoricalCheckpoint({
-          checkpointId: cmd.checkpointId,
-          expectedRevision: cmd.expectedRevision,
-        });
-        break;
-      case 'commit_checkpoint':
-        await research.commitCheckpoint({
-          checkpointId: cmd.checkpointId,
-          entryId: cmd.entryId,
-        });
-        break;
-      case 'resolve_decision':
-        research.resolveHumanDecision({
-          gateId: cmd.gateId,
-          resolution: cmd.resolution,
-          nextPhase: cmd.nextPhase,
-        });
-        break;
-      case 'review_evidence':
-        research.reviewEvidencePacket(cmd.packet, cmd.expectedRevision);
-        break;
-      case 'observe_run':
-        research.observeRun({
-          actionId: cmd.actionId,
-          expectedRevision: cmd.expectedRevision,
-          campaign: cmd.campaign,
-          jobId: cmd.jobId,
-          sourcePin: cmd.sourcePin,
-          binaryPin: cmd.binaryPin,
-          stage: cmd.stage,
-          schedulerState: cmd.schedulerState,
-          nextCheckAt: cmd.nextCheckAt,
-          terminalState: cmd.terminalState,
-          artifactRefs: cmd.artifactRefs,
-        });
-        break;
-      case 'acknowledge_alert':
-        research.acknowledgeAlert(cmd.fingerprint);
-        break;
-      case 'begin_action':
-        research.planAndStartAction({
-          actionId: cmd.actionId,
-          questionId: cmd.questionId,
-          lineSlug: cmd.lineSlug,
-          kind: cmd.actionKind,
-          purpose: cmd.purpose,
-          expectedEvidence: cmd.expectedEvidence,
-          stopCondition: cmd.stopCondition,
-          allowedToolKinds: cmd.allowedToolKinds,
-          retryOfEntryId: cmd.retryOfEntryId,
-          requiresHumanApproval: cmd.requiresHumanApproval,
-          planningLevel: cmd.planningLevel,
-          researchPlanId: cmd.researchPlanId,
-          researchPlanRevision: cmd.researchPlanRevision,
-          milestoneId: cmd.milestoneId,
-          actionPlanId: cmd.actionPlanId,
-          actionPlanRevision: cmd.actionPlanRevision,
-        });
-        break;
-      case 'start_action':
-        research.startAction(cmd.actionId);
-        break;
-      case 'complete_action':
-        research.completeAction(cmd.actionId, cmd.status);
-        break;
-      case 'conclude_action':
-        research.concludeAction({
-          actionId: cmd.actionId,
-          status: cmd.status,
-          progress: {
-            headline: cmd.headline,
-            question: cmd.question,
-            motivation: cmd.motivation,
-            workPerformed: cmd.workPerformed,
-            result: cmd.result,
-            mainlineImpact: cmd.mainlineImpact,
-            uncertainties: cmd.uncertainties,
-            nextAction: cmd.nextAction,
-            detail: cmd.detail,
-          },
-          durability: cmd.durability,
-        });
-        break;
-      case 'prepare_plan':
-        await research.prepareResearchPlan({
-          planId: cmd.planId,
-          lineSlug: cmd.lineSlug,
-          questionId: cmd.questionId,
-          objective: cmd.objective,
-          steps: cmd.steps,
-          expectedEvidence: cmd.expectedEvidence,
-          stopCondition: cmd.stopCondition,
-          usePlanMode: cmd.usePlanMode,
-        });
-        break;
-      case 'finalize_plan':
-        await research.finalizeResearchPlan();
-        break;
-      case 'discard_plan':
-        research.discardResearchPlan();
-        break;
-      case 'confirm_line_workstream_binding':
-        await research.confirmLineWorkstreamBinding({
-          lineSlug: cmd.lineSlug,
-          workstream: cmd.workstream,
-          expectedRevision: cmd.expectedRevision,
-          confirmedBy: 'user',
-        });
-        break;
-      case 'clear_line_workstream_binding':
-        research.clearLineWorkstreamBinding({
-          lineSlug: cmd.lineSlug,
-          expectedConfirmationId: cmd.expectedConfirmationId,
-          expectedRevision: cmd.expectedRevision,
-        });
-        break;
-      case 'set_planning_policy':
-        research.setPlanningPolicy(cmd.policy, cmd.expectedRevision);
-        break;
-      case 'prepare_plan_v2':
-        research.prepareResearchPlanV2({
-          planId: cmd.planId,
-          expectedRevision: cmd.expectedRevision,
-          objective: cmd.objective,
-          completionCriterion: cmd.completionCriterion,
-          milestones: cmd.milestones,
-          evidenceRequirements: cmd.evidenceRequirements,
-          decisionPoints: cmd.decisionPoints,
-          assumptions: cmd.assumptions,
-          currentMilestoneId: cmd.currentMilestoneId,
-          stopConditions: cmd.stopConditions,
-          replanConditions: cmd.replanConditions,
-        });
-        break;
-      case 'activate_plan_v2':
-        research.activateResearchPlanV2({
-          planId: cmd.planId,
-          expectedRevision: cmd.expectedRevision,
-        });
-        break;
-      case 'complete_plan_v2':
-        research.completeResearchPlanV2({
-          planId: cmd.planId,
-          expectedRevision: cmd.expectedRevision,
-        });
-        break;
-      case 'discard_plan_v2':
-        research.discardResearchPlanV2({
-          planId: cmd.planId,
-          expectedRevision: cmd.expectedRevision,
-        });
-        break;
-      case 'confirm_goal_alignment':
-        research.confirmGoalAlignment({
-          relation: cmd.relation,
-          expectedRevision: cmd.expectedRevision,
-          goalId: cmd.goalId,
-          topicId: cmd.topicId,
-          observedRevision: cmd.observedRevision,
-        });
-        break;
-      case 'clear_goal_alignment':
-        research.clearGoalAlignment({
-          expectedRevision: cmd.expectedRevision,
-          goalId: cmd.goalId,
-          topicId: cmd.topicId,
-          observedRevision: cmd.observedRevision,
-        });
-        break;
-    }
-
-    return { snapshot: research.getSnapshot() } as ResearchCommandResponse;
+    return { snapshot: await dispatchResearchModeCommand(mode, input.command) };
   }
 
   /**

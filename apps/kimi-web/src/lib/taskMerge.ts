@@ -75,10 +75,10 @@ export function keepLiveSubagents(restBased: AppTask[], existing: AppTask[]): Ap
       // Terminal-stickiness: never let a lagging poll flip a finished row back
       // to running, but let REST complete a row whose finish event was missed.
       status: live.status === 'running' ? rest.status : live.status,
-      // toAgentMember prefers subagentPhase over status, so sync it too —
-      // otherwise the detail panel badge keeps showing a stale Working/Queued.
-      // The phase enum has no 'cancelled'; the dock already styles cancelled
-      // rows as failed.
+      // Sync the phase with a REST-completed row so nothing keeps rendering a
+      // stale Working/Queued. Terminal status is authoritative in consumers
+      // (toAgentMember / phaseForTask), and the wire phase enum has no
+      // 'cancelled' — a cancelled REST row is re-derived from `status` there.
       subagentPhase: restCompletesLiveRow
         ? rest.status === 'completed'
           ? 'completed'
