@@ -21,7 +21,7 @@
 // owning model offloads inline media to blob storage), cross-reducers
 // (foreign models that also reduce this record on dispatch and replay).
 
-// Index (99 record types)
+// Index (100 record types)
 //   aitp_mode.enter                         aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.exit                          aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.set_line                      aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
@@ -59,6 +59,7 @@
 //   plan.revision                           plan                        persisted  src/features/plan/planOps.ts
 //   plugin.session_start                    pluginSessionStartSnapshot  persisted  src/agent/plugin/agentPluginOps.ts
 //   profile.bind                            profile                     persisted  src/agent/profile/profileOps.ts
+//   research_mode.set_enabled               researchMode                persisted  src/features/aitpResearch/mode/researchModeOps.ts
 //   research_plan.discard                   researchPlan                persisted  src/features/aitpResearch/researchPlanOps.ts
 //   research_plan.draft                     researchPlan                persisted  src/features/aitpResearch/researchPlanOps.ts
 //   research_plan.finalize                  researchPlan                persisted  src/features/aitpResearch/researchPlanOps.ts
@@ -610,6 +611,15 @@ interface ProfileBindPayload {
   activeToolNames?: string[];
   disallowedTools: string[];
   subagents?: string[];
+}
+
+/**
+ * model: researchMode · persisted
+ * owner: src/features/aitpResearch/mode/researchModeOps.ts
+ */
+interface ResearchModeSetEnabledPayload {
+  _name: 'research_mode.set_enabled';
+  enabled: boolean;
 }
 
 /**
@@ -1602,6 +1612,7 @@ interface WirePayloadMap {
   "plan.revision": PlanRevisionPayload;
   "plugin.session_start": PluginSessionStartPayload;
   "profile.bind": ProfileBindPayload;
+  "research_mode.set_enabled": ResearchModeSetEnabledPayload;
   "research_plan.discard": ResearchPlanDiscardPayload;
   "research_plan.draft": ResearchPlanDraftPayload;
   "research_plan.finalize": ResearchPlanFinalizePayload;

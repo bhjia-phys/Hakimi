@@ -1,28 +1,35 @@
 import type {
   ResearchCommand,
-  ResearchGoalAlignmentRelation,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
 } from '../api/types';
 
-export type ResearchComposerEntryState = 'hidden' | 'start' | 'manage';
+/**
+ * `/research` slash grammar — minimal memory-mode toggle.
+ *
+ * Only `on` / `off` / `status` (and the bare toggle) remain. The legacy host
+ * Research executor subcommands (pause/resume/manage/align/line/question
+ * actions/checkpoints) parse to `unsupported` so the caller can explain the
+ * retirement instead of posting a command the server rejects with
+ * `research.retired`. Historical records stay read-only and never resume.
+ */
+
+export type ResearchComposerEntryState = 'hidden' | 'start' | 'stop';
 
 export function researchComposerEntryState(
   researchEnabled: boolean,
-  mode: ResearchStatusSnapshot['mode'] | null | undefined,
+  enabled: boolean | null | undefined,
 ): ResearchComposerEntryState {
   if (!researchEnabled) return 'hidden';
-  return mode === undefined || mode === null || mode === 'inactive' ? 'start' : 'manage';
+  return enabled === true ? 'stop' : 'start';
 }
 
 export type ResearchEnterRejectedReason =
   | 'disabled'
-  | 'busy'
-  | 'plan_conflict'
   | 'snapshot_unavailable';
 
 export type ResearchEnterResult =
-  | { kind: 'entered'; snapshot: ResearchStatusSnapshot }
-  | { kind: 'already-active'; snapshot: ResearchStatusSnapshot }
+  | { kind: 'entered'; snapshot: ResearchModeSnapshot }
+  | { kind: 'already-active'; snapshot: ResearchModeSnapshot }
   | { kind: 'ignored'; reason: 'pending' | 'session_changed' }
   | {
       kind: 'rejected';
@@ -33,77 +40,17 @@ export type ResearchEnterResult =
 export interface ResearchEnterRuntimeState {
   researchEnabled: boolean;
   activeSessionId?: string;
-  busy: boolean;
-  planMode: boolean;
 }
 
 export interface RunResearchModeEnterOptions {
   sessionId?: string;
-  lineSlug?: string;
   pending: Set<string>;
   getState: () => ResearchEnterRuntimeState;
-  refreshResearch: (sessionId: string) => Promise<ResearchStatusSnapshot | null>;
+  refreshResearch: (sessionId: string) => Promise<ResearchModeSnapshot | null>;
   commandResearch: (
     sessionId: string,
     command: ResearchCommand,
-  ) => Promise<ResearchStatusSnapshot | null>;
-}
-
-export type ResearchLineWorkstreamBindingIntent =
-  | { kind: 'confirm'; lineSlug: string; workstream: string }
-  | { kind: 'clear'; lineSlug: string };
-
-const AITP_WORKSTREAM_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
-
-/**
- * Translate one explicit Manager intent into the public Research command.
- *
- * The current Program is only an availability precondition. Its Topic,
- * revision, confirmation provenance, and timestamp remain server-owned and
- * are intentionally absent from the command. Merely matching Line/workstream
- * slugs never invokes this path automatically or creates a binding by itself.
- */
-export function researchLineWorkstreamBindingCommand(
-  intent: ResearchLineWorkstreamBindingIntent,
-  snapshot: ResearchStatusSnapshot | null,
-): ResearchCommand | null {
-  if (snapshot === null || !snapshot.lines.some((line) => line.slug === intent.lineSlug)) {
-    return null;
-  }
-
-  const existing = (
-    snapshot.currentLineSlug === intent.lineSlug
-      ? snapshot.currentWorkstreamBinding?.binding
-      : undefined
-  ) ?? (snapshot.lineWorkstreamBindings ?? []).find(
-    (binding) => binding.lineSlug === intent.lineSlug,
-  );
-  if (intent.kind === 'clear') {
-    return existing === undefined
-      ? null
-      : {
-          kind: 'clear_line_workstream_binding',
-          lineSlug: intent.lineSlug,
-          expectedConfirmationId: existing.confirmationId,
-          expectedRevision: snapshot.revision,
-        };
-  }
-
-  const workstream = intent.workstream.trim();
-  if (
-    snapshot.program === undefined
-    || snapshot.aitpHealth.phase !== 'ready'
-    || existing !== undefined
-    || !AITP_WORKSTREAM_PATTERN.test(workstream)
-  ) {
-    return null;
-  }
-  return {
-    kind: 'confirm_line_workstream_binding',
-    lineSlug: intent.lineSlug,
-    workstream,
-    expectedRevision: snapshot.revision,
-  };
+  ) => Promise<ResearchModeSnapshot | null>;
 }
 
 export async function runResearchModeEnter(
@@ -122,8 +69,6 @@ export async function runResearchModeEnter(
     return { kind: 'ignored', reason: 'pending' };
   }
   if (!state.researchEnabled) return { kind: 'rejected', reason: 'disabled' };
-  if (state.busy) return { kind: 'rejected', reason: 'busy' };
-  if (state.planMode) return { kind: 'rejected', reason: 'plan_conflict' };
 
   options.pending.add(sessionId);
   try {
@@ -134,8 +79,6 @@ export async function runResearchModeEnter(
         return { kind: 'ignored', reason: 'session_changed' };
       }
       if (!state.researchEnabled) return { kind: 'rejected', reason: 'disabled' };
-      if (state.busy) return { kind: 'rejected', reason: 'busy' };
-      if (state.planMode) return { kind: 'rejected', reason: 'plan_conflict' };
       return { kind: 'rejected', reason: 'snapshot_unavailable' };
     }
 
@@ -144,16 +87,13 @@ export async function runResearchModeEnter(
       return { kind: 'ignored', reason: 'session_changed' };
     }
     if (!state.researchEnabled) return { kind: 'rejected', reason: 'disabled' };
-    if (state.busy) return { kind: 'rejected', reason: 'busy' };
-    if (researchComposerEntryState(true, refreshed.mode) === 'manage') {
+    if (refreshed.enabled) {
       return { kind: 'already-active', snapshot: refreshed };
     }
-    if (state.planMode) return { kind: 'rejected', reason: 'plan_conflict' };
 
     const snapshot = await options.commandResearch(sessionId, {
       kind: 'enter_mode',
       actor: 'user',
-      lineSlug: options.lineSlug,
     });
     return snapshot === null
       ? {
@@ -167,232 +107,54 @@ export async function runResearchModeEnter(
   }
 }
 
-export function planModeToggleResearchDecision(
-  planMode: boolean,
-  researchMode: ResearchStatusSnapshot['mode'] | null | undefined,
-  researchPending: boolean,
-): 'allow' | 'plan_conflict' {
-  if (planMode) return 'allow';
-  return researchPending
-    || researchComposerEntryState(true, researchMode) === 'manage'
-    ? 'plan_conflict'
-    : 'allow';
-}
-
-const MAX_FREE_TEXT_LENGTH = 2000;
-const CONTROL_SUBCOMMANDS = new Set([
-  'on',
-  'off',
-  'status',
+/** Legacy executor subcommands: recognized, but explicitly unsupported. */
+const RETIRED_SUBCOMMANDS = new Set([
   'pause',
   'resume',
   'manage',
-]);
-const GOAL_ALIGNMENT_RELATIONS = new Set<ResearchGoalAlignmentRelation>([
-  'same_program_goal',
-  'goal_parent_of_program',
-  'goal_milestone_in_program',
-  'unrelated',
-]);
-const QUESTION_SUBCOMMANDS = new Set([
+  'align',
+  'line',
   'edit',
   'focus',
   'defer',
   'block',
   'close',
   'reopen',
+  'discard-checkpoint',
+  'adopt-conclusion',
 ]);
+
+const SUPPORTED_SUBCOMMANDS = new Set(['on', 'off', 'status']);
 
 export type ResearchSlashErrorCode =
   | 'unknown_subcommand'
-  | 'unexpected_arguments'
-  | 'missing_line'
-  | 'missing_question'
-  | 'missing_separator'
-  | 'missing_text'
-  | 'text_too_long'
-  | 'invalid_alignment';
+  | 'unexpected_arguments';
 
 export type ParsedResearchSlashCommand =
   | { kind: 'toggle' }
   | { kind: 'status' }
-  | { kind: 'on'; lineSlug?: string }
+  | { kind: 'on' }
   | { kind: 'off' }
-  | { kind: 'pause' }
-  | { kind: 'resume' }
-  | { kind: 'manage' }
-  | { kind: 'align'; relation: ResearchGoalAlignmentRelation }
-  | { kind: 'clear_alignment' }
-  | { kind: 'line'; lineSlug: string }
-  | { kind: 'edit'; questionId: string; wording: string }
-  | { kind: 'focus'; questionId: string; boundedAction: string }
-  | {
-      kind: 'defer' | 'block' | 'close' | 'reopen';
-      questionId: string;
-      reason?: string;
-    }
+  | { kind: 'unsupported'; subcommand: string }
   | { kind: 'error'; code: ResearchSlashErrorCode };
-
-export function isResearchIdleOnlyBusy(
-  working: boolean,
-  compactionActive: boolean,
-): boolean {
-  return working || compactionActive;
-}
-
-export function researchSlashAllowedWhileBusy(
-  parsed: ParsedResearchSlashCommand,
-): boolean {
-  return parsed.kind === 'status' || parsed.kind === 'pause' || parsed.kind === 'resume';
-}
 
 export function parseResearchSlashCommand(rawArgs: string): ParsedResearchSlashCommand {
   const args = rawArgs.trim();
   if (args.length === 0) return { kind: 'toggle' };
-  if (args === 'status') return { kind: 'status' };
 
   const tokens = args.split(/\p{White_Space}+/u);
-  const first = tokens[0];
+  const first = tokens[0] ?? '';
 
-  if (first !== undefined && CONTROL_SUBCOMMANDS.has(first) && tokens.length === 1) {
-    return { kind: first as 'on' | 'off' | 'pause' | 'resume' | 'manage' };
+  if (SUPPORTED_SUBCOMMANDS.has(first)) {
+    if (tokens.length === 1) return { kind: first as 'on' | 'off' | 'status' };
+    return { kind: 'error', code: 'unexpected_arguments' };
   }
 
-  if (first === 'align') {
-    if (tokens.length !== 2) return { kind: 'error', code: 'invalid_alignment' };
-    const relation = tokens[1];
-    if (relation === 'clear') return { kind: 'clear_alignment' };
-    return GOAL_ALIGNMENT_RELATIONS.has(relation as ResearchGoalAlignmentRelation)
-      ? { kind: 'align', relation: relation as ResearchGoalAlignmentRelation }
-      : { kind: 'error', code: 'invalid_alignment' };
-  }
-
-  if (first === 'on') {
-    if (tokens[1] !== '--') return { kind: 'error', code: 'unexpected_arguments' };
-    const lineSlug = tokens.slice(2).join(' ').trim();
-    return lineSlug.length === 0 ? { kind: 'on' } : { kind: 'on', lineSlug };
-  }
-
-  if (first === 'line') {
-    const lineSlug = tokens.slice(1).join(' ').trim();
-    return lineSlug.length === 0
-      ? { kind: 'error', code: 'missing_line' }
-      : { kind: 'line', lineSlug };
-  }
-
-  if (first !== undefined && QUESTION_SUBCOMMANDS.has(first)) {
-    return parseQuestionCommand(first, tokens);
+  if (RETIRED_SUBCOMMANDS.has(first)) {
+    return { kind: 'unsupported', subcommand: first };
   }
 
   return { kind: 'error', code: 'unknown_subcommand' };
-}
-
-function parseQuestionCommand(
-  subcommand: string,
-  tokens: readonly string[],
-): ParsedResearchSlashCommand {
-  const separatorIndex = tokens.indexOf('--');
-  if (separatorIndex !== -1 && separatorIndex !== 2) {
-    return { kind: 'error', code: 'unexpected_arguments' };
-  }
-
-  const questionId = tokens[1];
-  if (questionId === undefined) {
-    return { kind: 'error', code: 'missing_question' };
-  }
-
-  if (subcommand === 'edit' || subcommand === 'focus') {
-    if (separatorIndex === -1) {
-      return tokens.length === 2
-        ? { kind: 'error', code: 'missing_separator' }
-        : { kind: 'error', code: 'unexpected_arguments' };
-    }
-    const text = tokens.slice(separatorIndex + 1).join(' ').trim();
-    if (text.length === 0) return { kind: 'error', code: 'missing_text' };
-    if (text.length > MAX_FREE_TEXT_LENGTH) {
-      return { kind: 'error', code: 'text_too_long' };
-    }
-    return subcommand === 'edit'
-      ? { kind: 'edit', questionId, wording: text }
-      : { kind: 'focus', questionId, boundedAction: text };
-  }
-
-  if (separatorIndex === -1 && tokens.length !== 2) {
-    return { kind: 'error', code: 'unexpected_arguments' };
-  }
-  const reason = separatorIndex === -1
-    ? undefined
-    : tokens.slice(separatorIndex + 1).join(' ').trim() || undefined;
-  if (reason !== undefined && reason.length > MAX_FREE_TEXT_LENGTH) {
-    return { kind: 'error', code: 'text_too_long' };
-  }
-  return {
-    kind: subcommand as 'defer' | 'block' | 'close' | 'reopen',
-    questionId,
-    reason,
-  };
-}
-
-export type ResearchSlashResolutionError =
-  | 'snapshot_unavailable'
-  | 'question_not_found'
-  | 'line_not_found'
-  | 'goal_alignment_unavailable';
-
-export function researchSlashNeedsSnapshot(parsed: ParsedResearchSlashCommand): boolean {
-  switch (parsed.kind) {
-    case 'toggle':
-    case 'pause':
-    case 'resume':
-    case 'line':
-    case 'align':
-    case 'clear_alignment':
-    case 'edit':
-    case 'focus':
-    case 'defer':
-    case 'block':
-    case 'close':
-    case 'reopen':
-      return true;
-    case 'error':
-    case 'manage':
-    case 'off':
-    case 'on':
-    case 'status':
-      return false;
-  }
-}
-
-export function researchCommandResolutionError(
-  parsed: ParsedResearchSlashCommand,
-  snapshot: ResearchStatusSnapshot | null,
-): ResearchSlashResolutionError | null {
-  if (!researchSlashNeedsSnapshot(parsed)) return null;
-  if (snapshot === null) return 'snapshot_unavailable';
-
-  if (parsed.kind === 'align' || parsed.kind === 'clear_alignment') {
-    return (snapshot.researchGoal?.goalId ?? snapshot.goalSummary?.goalId) !== undefined
-      && snapshot.program !== undefined
-      ? null
-      : 'goal_alignment_unavailable';
-  }
-
-  if (parsed.kind === 'line') {
-    return snapshot.lines.some((line) => line.slug === parsed.lineSlug) ? null : 'line_not_found';
-  }
-  if (
-    parsed.kind === 'edit' ||
-    parsed.kind === 'focus' ||
-    parsed.kind === 'defer' ||
-    parsed.kind === 'block' ||
-    parsed.kind === 'close' ||
-    parsed.kind === 'reopen'
-  ) {
-    return snapshot.questions.some((question) => question.id === parsed.questionId)
-      ? null
-      : 'question_not_found';
-  }
-  return null;
 }
 
 export type ResearchSlashExecutionOutcome = 'handled' | 'rejected';
@@ -416,7 +178,7 @@ export function researchSlashSessionIsCurrent(
 export async function submitResearchSlashCommand(
   submittedSessionId: string,
   activeSessionId: () => string | undefined,
-  send: () => Promise<ResearchStatusSnapshot | null>,
+  send: () => Promise<ResearchModeSnapshot | null>,
 ): Promise<ResearchSlashExecutionOutcome> {
   // Guard only before issuing the POST. Once the server accepted the request, a
   // later UI session switch must not turn a successful response into a rejected
@@ -432,91 +194,4 @@ export function researchSlashInputToRestore(
   outcome: ResearchSlashExecutionOutcome,
 ): string | null {
   return outcome === 'rejected' ? originalInput : null;
-}
-
-export function researchCommandFromSlash(
-  parsed: ParsedResearchSlashCommand,
-  snapshot: ResearchStatusSnapshot | null,
-): ResearchCommand | null {
-  if (researchCommandResolutionError(parsed, snapshot) !== null) return null;
-
-  switch (parsed.kind) {
-    case 'error':
-    case 'status':
-    case 'manage':
-      return null;
-    case 'toggle':
-      return snapshot === null
-        ? null
-        : snapshot.mode === 'inactive'
-          ? { kind: 'enter_mode', actor: 'user' }
-          : { kind: 'exit_mode' };
-    case 'align': {
-      const goal = snapshot?.researchGoal ?? snapshot?.goalSummary;
-      const program = snapshot?.program;
-      return goal?.goalId === undefined || program === undefined
-        ? null
-        : {
-            kind: 'confirm_goal_alignment',
-            relation: parsed.relation,
-            expectedRevision: snapshot!.revision,
-            goalId: goal.goalId,
-            topicId: program.topicId,
-            observedRevision: program.observedRevision,
-          };
-    }
-    case 'clear_alignment': {
-      const goal = snapshot?.researchGoal ?? snapshot?.goalSummary;
-      const program = snapshot?.program;
-      return goal?.goalId === undefined || program === undefined
-        ? null
-        : {
-            kind: 'clear_goal_alignment',
-            expectedRevision: snapshot!.revision,
-            goalId: goal.goalId,
-            topicId: program.topicId,
-            observedRevision: program.observedRevision,
-          };
-    }
-    case 'on':
-      return { kind: 'enter_mode', actor: 'user', lineSlug: parsed.lineSlug };
-    case 'off':
-      return { kind: 'exit_mode' };
-    case 'pause':
-      return { kind: 'pause_loop', expectedRevision: snapshot!.revision };
-    case 'resume':
-      return { kind: 'resume_loop', expectedRevision: snapshot!.revision };
-    case 'line':
-      return {
-        kind: 'switch_line',
-        lineSlug: parsed.lineSlug,
-        expectedRevision: snapshot!.revision,
-      };
-    case 'edit': {
-      const question = snapshot!.questions.find((item) => item.id === parsed.questionId)!;
-      return {
-        kind: 'update_question',
-        questionId: parsed.questionId,
-        expectedRevision: question.revision,
-        wording: parsed.wording,
-      };
-    }
-    case 'focus':
-      return {
-        kind: 'set_focus',
-        questionId: parsed.questionId,
-        expectedRevision: snapshot!.revision,
-        boundedAction: parsed.boundedAction,
-      };
-    case 'defer':
-    case 'block':
-    case 'close':
-    case 'reopen':
-      return {
-        kind: `${parsed.kind}_question`,
-        questionId: parsed.questionId,
-        expectedRevision: snapshot!.revision,
-        reason: parsed.reason,
-      };
-  }
 }

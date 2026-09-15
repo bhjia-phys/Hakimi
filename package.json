@@ -8,6 +8,7 @@
     "postinstall": "node scripts/fix-node-pty-perms.mjs",
     "build": "pnpm -r run build",
     "build:packages": "pnpm -r --filter './packages/*' run build",
+    "dev": "node dev",
     "dev:cli": "pnpm -C apps/kimi-code run dev",
     "dev:cli:legacy": "KIMI_CODE_LEGACY_FLAG=1 pnpm -C apps/kimi-code run dev",
     "dev:cli:marketplace": "KIMI_CODE_DEV_MARKETPLACE_URL=https://code.kimi.com/kimi-code/plugins/marketplace.json pnpm -C apps/kimi-code run dev",

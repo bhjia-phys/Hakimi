@@ -6,6 +6,7 @@ import {
   IAgentContextMemoryService,
   IAgentTokenCountingService,
   IAgentGoalService,
+  getProviderDefinition,
   type ContextMessage,
   type WireRecord,
 } from '#/index';
@@ -70,6 +71,7 @@ const V2_ONLY_RECORD_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
+  'research_mode.set_enabled',
   'tower_mode.enter',
   'tower_mode.exit',
   'task.started',
@@ -132,6 +134,15 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'research.end_period',
   'research.advance_revision',
 ]);
+
+describe('production provider registration', () => {
+  it('registers DeepSeek through the public entrypoint without a direct contrib import', () => {
+    expect(getProviderDefinition('deepseek', 'openai')).toMatchObject({
+      id: 'deepseek', baseProtocol: 'openai',
+      endpoint: { defaultBaseUrl: 'https://api.deepseek.com' },
+    });
+  });
+});
 
 describe('v1 wire vocabulary', () => {
   const SCOPE = 'wire';

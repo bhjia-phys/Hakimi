@@ -1,7 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/EditTool.vue -->
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { DiffViewLine, FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
+import type { DiffViewLine, FilePreviewRequest, ToolCall, ToolMedia, ToolStatus } from '../../../types';
 import { diffStats } from '../../../lib/diffLines';
 import { buildEditDiffLines } from '../../../lib/toolDiff';
 import { toolGlyph, toolLabel, toolSummary } from '../../../lib/toolMeta';
@@ -24,7 +24,7 @@ const emit = defineEmits<{
   openToolDiff: [id: string];
 }>();
 
-const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
+const status = computed<ToolStatus>(() => props.tool.status);
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
 const summary = computed(() => toolSummary(props.tool.name, props.tool.arg));

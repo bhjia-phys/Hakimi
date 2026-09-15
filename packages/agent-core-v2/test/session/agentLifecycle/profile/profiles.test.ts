@@ -2,8 +2,8 @@
  * Scenario: the builtin agent profile contributions.
  *
  * Pins the code-defined profiles registered at module load: the default
- * `agent` profile carries the Tower entry plus the complete AITP Research
- * tool surface (active-only except for entry) and declares no `subagents` allowlist. The
+ * `agent` profile carries the Tower entry plus the Research memory toggle
+ * tools (entry always available, exit active-only) and declares no `subagents` allowlist. The
  * `tower-worker` profile is contributed by the
  * tower Feature instead — see test/features/tower/workerProfile.test.ts. Run
  * with `pnpm --filter @moonshot-ai/agent-core-v2 exec vitest run
@@ -27,44 +27,12 @@ describe('builtin agent profiles', () => {
     expect(agent.tools).toEqual(expect.arrayContaining([
       'EnterAITPMode',
       'ExitAITPMode',
-      'GetResearchStatus',
-      'CreateResearchLine',
-      'UpdateResearchLine',
-      'CreateResearchQuestion',
-      'UpdateResearchQuestion',
-      'SetResearchFocus',
-      'ProposeResearchCheckpoint',
-      'CommitResearchCheckpoint',
-      'aitp_enter',
-      'aitp_list',
-      'aitp_show',
-      'aitp_check',
-      'aitp_record_prepare',
-      'aitp_record_save',
-      'aitp_note_prepare',
-      'aitp_note_save',
       'TowerInit',
     ]));
 
     const researchTools = new Set([
       'EnterAITPMode',
       'ExitAITPMode',
-      'GetResearchStatus',
-      'CreateResearchLine',
-      'UpdateResearchLine',
-      'CreateResearchQuestion',
-      'UpdateResearchQuestion',
-      'SetResearchFocus',
-      'ProposeResearchCheckpoint',
-      'CommitResearchCheckpoint',
-      'aitp_enter',
-      'aitp_list',
-      'aitp_show',
-      'aitp_check',
-      'aitp_record_prepare',
-      'aitp_record_save',
-      'aitp_note_prepare',
-      'aitp_note_save',
     ]);
     const tools = agent.tools ?? [];
     const profileResearchTools = tools.filter((tool) => researchTools.has(tool));
@@ -74,5 +42,17 @@ describe('builtin agent profiles', () => {
     // No subagents allowlist: enforced when present, so `undefined` keeps
     // user-defined profiles delegatable, tower-worker included.
     expect(agent.subagents).toBeUndefined();
+
+    const retiredResearchTools = new Set([
+      'GetResearchStatus',
+      'CreateResearchLine',
+      'CreateResearchQuestion',
+      'SetResearchFocus',
+      'ProposeResearchCheckpoint',
+      'CommitResearchCheckpoint',
+      'aitp_record_save',
+      'aitp_note_save',
+    ]);
+    expect((agent.tools ?? []).filter((tool) => retiredResearchTools.has(tool))).toEqual([]);
   });
 });

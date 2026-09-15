@@ -191,28 +191,60 @@ export function extractUsage(usage: unknown): TokenUsage | null {
     return null;
   }
   const u = usage as Record<string, unknown>;
-  const promptTokens = typeof u['prompt_tokens'] === 'number' ? u['prompt_tokens'] : 0;
-  const completionTokens = typeof u['completion_tokens'] === 'number' ? u['completion_tokens'] : 0;
+
+  const hasHit = Object.prototype.hasOwnProperty.call(u, 'prompt_cache_hit_tokens');
+  const hasMiss = Object.prototype.hasOwnProperty.call(u, 'prompt_cache_miss_tokens');
+  if (hasHit || hasMiss) {
+    const hit = parseCount(u['prompt_cache_hit_tokens']);
+    const miss = parseCount(u['prompt_cache_miss_tokens']);
+    const completion = parseCount(u['completion_tokens']);
+    const prompt = parseCount(u['prompt_tokens']);
+    if (hit.kind !== 'valid' || miss.kind !== 'valid') return null;
+    if (completion.kind !== 'valid' || prompt.kind !== 'valid') return null;
+    if (hit.value + miss.value !== prompt.value) return null;
+    return {
+      inputOther: miss.value,
+      output: completion.value,
+      inputCacheRead: hit.value,
+      inputCacheCreation: 0,
+    };
+  }
+
+  const prompt = parseCount(u['prompt_tokens']);
+  const completion = parseCount(u['completion_tokens']);
+  if (prompt.kind !== 'valid' || completion.kind !== 'valid') return null;
 
   let cached = 0;
-  if (typeof u['cached_tokens'] === 'number') {
-    cached = u['cached_tokens'];
+  const cachedTokens = parseCount(u['cached_tokens']);
+  if (cachedTokens.kind === 'invalid') return null;
+  if (cachedTokens.kind === 'valid') {
+    cached = cachedTokens.value;
   } else if (
     typeof u['prompt_tokens_details'] === 'object' &&
     u['prompt_tokens_details'] !== null
   ) {
     const details = u['prompt_tokens_details'] as Record<string, unknown>;
-    if (typeof details['cached_tokens'] === 'number') {
-      cached = details['cached_tokens'];
-    }
+    const detailCached = parseCount(details['cached_tokens']);
+    if (detailCached.kind === 'invalid') return null;
+    if (detailCached.kind === 'valid') cached = detailCached.value;
   }
 
   return {
-    inputOther: promptTokens - cached,
-    output: completionTokens,
+    inputOther: prompt.value - cached,
+    output: completion.value,
     inputCacheRead: cached,
     inputCacheCreation: 0,
   };
+}
+
+function parseCount(
+  value: unknown,
+): { kind: 'absent' } | { kind: 'invalid' } | { kind: 'valid'; value: number } {
+  if (value === undefined) return { kind: 'absent' };
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    return { kind: 'invalid' };
+  }
+  return { kind: 'valid', value };
 }
 
 export function normalizeOpenAIFinishReason(raw: string | null | undefined): {
@@ -277,6 +309,15 @@ export const OPENAI_VISION_TOOL_CAPABILITY = Object.freeze({
   max_context_tokens: 0,
 });
 
+export const OPENAI_THINKING_VISION_TOOL_CAPABILITY = Object.freeze({
+  image_in: true,
+  video_in: false,
+  audio_in: false,
+  thinking: true,
+  tool_use: true,
+  max_context_tokens: 0,
+});
+
 export const DEEPSEEK_VISION_CAPABILITY = Object.freeze({
   image_in: true,
   video_in: false,
@@ -300,6 +341,10 @@ export const DEEPSEEK_VISION_PREFIXES = ['deepseek-v4-flash-vision'] as const;
 
 export function isOpenAIReasoningModel(normalizedModelName: string): boolean {
   return /^o\d/.test(normalizedModelName);
+}
+
+export function isOpenAIGpt6AstraModel(normalizedModelName: string): boolean {
+  return /^gpt-6-astra(?:$|[-.])/.test(normalizedModelName);
 }
 
 export function hasModelPrefix(modelName: string, prefixes: readonly string[]): boolean {

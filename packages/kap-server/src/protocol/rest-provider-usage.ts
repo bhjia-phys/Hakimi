@@ -39,12 +39,65 @@ const providerExtraUsageSchema = z.object({
 });
 export type ProviderExtraUsage = z.infer<typeof providerExtraUsageSchema>;
 
+const providerMeteredBalanceSchema = z.object({
+  currency: z.enum(['CNY', 'USD']),
+  total: z.string(),
+  granted: z.string(),
+  topped_up: z.string(),
+});
+export type ProviderMeteredBalance = z.infer<typeof providerMeteredBalanceSchema>;
+
+const providerMeteredBalanceResultSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('ok'),
+    is_available: z.boolean(),
+    balances: z.array(providerMeteredBalanceSchema),
+  }),
+  z.object({
+    kind: z.literal('error'),
+    message: z.string(),
+    status: z.number().int().optional(),
+  }),
+]);
+export type ProviderMeteredBalanceResult = z.infer<typeof providerMeteredBalanceResultSchema>;
+
+const providerMeteredPeriodSchema = z.object({
+  start_at: z.string(),
+  end_at: z.string(),
+  request_count: z.number().int(),
+  measured_request_count: z.number().int(),
+  pending_request_count: z.number().int(),
+  missing_usage_request_count: z.number().int(),
+  unpriced_request_count: z.number().int(),
+  input_tokens: z.number().int(),
+  output_tokens: z.number().int(),
+  cache_read_tokens: z.number().int(),
+  total_tokens: z.number().int(),
+  estimated_cost: z.string().nullable(),
+  is_partial: z.boolean(),
+});
+export type ProviderMeteredPeriod = z.infer<typeof providerMeteredPeriodSchema>;
+
+const providerMeteredUsageSchema = z.object({
+  source: z.literal('local'),
+  cost_source: z.literal('estimated'),
+  currency: z.literal('CNY'),
+  timezone: z.literal('Asia/Shanghai'),
+  tracking_started_at: z.string().nullable(),
+  degraded: z.boolean(),
+  today: providerMeteredPeriodSchema,
+  month: providerMeteredPeriodSchema,
+  balance: providerMeteredBalanceResultSchema,
+});
+export type ProviderMeteredUsage = z.infer<typeof providerMeteredUsageSchema>;
+
 const providerUsageOkSchema = z.object({
   provider: z.string(),
   kind: z.literal('ok'),
   summary: providerUsageRowSchema.nullable(),
   limits: z.array(providerUsageRowSchema),
   extra_usage: providerExtraUsageSchema.nullable(),
+  metered_usage: providerMeteredUsageSchema.optional(),
 });
 export type ProviderUsageOk = z.infer<typeof providerUsageOkSchema>;
 

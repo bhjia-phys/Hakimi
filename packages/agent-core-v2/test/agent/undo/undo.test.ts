@@ -510,174 +510,24 @@ describe('AgentConversationUndoService', () => {
     expect(ctx.context.get().map((m) => m.role)).toEqual(['user', 'assistant']);
   });
 
-  it('closes the Research revision and admission boundary before active undo returns', async () => {
-    records = [];
-    const persisted = bufferedWirePersistence();
-    ctx = createTestAgent(
-      { persistence: persisted.persistence },
-      telemetryServices(recordingTelemetry(records)),
-      execEnvServices({ hostFs: createFakeHostFs({ mkdir: async () => {} }) }),
-      agentService(IEventBus, new EventBusService()),
-      agentService(IAgentAgentsMdReminderService, {
-        _serviceBrand: undefined,
-        seedInjected: () => {},
-      }),
-      agentService(IAgentProfileService, {
-        _serviceBrand: undefined,
-        data: () => ({
-          modelCapabilities: {},
-          thinkingLevel: 'off',
-          systemPrompt: '',
-          activeToolNames: [],
-          disallowedTools: [],
-        }),
-        update: () => {},
-        addActiveTool: () => {},
-        removeActiveTool: () => {},
-        getActiveToolNames: () => [],
-        getModelCapabilities: () => ({}),
-        resolveModelContext: () => ({
-          modelAlias: 'test-model',
-          modelCapabilities: {},
-          maxOutputSize: undefined,
-          alwaysThinking: undefined,
-          thinkingLevel: 'off',
-          reservedContextSize: undefined,
-          compactionTriggerRatio: undefined,
-        }),
-        getSystemPrompt: () => '',
-        hasProvider: () => true,
-        hasModel: () => true,
-        isRunnable: () => true,
-        refreshSystemPrompt: async () => {},
-        getEffectiveThinkingLevel: () => 'off',
-        resolveRequestParams: () => ({}),
-        getModel: () => 'test-model',
-      } as never),
-    );
-    ctx.get(IAgentContextMemoryService);
-    const wire = ctx.get(IWireService);
-    const adapter = ctx.get(ISessionAitpAdapter);
+  it.each([false, true])('undo does not start Research reconciliation when enabled=%s', async (enabled) => {
+    setup();
     const mode = ctx.get(IAgentAitpModeService);
-    const research = ctx.get(IAgentResearchService);
-    let releaseProbe!: (health: { phase: 'degraded'; lastError: string }) => void;
-    const probe = vi.spyOn(adapter, 'probe').mockImplementation(() => new Promise((resolve) => {
-      releaseProbe = resolve;
-    }));
-
-    wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
-    wire.dispatch(aitpModeEnter({ actor: 'user', lineSlug: 'main' }));
-    wire.dispatch(aitpModeSetPhase({ phase: 'ready' }));
-    wire.dispatch(researchSetProgram({
-      topicId: 't1',
-      title: 'Topic',
-      goalText: 'Bounded goal',
-      goalSource: '.aitp/topic/TOPIC.md',
-      establishedAt: 2,
-    }));
-    ctx.appendTurnExchange('u1', 'a1');
-    const program = wire.getModel(ResearchModel).current.program!;
-    wire.dispatch(researchConfirmWorkstreamBinding({
-      confirmationId: 'abandoned-confirmation',
-      lineSlug: 'main',
-      workstream: 'ws-main',
-      topicId: program.topicId,
-      observedRevision: program.observedRevision ?? 1,
-      confirmedBy: 'user',
-      confirmedAt: 3,
-      expectedRevision: wire.getModel(ResearchModel).current.revision,
-    }));
-    research.createQuestion({ lineSlug: 'main', wording: 'Abandoned branch question' });
-    const abandonedRevision = research.getSnapshot().revision;
-    await wire.flush();
-    const persistedBeforeUndo = persisted.records.length;
-
-    await ctx.get(IAgentConversationUndoService).undo(1);
-
-    expect(persisted.pending).toEqual([]);
-    expect(persisted.flushCount).toBeGreaterThanOrEqual(4);
-    expect(persisted.records.slice(persistedBeforeUndo)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'research.advance_revision', notifyGoal: false }),
-    ]));
-    expect(probe).toHaveBeenCalledOnce();
-    expect(wire.getModel(AitpModeModel).current.phase).toBe('probing');
-    expect(research.getSnapshot().revision).toBeGreaterThan(abandonedRevision);
-    expect(research.getLineWorkstreamAlignment('main').status).toBe('unbound');
-    expect(() => research.clearLineWorkstreamBinding({
-      lineSlug: 'main',
-      expectedRevision: abandonedRevision,
-      expectedConfirmationId: 'abandoned-confirmation',
-    })).toThrow('Research revision is stale');
-
-    releaseProbe({ phase: 'degraded', lastError: 'test probe complete' });
-    await vi.waitFor(() => expect(mode.phase).toBe('degraded'));
-  });
-
-  it('publishes one non-waking Research fence for an ordinary undo outside Research Mode', async () => {
-    records = [];
-    ctx = createTestAgent(
-      telemetryServices(recordingTelemetry(records)),
-      execEnvServices({ hostFs: createFakeHostFs({ mkdir: async () => {} }) }),
-      agentService(IEventBus, new EventBusService()),
-      agentService(IAgentAgentsMdReminderService, {
-        _serviceBrand: undefined,
-        seedInjected: () => {},
-      }),
-      agentService(IAgentProfileService, {
-        _serviceBrand: undefined,
-        data: () => ({
-          modelCapabilities: {},
-          thinkingLevel: 'off',
-          systemPrompt: '',
-          activeToolNames: [],
-          disallowedTools: [],
-        }),
-        update: () => {},
-        addActiveTool: () => {},
-        removeActiveTool: () => {},
-        getActiveToolNames: () => [],
-        getModelCapabilities: () => ({}),
-        resolveModelContext: () => ({
-          modelAlias: 'test-model',
-          modelCapabilities: {},
-          maxOutputSize: undefined,
-          alwaysThinking: undefined,
-          thinkingLevel: 'off',
-          reservedContextSize: undefined,
-          compactionTriggerRatio: undefined,
-        }),
-        getSystemPrompt: () => '',
-        hasProvider: () => true,
-        hasModel: () => true,
-        isRunnable: () => true,
-        refreshSystemPrompt: async () => {},
-        getEffectiveThinkingLevel: () => 'off',
-        resolveRequestParams: () => ({}),
-        getModel: () => 'test-model',
-      } as never),
-    );
-    ctx.get(IAgentContextMemoryService);
-    const mode = ctx.get(IAgentAitpModeService);
-    const research = ctx.get(IAgentResearchService);
+    if (enabled) await mode.enter({ actor: 'user' });
+    expect(() => ctx.get(ISessionAitpAdapter)).toThrow();
+    expect(() => ctx.get(IAgentResearchService)).toThrow();
     const eventBus = ctx.get(IEventBus);
-    const revisions: boolean[] = [];
-    const researchUpdates: unknown[] = [];
-    const modeUpdates: unknown[] = [];
+    const legacyEvents: unknown[] = [];
     const subscriptions = [
-      eventBus.subscribe('research.revision_advanced', ({ notifyGoal }) => revisions.push(notifyGoal)),
-      eventBus.subscribe('research.updated', (event) => researchUpdates.push(event)),
-      eventBus.subscribe('aitp_mode.updated', (event) => modeUpdates.push(event)),
+      eventBus.subscribe('research.revision_advanced', (event) => legacyEvents.push(event)),
+      eventBus.subscribe('research.updated', (event) => legacyEvents.push(event)),
+      eventBus.subscribe('aitp_mode.updated', (event) => legacyEvents.push(event)),
     ];
     ctx.appendTurnExchange('u1', 'a1');
-
     try {
       await ctx.get(IAgentConversationUndoService).undo(1);
-
-      expect(mode.phase).toBe('inactive');
-      expect(research.getSnapshot().revision).toBe(1);
-      expect(revisions).toEqual([false]);
-      expect(researchUpdates).toHaveLength(1);
-      expect(modeUpdates).toEqual([]);
+      expect(mode.isActive).toBe(enabled);
+      expect(legacyEvents).toEqual([]);
     } finally {
       subscriptions.forEach((subscription) => subscription.dispose());
     }

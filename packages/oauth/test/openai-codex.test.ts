@@ -301,10 +301,20 @@ describe('OpenAI Codex managed config', () => {
       maxInputSize: 372_000,
       supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     });
+    expect(config.models?.['openai-codex/gpt-6-astra']).toMatchObject({
+      provider: OPENAI_CODEX_PROVIDER_NAME,
+      model: 'gpt-6-astra',
+      maxContextSize: 1_050_000,
+      maxInputSize: 922_000,
+      capabilities: ['thinking', 'always_thinking', 'tool_use', 'image_in'],
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+      defaultEffort: 'low',
+    });
     expect(result.models).toEqual([
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
+      'gpt-6-astra',
     ]);
     expect(config.models?.['keep/model']).toBeDefined();
     expect(config.defaultModel).toBe('openai-codex/gpt-5.6-sol');
@@ -313,6 +323,7 @@ describe('OpenAI Codex managed config', () => {
 
     expect(config.providers[OPENAI_CODEX_PROVIDER_NAME]).toBeUndefined();
     expect(config.models?.['openai-codex/gpt-5.6-sol']).toBeUndefined();
+    expect(config.models?.['openai-codex/gpt-6-astra']).toBeUndefined();
     expect(config.models?.['keep/model']).toBeDefined();
     expect(config.defaultModel).toBeUndefined();
   });

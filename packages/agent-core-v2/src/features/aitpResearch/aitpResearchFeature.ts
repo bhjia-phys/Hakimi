@@ -1,359 +1,54 @@
 /**
- * `aitpResearch` domain — `AitpResearchFeature`: the AITP Research Mode
- * capability assembled as one App-scope Feature unit.
+ * `aitpResearch` domain — local knowledge and research memory mode.
  *
- * Contributes the per-Agent `IAgentAitpModeService`, `IAgentResearchService`,
- * the non-checkpointed external-fact facade `IAitpExternalFactService`, and
- * the per-Agent `IResearchLoopCoordinator` (minimal turn-lifecycle coordinator),
- * the Session-scope `ISessionAitpAdapter` and current-state maintenance
- * coordinator, the mode/Research/AITP adapter
- * tools through the `features` base-class seams, and the AITP skill
- * visibility filter. The `aitpResearch.*` / `research.*` wire vocabulary
- * (`features/aitpResearch/aitpResearchOps`) stays on its static import=register
- * channel. `EnterAITPMode` is always registered; all other tools are
- * active-only (their `when` checks `mode.isActive`). The active overlay exposes the
- * semantic Begin/Conclude action path while retaining lower-level recovery
- * tools only where needed. Registered into the feature table at import.
+ * Contributes the Agent-scoped toggle, brief context guidance, and official
+ * AITP Skill visibility through the Feature seams. Legacy Research wire
+ * vocabulary remains statically registered for history replay, not execution.
  */
 
 import { Feature } from '#/features/feature';
 import { registerFeature } from '#/features/featureRegistry';
-import { LifecycleScope } from '#/app/scopes';
-import type { ServicesAccessor } from '#/_base/di/instantiation';
 import { SkillVisibilityContribution } from '#/agent/skillVisibility/skillVisibility';
-
-import { ISessionAitpAdapter } from './adapter/sessionAitpAdapter';
-import { SessionAitpAdapterService } from './adapter/sessionAitpAdapterService';
-import { ISessionAitpLifecycleCoordinator } from './coordinator/sessionAitpLifecycleCoordinator';
-import { SessionAitpLifecycleCoordinatorService } from './coordinator/sessionAitpLifecycleCoordinatorService';
 import { IAgentAitpModeService } from './mode/agentAitpMode';
 import { AgentAitpModeService } from './mode/agentAitpModeService';
-import { IAgentResearchService } from './research/agentResearch';
-import { AgentResearchService } from './research/agentResearchService';
-import { IDurableCommitService } from './research/durableCommit';
-import { DurableCommitService } from './research/durableCommitService';
-import { IAitpDistillationHandoffService } from './research/distillationHandoff';
-import { AitpDistillationHandoffService } from './research/distillationHandoffService';
-import { IAitpExternalFactService } from './research/externalFact';
-import { AitpExternalFactService } from './research/externalFactService';
 import { AitpResearchInjection } from './injection/aitpResearchInjection';
 import { IAitpResearchInjection } from './injection/aitpResearchInjectionContract';
 import { AitpSkillVisibilityInjection } from './injection/aitpSkillVisibilityInjection';
 import { IAitpSkillVisibilityInjection } from './injection/aitpSkillVisibilityInjectionContract';
-import { IResearchLoopCoordinator, ResearchLoopCoordinator } from './loop/researchLoopCoordinator';
-import { IResearchTurnAdmission, ResearchTurnAdmission } from './loop/researchTurnAdmission';
-
-import {
-  IEnterAITPModeTool,
-  IExitAITPModeTool,
-} from './tools/aitpModeTools';
+import { IEnterAITPModeTool, IExitAITPModeTool } from './tools/aitpModeTools';
 import { EnterAITPModeTool, ExitAITPModeTool } from './tools/aitpModeToolsImpl';
-import {
-  ICommitResearchCheckpointTool,
-  IConfirmResearchWorkstreamBindingTool,
-  IClearResearchWorkstreamBindingTool,
-  IConcludeResearchActionTool,
-  ICreateResearchLineTool,
-  ICreateResearchQuestionTool,
-  IGetResearchStatusTool,
-  IAcknowledgeResearchAlertTool,
-  IBeginResearchActionTool,
-  IProposeResearchCheckpointTool,
-  IDiscardHistoricalResearchCheckpointTool,
-  IRecordResearchProgressTool,
-  IReviewResearchEvidenceTool,
-  IObserveResearchRunTool,
-  IRequestResearchDecisionTool,
-  IResolveResearchDecisionTool,
-  ISetResearchFocusTool,
-  IStartResearchActionTool,
-  IUpdateResearchLineTool,
-  IUpdateResearchQuestionTool,
-} from './tools/researchTools';
-import {
-  CommitResearchCheckpointTool,
-  ConfirmResearchWorkstreamBindingTool,
-  ClearResearchWorkstreamBindingTool,
-  ConcludeResearchActionTool,
-  CreateResearchLineTool,
-  CreateResearchQuestionTool,
-  GetResearchStatusTool,
-  AcknowledgeResearchAlertTool,
-  BeginResearchActionTool,
-  ProposeResearchCheckpointTool,
-  DiscardHistoricalResearchCheckpointTool,
-  RecordResearchProgressTool,
-  ReviewResearchEvidenceTool,
-  ObserveResearchRunTool,
-  RequestResearchDecisionTool,
-  ResolveResearchDecisionTool,
-  SetResearchFocusTool,
-  StartResearchActionTool,
-  UpdateResearchLineTool,
-  UpdateResearchQuestionTool,
-} from './tools/researchToolsImpl';
-import {
-  IActivateResearchPlanV2Tool,
-  ICompleteResearchPlanV2Tool,
-  IDiscardResearchPlanV2Tool,
-  IPrepareResearchPlanV2Tool,
-} from './tools/researchPlanV2Tools';
-import {
-  ActivateResearchPlanV2Tool,
-  CompleteResearchPlanV2Tool,
-  DiscardResearchPlanV2Tool,
-  PrepareResearchPlanV2Tool,
-} from './tools/researchPlanV2ToolsImpl';
-import {
-  IAitpCheckTool,
-  IAitpEnterTool,
-  IAitpListTool,
-  IAitpNotePrepareTool,
-  IAitpNoteSaveTool,
-  IAitpRecordPrepareTool,
-  IAitpRecordSaveTool,
-  IAitpShowTool,
-  AitpCheckTool,
-  AitpEnterTool,
-  AitpListTool,
-  AitpNotePrepareTool,
-  AitpNoteSaveTool,
-  AitpRecordPrepareTool,
-  AitpRecordSaveTool,
-  AitpShowTool,
-} from './tools/aitpAdapterTools';
 
 const AITP_PLUGIN_ID = 'aitp-research-protocol';
-
-function isAitpModeActive(accessor: ServicesAccessor): boolean {
-  return accessor.get(IAgentAitpModeService).isActive;
-}
 
 export class AitpResearchFeature extends Feature {
   static override readonly name = 'aitpResearch';
 
   constructor() {
     super();
-
-    this.contributeService(LifecycleScope.Session, ISessionAitpAdapter, SessionAitpAdapterService);
-    this.contributeService(
-      LifecycleScope.Session,
-      ISessionAitpLifecycleCoordinator,
-      SessionAitpLifecycleCoordinatorService,
-    );
-
     this.contributeAgentService(IAgentAitpModeService, AgentAitpModeService);
-    this.contributeAgentService(IDurableCommitService, DurableCommitService);
-    this.contributeAgentService(
-      IAitpDistillationHandoffService,
-      AitpDistillationHandoffService,
-    );
-    this.contributeAgentService(IAitpExternalFactService, AitpExternalFactService);
-    this.contributeAgentService(IAgentResearchService, AgentResearchService);
-
     this.contributeAgentService(IAitpResearchInjection, AitpResearchInjection);
     this.contributeAgentService(IAitpSkillVisibilityInjection, AitpSkillVisibilityInjection);
-    this.contributeAgentService(IResearchTurnAdmission, ResearchTurnAdmission);
-    this.contributeAgentService(IResearchLoopCoordinator, ResearchLoopCoordinator);
-
     this.contributeTool(IEnterAITPModeTool, EnterAITPModeTool, {
       name: 'EnterAITPMode',
       domain: 'aitpResearch',
     });
-
     this.contributeTool(IExitAITPModeTool, ExitAITPModeTool, {
       name: 'ExitAITPMode',
       domain: 'aitpResearch',
-      when: isAitpModeActive,
+      when: (accessor) => accessor.get(IAgentAitpModeService).isActive,
     });
-    this.contributeTool(IGetResearchStatusTool, GetResearchStatusTool, {
-      name: 'GetResearchStatus',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IPrepareResearchPlanV2Tool, PrepareResearchPlanV2Tool, {
-      name: 'PrepareResearchPlanV2',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IActivateResearchPlanV2Tool, ActivateResearchPlanV2Tool, {
-      name: 'ActivateResearchPlanV2',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(ICompleteResearchPlanV2Tool, CompleteResearchPlanV2Tool, {
-      name: 'CompleteResearchPlanV2',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IDiscardResearchPlanV2Tool, DiscardResearchPlanV2Tool, {
-      name: 'DiscardResearchPlanV2',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAcknowledgeResearchAlertTool, AcknowledgeResearchAlertTool, {
-      name: 'AcknowledgeResearchAlert',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(ICreateResearchLineTool, CreateResearchLineTool, {
-      name: 'CreateResearchLine',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(ICreateResearchQuestionTool, CreateResearchQuestionTool, {
-      name: 'CreateResearchQuestion',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IUpdateResearchLineTool, UpdateResearchLineTool, {
-      name: 'UpdateResearchLine',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(
-      IConfirmResearchWorkstreamBindingTool,
-      ConfirmResearchWorkstreamBindingTool,
-      {
-        name: 'ConfirmResearchWorkstreamBinding',
-        domain: 'aitpResearch',
-        when: isAitpModeActive,
-      },
-    );
-    this.contributeTool(
-      IClearResearchWorkstreamBindingTool,
-      ClearResearchWorkstreamBindingTool,
-      {
-        name: 'ClearResearchWorkstreamBinding',
-        domain: 'aitpResearch',
-        when: isAitpModeActive,
-      },
-    );
-    this.contributeTool(IUpdateResearchQuestionTool, UpdateResearchQuestionTool, {
-      name: 'UpdateResearchQuestion',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(ISetResearchFocusTool, SetResearchFocusTool, {
-      name: 'SetResearchFocus',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IProposeResearchCheckpointTool, ProposeResearchCheckpointTool, {
-      name: 'ProposeResearchCheckpoint',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(
-      IDiscardHistoricalResearchCheckpointTool,
-      DiscardHistoricalResearchCheckpointTool,
-      {
-        name: 'DiscardHistoricalResearchCheckpoint',
-        domain: 'aitpResearch',
-        when: isAitpModeActive,
-      },
-    );
-    this.contributeTool(ICommitResearchCheckpointTool, CommitResearchCheckpointTool, {
-      name: 'CommitResearchCheckpoint',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IBeginResearchActionTool, BeginResearchActionTool, {
-      name: 'BeginResearchAction',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IStartResearchActionTool, StartResearchActionTool, {
-      name: 'StartResearchAction',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IConcludeResearchActionTool, ConcludeResearchActionTool, {
-      name: 'ConcludeResearchAction',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IRecordResearchProgressTool, RecordResearchProgressTool, {
-      name: 'RecordResearchProgress',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IReviewResearchEvidenceTool, ReviewResearchEvidenceTool, {
-      name: 'ReviewResearchEvidence',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IObserveResearchRunTool, ObserveResearchRunTool, {
-      name: 'ObserveResearchRun',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IRequestResearchDecisionTool, RequestResearchDecisionTool, {
-      name: 'RequestResearchDecision',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IResolveResearchDecisionTool, ResolveResearchDecisionTool, {
-      name: 'ResolveResearchDecision',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-
-    this.contributeTool(IAitpEnterTool, AitpEnterTool, {
-      name: 'aitp_enter',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAitpListTool, AitpListTool, {
-      name: 'aitp_list',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAitpShowTool, AitpShowTool, {
-      name: 'aitp_show',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAitpCheckTool, AitpCheckTool, {
-      name: 'aitp_check',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAitpRecordPrepareTool, AitpRecordPrepareTool, {
-      name: 'aitp_record_prepare',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAitpRecordSaveTool, AitpRecordSaveTool, {
-      name: 'aitp_record_save',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAitpNotePrepareTool, AitpNotePrepareTool, {
-      name: 'aitp_note_prepare',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-    this.contributeTool(IAitpNoteSaveTool, AitpNoteSaveTool, {
-      name: 'aitp_note_save',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
-
     this.contribute(SkillVisibilityContribution, {
       id: 'aitpResearch',
       isVisible(skill, accessor) {
-        if (skill.plugin?.id === AITP_PLUGIN_ID) {
-          return accessor.get(IAgentAitpModeService).isActive;
-        }
-        return true;
+        return skill.plugin?.id !== AITP_PLUGIN_ID ||
+          accessor.get(IAgentAitpModeService).isActive;
       },
       isVisibleInFrozenListing(skill) {
         return skill.plugin?.id !== AITP_PLUGIN_ID;
       },
       describeHidden(skill, accessor) {
         if (skill.plugin?.id === AITP_PLUGIN_ID && !accessor.get(IAgentAitpModeService).isActive) {
-          return 'AITP Research Mode is not active. Call EnterAITPMode first.';
+          return 'Research Mode is off. Call EnterAITPMode to enable official AITP Skills.';
         }
         return undefined;
       },

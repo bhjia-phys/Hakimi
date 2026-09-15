@@ -11,11 +11,11 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
-import type { AppSubagentPhase } from '../../../api/types';
+import type { AgentPhase, FilePreviewRequest, ToolCall, ToolMedia, ToolStatus } from '../../../types';
 import type { SwarmMember } from '../../../composables/swarmGroups';
 import { toolLabel } from '../../../lib/toolMeta';
 import { parseSwarmResult } from '../../../lib/parseSwarmResult';
+import { swarmCardStatus } from '../../../lib/agentTaskResolver';
 import { buildSwarmCardRows, type SwarmCardRow } from '../../../lib/swarmCardRows';
 import Badge from '../../ui/Badge.vue';
 import Icon from '../../ui/Icon.vue';
@@ -69,21 +69,11 @@ const description = computed(() => input.value.description ?? '');
 const members = computed(() => resolveSwarmMembers?.(props.tool.id) ?? []);
 const result = computed(() => parseSwarmResult(props.tool.output));
 
-const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
-const aggregateStatus = computed<'running' | 'ok' | 'error'>(() => {
-  if (status.value === 'running') return 'running';
-  if (status.value === 'error' || (result.value?.failed ?? 0) > 0 || (result.value?.aborted ?? 0) > 0)
-    return 'error';
-  return 'ok';
-});
+const status = computed<ToolStatus>(() => props.tool.status);
+const aggregateStatus = computed(() => swarmCardStatus(status.value, members.value, result.value));
+const statusLabel = computed(() => t(`tools.status.${aggregateStatus.value}`));
 
-interface PhaseCounts {
-  completed: number;
-  working: number;
-  suspended: number;
-  queued: number;
-  failed: number;
-}
+type PhaseCounts = Record<AgentPhase, number>;
 
 // Rows are the single source of truth: phase counts and totals derive from the
 // live members and any not-yet-spawned result entries merged together (see
@@ -93,25 +83,26 @@ interface PhaseCounts {
 const rows = computed<SwarmCardRow[]>(() => buildSwarmCardRows(members.value, result.value));
 
 const counts = computed<PhaseCounts>(() => {
-  const c: PhaseCounts = { completed: 0, working: 0, suspended: 0, queued: 0, failed: 0 };
+  const c: PhaseCounts = { completed: 0, working: 0, suspended: 0, queued: 0, failed: 0, cancelled: 0 };
   for (const r of rows.value) c[r.phase]++;
   return c;
 });
 
 const total = computed(() => rows.value.length || input.value.itemCount || 0);
-const done = computed(() => counts.value.completed + counts.value.failed);
+const done = computed(() => counts.value.completed + counts.value.failed + counts.value.cancelled);
 const inProgress = computed(() => counts.value.working + counts.value.suspended + counts.value.queued);
 
-const PHASE_ORDER: readonly { phase: AppSubagentPhase; cls: string }[] = [
+const PHASE_ORDER: readonly { phase: AgentPhase; cls: string }[] = [
   { phase: 'completed', cls: 's-ok' },
   { phase: 'working', cls: 's-run' },
   { phase: 'suspended', cls: 's-warn' },
   { phase: 'failed', cls: 's-fail' },
+  { phase: 'cancelled', cls: 's-warn' },
   { phase: 'queued', cls: 's-queue' },
 ];
 
 interface Segment {
-  phase: AppSubagentPhase;
+  phase: AgentPhase;
   count: number;
   cls: string;
 }
@@ -152,7 +143,7 @@ function isRowOpen(id: string): boolean {
   return openRows.value.has(id);
 }
 
-function phaseLabel(phase: AppSubagentPhase): string {
+function phaseLabel(phase: AgentPhase): string {
   return t(`tools.swarm.phase${phase[0]!.toUpperCase()}${phase.slice(1)}`);
 }
 </script>
@@ -165,10 +156,13 @@ function phaseLabel(phase: AppSubagentPhase): string {
       <span v-if="description" class="meta">·</span>
       <span v-if="description" class="sum-txt">{{ description }}</span>
       <span class="rt">
-        <span class="status">
+        <span class="status" :class="`st-${aggregateStatus}`" role="status" :aria-label="statusLabel">
           <Icon v-if="aggregateStatus === 'ok'" name="check" size="sm" />
           <Icon v-else-if="aggregateStatus === 'error'" name="close" size="sm" />
-          <StatusDot v-else status="running" />
+          <Icon v-else-if="aggregateStatus === 'cancelled'" name="stop" size="sm" />
+          <Icon v-else-if="aggregateStatus === 'unknown'" name="help-circle" size="sm" />
+          <StatusDot v-else :status="aggregateStatus" />
+          <span>{{ statusLabel }}</span>
         </span>
         <span v-if="done > 0 || total > 0" class="chip">{{ done }} / {{ total }}</span>
         <span v-if="tool.timing" class="tm">{{ tool.timing }}</span>
@@ -180,13 +174,13 @@ function phaseLabel(phase: AppSubagentPhase): string {
       <div class="overview">
         <div class="overview-line">
           <span class="big">{{ t('tools.swarm.progress', { done, total }) }}</span>
-          <span v-if="aggregateStatus === 'running' && total > 0" class="lbl">
-            {{ t('tools.swarm.runningSub', { count: inProgress }) }}
+          <span v-if="inProgress > 0" class="lbl">
+            {{ t('tools.swarm.activeSub', { running: counts.working, queued: counts.queued, suspended: counts.suspended }) }}
           </span>
-          <span v-else-if="result" class="lbl">
-            {{ t('tools.swarm.doneSub', { completed: result.completed, failed: result.failed + result.aborted }) }}
+          <span v-else-if="result || rows.length > 0" class="lbl">
+            {{ t('tools.swarm.doneSub', { completed: result?.completed ?? counts.completed, failed: result?.failed ?? counts.failed, cancelled: result?.aborted ?? counts.cancelled }) }}
           </span>
-          <span v-else class="lbl">{{ t('tools.swarm.waiting') }}</span>
+          <span v-else class="lbl">{{ aggregateStatus === 'running' ? t('tools.swarm.waiting') : statusLabel }}</span>
         </div>
         <div v-if="total > 0 && segments.length > 0" class="seg" aria-hidden="true">
           <span v-for="s in segments" :key="s.phase" :class="s.cls" :style="{ flex: s.count }" />
@@ -237,7 +231,7 @@ function phaseLabel(phase: AppSubagentPhase): string {
 
       <div v-else-if="fallbackOutput" class="fallback-output">{{ fallbackOutput }}</div>
 
-      <div v-else class="waiting">{{ t('tools.swarm.waiting') }}</div>
+      <div v-else class="waiting">{{ aggregateStatus === 'running' ? t('tools.swarm.waiting') : statusLabel }}</div>
     </div>
   </div>
 </template>
@@ -319,13 +313,26 @@ function phaseLabel(phase: AppSubagentPhase): string {
 .status {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-1);
   flex: none;
+  white-space: nowrap;
 }
-.status:has(> svg) {
+.status.st-ok {
   color: var(--color-success);
 }
-.err .status:has(> svg) {
+.status.st-error {
   color: var(--color-danger);
+}
+.status.st-cancelled,
+.status.st-suspended {
+  color: var(--color-warning);
+}
+.status.st-running {
+  color: var(--color-accent);
+}
+.status.st-unknown,
+.status.st-queued {
+  color: var(--color-text-muted);
 }
 .chip {
   color: var(--color-text-muted);
@@ -483,6 +490,7 @@ function phaseLabel(phase: AppSubagentPhase): string {
 .phase-failed .mphase { color: var(--color-danger); }
 .phase-working .mphase { color: var(--color-accent); }
 .phase-suspended .mphase { color: var(--color-warning); }
+.phase-cancelled .mphase { color: var(--color-warning); }
 .mcar {
   margin-left: 4px;
   color: var(--color-text-faint);

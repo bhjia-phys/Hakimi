@@ -3,7 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ChatTurn, ConnectionState, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WebPreviewTarget, WorkspaceView } from '../../types';
-import type { AppGoal, AppModel, AppSkill, AppTurnProgress, AutoSubagentPresetStatus, QuestionResponse, ResearchGoalAlignmentRelation, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, AppTurnProgress, AutoSubagentPresetStatus, QuestionResponse, ResearchModeSnapshot, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { ComposerCommandEvent } from '../../composables/useComposerDraft';
@@ -23,6 +23,7 @@ import {
 } from '../../lib/conversationVisibility';
 import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
 import {
+  isTaskRunning,
   resolveAgentTaskForDetail,
   resolveExactAgentTask,
 } from '../../lib/agentTaskResolver';
@@ -38,7 +39,7 @@ const props = defineProps<{
   /** Model-maintained todo list (TodoList tool) — shown as a floating card. */
   todos?: TodoView[];
   goal?: AppGoal | null;
-  research?: ResearchStatusSnapshot | null;
+  research?: ResearchModeSnapshot | null;
   researchEnabled?: boolean;
   researchExpandSignal?: number;
   activationBadges?: ActivationBadges;
@@ -150,9 +151,7 @@ const emit = defineEmits<{
   createGoal: [objective: string];
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   startResearch: [];
-  manageResearch: [];
-  alignResearch: [relation: ResearchGoalAlignmentRelation];
-  clearResearchAlignment: [];
+  stopResearch: [];
   compact: [];
   pickModel: [];
   selectModel: [modelId: string];
@@ -274,8 +273,8 @@ const bashTasks = computed(() => props.tasks.filter((t) => t.kind !== 'subagent'
 const subagentTasks = computed(() =>
   props.tasks.filter((t) => t.kind === 'subagent' && t.runInBackground),
 );
-const bashRunning = computed(() => bashTasks.value.filter((t) => t.state === 'run').length);
-const subagentRunning = computed(() => subagentTasks.value.filter((t) => t.state === 'run').length);
+const bashRunning = computed(() => bashTasks.value.filter(isTaskRunning).length);
+const subagentRunning = computed(() => subagentTasks.value.filter(isTaskRunning).length);
 
 // Identity metadata requires an exact task/tool-call link. Detail availability
 // alone may use the legacy unique-unmapped fallback for late subscriptions.
@@ -1352,14 +1351,11 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
 
     <div class="chat-layout">
       <ResearchBoardPanel
-        v-if="research && research.mode !== 'inactive' && !sessionLoading"
+        v-if="research && research.enabled && !sessionLoading"
         :key="sessionId"
         :snapshot="research"
         :force-expanded="researchExpandSignal"
         :style="{ '--research-dock-height': `${dockHeight}px` }"
-        @manage="emit('manageResearch')"
-        @align="emit('alignResearch', $event)"
-        @clear-alignment="emit('clearResearchAlignment')"
       />
       <div
         :ref="bindChatPane"
@@ -1474,7 +1470,7 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
               @control-goal="emit('controlGoal', $event)"
               @focus-goal="focusGoal"
               @start-research="emit('startResearch')"
-              @manage-research="emit('manageResearch')"
+              @stop-research="emit('stopResearch')"
               @compact="emit('compact')"
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
@@ -1562,7 +1558,7 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
         @cancel-task="emit('cancelTask', $event)"
         @control-goal="emit('controlGoal', $event)"
         @start-research="emit('startResearch')"
-        @manage-research="emit('manageResearch')"
+        @stop-research="emit('stopResearch')"
         @submit="handleComposerSubmit"
         @steer="emit('steer', $event)"
         @command="emit('command', $event)"

@@ -6,9 +6,17 @@ import { messagesToTurns, toAgentMember } from '../src/composables/messagesToTur
 import { isPlayableMediaUrl } from '../src/composables/useFilePreview';
 import { toUiTask } from '../src/composables/useKimiWebClient';
 import {
+  agentCardStatus,
+  aggregateToolStatus,
+  effectiveToolStatus,
+  isTaskCancellable,
+  isTaskRunning,
+  taskDisplayStatus,
   resolveAgentTaskForDetail,
   resolveExactAgentTask,
 } from '../src/lib/agentTaskResolver';
+import type { TaskItem, ToolStatus } from '../src/types';
+import { i18n } from '../src/i18n';
 
 function message(
   id: string,
@@ -928,7 +936,183 @@ describe('messagesToTurns cron', () => {
   });
 });
 
+describe('messagesToTurns dangling tool settling', () => {
+  it('marks a result-less tool of an idle final turn as unknown, never as success', () => {
+    // The main turn is over (session idle) but the tool's result frame never
+    // arrived — the card must not guess ok: the outcome is genuinely unknown.
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [{ type: 'text', text: 'hi' }]),
+        message('a1', 'assistant', [
+          { type: 'toolUse', toolCallId: 'tool-1', toolName: 'bash', input: { command: 'ls' } },
+        ]),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns.at(-1)?.tools).toMatchObject([{ id: 'tool-1', status: 'unknown' }]);
+  });
+
+  it('marks a result-less tool of a turn ended by a later message as unknown', () => {
+    const turns = messagesToTurns(
+      [
+        message('a1', 'assistant', [
+          { type: 'toolUse', toolCallId: 'tool-1', toolName: 'bash', input: { command: 'ls' } },
+        ]),
+        message('u1', 'user', [{ type: 'text', text: 'next question' }]),
+      ],
+      [],
+      undefined,
+      true,
+    );
+
+    expect(turns[0]?.tools).toMatchObject([{ id: 'tool-1', status: 'unknown' }]);
+  });
+
+  it('keeps a genuinely in-flight tool of the live final turn running', () => {
+    const turns = messagesToTurns(
+      [
+        message('a1', 'assistant', [
+          { type: 'toolUse', toolCallId: 'tool-1', toolName: 'bash', input: { command: 'ls' } },
+        ]),
+      ],
+      [],
+      undefined,
+      true,
+    );
+
+    expect(turns.at(-1)?.tools).toMatchObject([{ id: 'tool-1', status: 'running' }]);
+  });
+
+  it('keeps a real tool result as ok even when the session is idle', () => {
+    const turns = messagesToTurns(
+      [
+        message('a1', 'assistant', [
+          { type: 'toolUse', toolCallId: 'tool-1', toolName: 'bash', input: { command: 'ls' } },
+        ]),
+        message('t1', 'tool', [{ type: 'toolResult', toolCallId: 'tool-1', output: 'done' }]),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns.at(-1)?.tools).toMatchObject([{ id: 'tool-1', status: 'ok' }]);
+  });
+});
+
+describe('agentCardStatus', () => {
+  function liveTask(state: TaskItem['state'], phase?: TaskItem['phase']): TaskItem {
+    return {
+      id: 'agent-1',
+      name: 'subagent',
+      kind: 'subagent',
+      state,
+      phase,
+      timing: '',
+      parentToolCallId: 'call-1',
+    };
+  }
+
+  it('lets a live running task win over a message-side ok or unknown', () => {
+    // The main turn went idle (tool settled to 'unknown') while a background
+    // subagent is still running — the card must show the live truth.
+    for (const toolStatus of ['ok', 'unknown', 'running', 'error'] as ToolStatus[]) {
+      expect(agentCardStatus(toolStatus, liveTask('run', 'working'))).toBe('running');
+    }
+  });
+
+  it('renders suspended and queued phases instead of pretending to run', () => {
+    expect(agentCardStatus('running', liveTask('run', 'suspended'))).toBe('suspended');
+    expect(agentCardStatus('running', liveTask('run', 'queued'))).toBe('queued');
+  });
+
+  it('maps terminal task states, keeping cancelled distinct from failed', () => {
+    expect(agentCardStatus('running', liveTask('cancelled'))).toBe('cancelled');
+    expect(agentCardStatus('running', liveTask('fail'))).toBe('error');
+    expect(agentCardStatus('running', liveTask('done'))).toBe('ok');
+  });
+
+  it('keeps an authoritative error tool result over a completed task', () => {
+    expect(agentCardStatus('error', liveTask('done'))).toBe('error');
+  });
+
+  it('falls back to the message-derived status when no task is linked', () => {
+    for (const toolStatus of ['ok', 'error', 'running', 'unknown'] as ToolStatus[]) {
+      expect(agentCardStatus(toolStatus, undefined)).toBe(toolStatus);
+    }
+  });
+});
+
+describe('effective group and background task status', () => {
+  const base: TaskItem = { id: 'agent', parentToolCallId: 'call', kind: 'subagent', name: 'Worker', state: 'run', timing: '' };
+
+  it.each([
+    ['working', 'running', true, true], ['queued', 'queued', false, true],
+    ['suspended', 'suspended', false, true], ['cancelled', 'cancelled', false, false],
+    ['failed', 'error', false, false], ['completed', 'ok', false, false],
+  ] as const)('separates executing from cancellable for phase %s', (phase, status, running, cancellable) => {
+    const task = { ...base, phase };
+    expect(taskDisplayStatus(task)).toBe(status);
+    expect(isTaskRunning(task)).toBe(running);
+    expect(isTaskCancellable(task)).toBe(cancellable);
+  });
+
+  it('counts only actually working tasks, not queued/suspended or terminal tasks', () => {
+    const tasks: TaskItem[] = [
+      { ...base, phase: 'working' }, { ...base, phase: 'queued' }, { ...base, phase: 'suspended' },
+      { ...base, state: 'cancelled', phase: 'working' }, { ...base, state: 'fail', phase: 'working' },
+    ];
+    expect(tasks.filter(isTaskRunning)).toHaveLength(1);
+    expect(tasks.filter(isTaskCancellable)).toHaveLength(3);
+  });
+
+  it.each([
+    ['run', 'working', 'running'], ['run', 'suspended', 'suspended'],
+    ['run', 'queued', 'queued'], ['cancelled', 'working', 'cancelled'],
+  ] as const)('group and Agent child agree for %s/%s with stale message ok/unknown', (state, phase, expected) => {
+    const task: TaskItem = { ...base, state, phase };
+    for (const status of ['ok', 'unknown'] as const) {
+      const tool = { id: 'call', name: 'Agent', status, arg: '{}' };
+      const effective = effectiveToolStatus(tool, (id) => resolveExactAgentTask([task], id));
+      expect(effective).toBe(agentCardStatus(status, task));
+      expect(aggregateToolStatus(['ok', effective])).toBe(expected);
+    }
+  });
+
+  it('does not apply an unrelated task to a generic tool or an unmatched Agent', () => {
+    const resolve = (id: string) => resolveExactAgentTask([base], id);
+    expect(effectiveToolStatus({ id: 'other', name: 'Agent', arg: '{}', status: 'unknown' }, resolve)).toBe('unknown');
+    expect(effectiveToolStatus({ id: 'call', name: 'Read', arg: '{}', status: 'ok' }, resolve)).toBe('ok');
+  });
+
+  it('group shares the Swarm live-member resolver', () => {
+    const tool = { id: 'swarm', name: 'AgentSwarm', arg: '{}', status: 'unknown' as const };
+    expect(effectiveToolStatus(tool, undefined, () => [{ phase: 'working' }])).toBe('running');
+    expect(effectiveToolStatus(tool, undefined, () => [{ phase: 'cancelled' }])).toBe('unknown');
+    expect(effectiveToolStatus({ ...tool, status: 'cancelled' }, undefined, () => [{ phase: 'cancelled' }])).toBe('cancelled');
+  });
+});
+
 describe('subagent task view models', () => {
+  it('formats terminal and paused timing without claiming completion or running', () => {
+    const previous = i18n.global.locale.value;
+    i18n.global.locale.value = 'zh';
+    try {
+      const task: AppTask = { id: 'task', sessionId: 'session', kind: 'subagent', description: 'Worker', status: 'cancelled',
+        createdAt: '2026-01-01T00:00:00Z', startedAt: '2026-01-01T00:00:00Z', completedAt: '2026-01-01T00:01:00Z' };
+      expect(toUiTask(task).timing).toBe('已取消 · 60s');
+      expect(toUiTask({ ...task, status: 'failed' }).timing).toBe('失败 · 60s');
+      expect(toUiTask({ ...task, status: 'completed' }).timing).toBe('已完成 · 60s');
+      expect(toUiTask({ ...task, status: 'running', subagentPhase: 'suspended' }).timing).toBe('已挂起');
+      expect(toUiTask({ ...task, status: 'running', subagentPhase: 'queued' }).timing).toBe('排队中');
+      expect(toUiTask({ ...task, startedAt: undefined, completedAt: undefined }).timing).toBe('已取消');
+    } finally {
+      i18n.global.locale.value = previous;
+    }
+  });
   it('preserves role, model, and thinking effort in AgentMember and TaskItem', () => {
     const task: AppTask = {
       id: 'agent-1',
@@ -955,6 +1139,37 @@ describe('subagent task view models', () => {
       model: 'runtime-model',
       thinkingEffort: 'high',
     });
+  });
+
+  it('keeps cancelled distinct from failed and working in both view models', () => {
+    const cancelled: AppTask = {
+      id: 'agent-c',
+      sessionId: 'session-1',
+      kind: 'subagent',
+      description: 'Interrupted task',
+      status: 'cancelled',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      // The event stream leaves the last live phase behind on cancel.
+      subagentPhase: 'working',
+    };
+
+    // The terminal status is authoritative over the stale phase.
+    expect(toAgentMember(cancelled).phase).toBe('cancelled');
+    expect(toAgentMember(cancelled).status).toBe('cancelled');
+    expect(toUiTask(cancelled).state).toBe('cancelled');
+
+    const failed: AppTask = { ...cancelled, id: 'agent-f', status: 'failed' };
+    expect(toAgentMember(failed).phase).toBe('failed');
+    expect(toUiTask(failed).state).toBe('fail');
+
+    const completed: AppTask = { ...cancelled, id: 'agent-ok', status: 'completed' };
+    expect(toAgentMember(completed).phase).toBe('completed');
+    expect(toUiTask(completed).state).toBe('done');
+
+    // A live task passes its phase through so suspended/queued stay visible.
+    const suspended: AppTask = { ...cancelled, id: 'agent-s', status: 'running', subagentPhase: 'suspended' };
+    expect(toAgentMember(suspended).phase).toBe('suspended');
+    expect(toUiTask(suspended)).toMatchObject({ state: 'run', phase: 'suspended' });
   });
 
   it('never assigns one unmapped task metadata to either of two Agent cards', () => {

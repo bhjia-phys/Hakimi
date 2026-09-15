@@ -10,9 +10,14 @@
  * (`fetchCodexUsage` against the fixed official `wham/usage` URL through the
  * existing OAuth token provider / request auth), and the exact-base OpenCode
  * Go provider (`fetchOpenCodeGoUsage` against the fixed
- * `opencode.ai/zen/go/v1/usage` endpoint). `extraUsage` (the Kimi booster
- * wallet) is only ever present for the Kimi routes; Codex and OpenCode Go
- * report rate-limit / subscription-quota windows without wallet fields.
+ * `opencode.ai/zen/go/v1/usage` endpoint), and (behind the `deepseek_usage`
+ * flag) an official DeepSeek base, which reports `summary`/`limits` as
+ * empty and instead carries `meteredUsage` — the local today/month token
+ * ledger with an estimated CNY cost plus the official account balance. The
+ * `meteredUsage` cost is an estimate, never a quota percentage. `extraUsage`
+ * (the Kimi booster wallet) is only ever present for the Kimi routes; Codex
+ * and OpenCode Go report rate-limit / subscription-quota windows without
+ * wallet fields.
  * Providers with no usage endpoint answer `unsupported`; failures answer
  * `error`. Error messages are scrubbed at the service boundary: the API-key
  * routes redact their credential from untrusted remote text, and the managed
@@ -25,6 +30,8 @@
 import type { BoosterWalletInfo, UsageRow } from '@moonshot-ai/kimi-code-oauth';
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
 
+import type { MeteredProviderUsage } from './meteredUsage';
+
 export type ProviderUsageResult =
   | {
       readonly kind: 'ok';
@@ -32,6 +39,7 @@ export type ProviderUsageResult =
       readonly summary: UsageRow | null;
       readonly limits: readonly UsageRow[];
       readonly extraUsage: BoosterWalletInfo | null;
+      readonly meteredUsage?: MeteredProviderUsage;
     }
   | {
       readonly kind: 'error' | 'unsupported';

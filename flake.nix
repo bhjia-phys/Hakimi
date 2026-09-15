@@ -234,7 +234,18 @@
             '';
 
             postInstall = ''
-              wrapProgram $out/bin/kimi --prefix PATH : ${lib.makeBinPath [ pkgs.ripgrep pkgs.fd ]}
+              # Wrap the REAL binary, not the kimi alias symlink: wrapProgram
+              # replaces the given path with a wrapper script, so wrapping the
+              # symlink would leave $out/bin/hakimi (mainProgram, the apps
+              # entry) without ripgrep/fd/xdg-open on PATH.
+              # xdg-utils supplies xdg-open, the primary Linux file opener
+              # used by the server's fs open/reveal routes.
+              wrapProgram $out/bin/hakimi --prefix PATH : ${
+                lib.makeBinPath (
+                  [ pkgs.ripgrep pkgs.fd ]
+                  ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.xdg-utils ]
+                )
+              }
             '';
 
             meta = {
@@ -274,7 +285,10 @@
               pnpm
               pkgs.ripgrep
               pkgs.fd
-            ];
+            ]
+            # xdg-open is the primary Linux file opener for the dev server's
+            # fs open/reveal routes.
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.xdg-utils ];
           };
       });
     };

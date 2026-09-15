@@ -1,5 +1,49 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+## 2026-09-13 Repository boundary followup — one research line, one Git repository {#research-repo-boundary-20260913}
+
+**本地派生补丁，非上游 release；本节为后续补记。下面 memory-lite 0.10 的交付数据仍是此前时点的记录，历史原文不改。**
+
+宿主侧不变：ResearchMode 仍只提供 `enabled` + 官方 Skill 可见性；宿主代码与 SDK 未改，无需重建。AITP 装的是本地派生版 **`0.10.0+repo.1`**（base 仍为 commit `3bebd4cc0fe786ea30420ab45692d8968cc0990b`，`aitp/adapter-contract-0.3` 不变），非上游 release。唯一行为变化在 AITP 自身的 `resolve_root`，现于最近 Git 根停下：
+
+| 场景 | 行为 |
+| --- | --- |
+| 有 local store 的 Git 仓库 | `enter`/`check` 照常；仓库内子目录照常 |
+| 无 local store 的 Git 仓库 | `enter`/`check` 报 `not_initialized`，不借用上层 memory |
+| 需要建 store | 显式 `init --adopt` 在仓库根创建 |
+| 无 Git，或 `.git` 目录为空/损坏 | 保留原祖先继承 |
+| 新增面 | 无新 CLI flags、registry、host hook 或数据库；不宣称 OS 沙箱 |
+
+知识层建议一研究线一 Git 仓库，各仓库沿用自己的目录名，不强制固定目录模板。派生补丁的本地验证记录为 229 项测试通过，包含仓库边界与版本格式场景；它没有成为链接中官方基线的一部分。
+
+复核时应比较 `enter` / `check` 实际解析的根、作用域与记录字节，覆盖有/无本地 store、仓库内子目录和无有效 Git 元数据的目录。没有该派生补丁时，官方基线仍可能继承祖先 store，必须显式核对归属。完整 server+browser 端到端仍无实测；本节不声称上游 release 或正式发布。
+
+## 2026-09-13 Research memory lite — locally implemented, installed and verified {#research-memory-lite-20260913}
+
+**已在本地实现、安装并完成全套验证；未声称正式发布。** 本次经批准的架构是「本地知识层＋研究长期记忆」，不是面板精简。以下说明记录当前架构与本地交付边界；本节之后的原文完整保留为历史证据，其中 H0–H6b、S1–S10、O1–O4 的 host adapter、Research Loop 和 veto 描述不再代表当前架构，也不构成第二套 legacy 执行模式。
+
+固定上游为 [AITP `main` 源码 commit `3bebd4cc0fe786ea30420ab45692d8968cc0990b`](https://github.com/bhjia-phys/AITP-Research-Protocol/tree/3bebd4cc0fe786ea30420ab45692d8968cc0990b)，0.10.0 / `aitp/adapter-contract-0.3`，包含 Entry 与 Note 原子 scoped save。取得的是源码归档，未做 Git checkout，也不是 release tag；未执行 version/tag/publish。
+
+后端契约为 `ResearchModeSnapshot = { enabled: boolean, skillsAvailable: boolean }`，SDK 保留 `Session.getResearch` / `commandResearch`，事件为 `research_mode.updated`。`skillsAvailable` 只报告 catalog 当前可见的官方 Skill 是否存在，不表示 CLI 版本或健康；关闭模式时也可以为 `true`。`enabled` 不随 conversation undo 回退。旧 mutation 返回 `research.retired`；旧记录通过原始会话日志或会话 export 只读查阅，不再有结构化 Research history API 或 Manager。
+
+| 边界 | 当前架构 |
+| --- | --- |
+| 本地知识 | 普通文件工具读写「现在知道什么」，保留来源、假设和适用边界；沿用项目 `AGENTS.md` / `README` 索引，不强制新目录或父级工作区知识库 |
+| 长期记忆 | 官方 AITP Skills + CLI 保存「怎么走到这里」；只整理新知识或值得记忆的进展，普通追问无 delta 零写入 |
+| Research 开关 | 保留 `/research on`、`/research off`、`/research status`；只控制轻量模式和官方 Skills 可见性，不证明 CLI 健康，不自动 probe、init、adopt、inventory、backfill 或写 ledger |
+| 生命周期 | 开关、状态读取、恢复和每轮边界不自动运行 CLI、maintenance、distillation 或写账本，不另建后台 loop |
+| 生产退役 | 不挂载 host ResearchService、Line/Question/Action、Research Plan、checkpoint/loop/maintenance/distillation、Research Goal veto、native adapter 及八个 `aitp_*` wrappers |
+| 历史兼容 | 旧记录只读保留，旧研究管理/推进 mutation 不再支持；不恢复旧控制层、不写第二套 legacy 执行模式、不自动迁移历史数据 |
+| 普通能力 | Goal、Plan、工具权限原有行为不变；Research 不再否决 Goal continuation/completion |
+| 保存保证 | Entry/Note 的原子 scope 校验由带相应前置条件的官方 CLI 操作负责，不由 host checkpoint 或本地 Line binding 负责 |
+| 安全边界 | 取消 host veto 后，普通文件工具没有额外 canonical 访问禁止保证；协议校验不覆盖任意文件写入，不是 OS 级隔离，既有权限与实际 sandbox 仍适用 |
+
+退役 wrappers 为 `aitp_enter`、`aitp_list`、`aitp_show`、`aitp_check`、`aitp_record_prepare`、`aitp_record_save`、`aitp_note_prepare`、`aitp_note_save`。`using-aitp` 与 `distilling-methods` 的完整规则仍以官方 Skill 为准，Hakimi 不复制全文，也不自行执行保存后蒸馏、方法批准或发布。不能从旧文档推导新的命令、状态字段或安装成功结论。
+
+后端定向测试、三个 P2 修复后的独立 review（29/29）、四包 typecheck、最终 SDK/CLI canonical build（含 DTS）与 521 Web assets 字节复现均已通过；实际 built V2 SDK 独立进程 create/on → restore/off 的知识与 ledger 零字节变化、零 model request 验收通过。managed AITP 0.10.0 已安装到本地 Hakimi home；最终默认模型只读记忆 smoke（`using-aitp` + `aitp.py`）跨进程恢复成功且零字节变化。CLI 全套 3175 passed / 5 declared skipped，core 全套 346 files / 5790 tests / 7 declared skipped，Web 43 files / 1092 tests 均通过。当前 CLI wrapper 链接工作区 dist，新启动进程使用新代码，运行中进程需重启，未强行重启任何会话。上述计数属于 2026-09-13 的本地验证，不替代待提交版本的 CI；验证方法和剩余边界见 [TRACKING 本次说明](TRACKING.md#research-memory-lite-20260913)。完整 server+browser 端到端尚无实测，且未执行 version/tag/publish。
+
+## Historical compatibility records
+
 **Goal usage / Research revision (2026-09-06; delivered and clean-installed):**
 usage-only Goal updates emit equal-revision Research snapshots, preserving the
 existing revision token for a subsequent workstream confirmation. Goal control

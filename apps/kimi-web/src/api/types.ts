@@ -514,767 +514,25 @@ export interface AppGoal {
 // Research
 // ---------------------------------------------------------------------------
 
-export type ResearchModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
-export type ResearchLoopStatus = 'active' | 'paused';
-export type ResearchPlanningPolicy = 'collaborative' | 'dreaming';
-export type ResearchQuestionWorkflow =
-  | 'open'
-  | 'active'
-  | 'deferred'
-  | 'blocked'
-  | 'closed'
-  | 'cancelled';
-export type ResearchQuestionEpistemic =
-  | 'unknown'
-  | 'candidate'
-  | 'supported'
-  | 'contradicted'
-  | 'inconclusive';
-export type ResearchQuestionPersistence =
-  | 'working'
-  | 'pending_commit'
-  | 'committed'
-  | 'degraded';
-export type ResearchLineStatus = 'active' | 'paused' | 'completed' | 'blocked';
-export type ResearchAlertKind =
-  | 'contradiction'
-  | 'blocked'
-  | 'reopened'
-  | 'commit_failed'
-  | 'degraded'
-  | 'stale';
-export type ResearchNextStepSource =
-  | 'research_action'
-  | 'research_run'
-  | 'human_gate'
-  | 'aitp_maintenance'
-  | 'question';
-export type ResearchNextStepFreshness = 'current' | 'stale' | 'blocked';
-export type ResearchAlertClassification =
-  | 'active_blocker'
-  | 'historical_unresolved'
-  | 'superseded_by_retry'
-  | 'warning';
-export type ResearchAlertSource =
-  | 'question'
-  | 'aitp_failure'
-  | 'aitp_check'
-  | 'adapter'
-  | 'checkpoint';
-export type ResearchAlertState = 'active' | 'acknowledged' | 'cleared' | 'superseded';
-export type AitpMaintenanceStatus = 'ready' | 'degraded';
-export type AitpMaintenanceMemoryStatus = 'available' | 'partial' | 'not_established' | 'unknown';
-export type AitpMaintenanceDegradedReason =
-  | 'adapter_not_ready'
-  | 'adapter_degraded'
-  | 'enter_failed'
-  | 'check_unavailable'
-  | 'stale_generation'
-  | 'workstream_unbound';
-export type ResearchPhase =
-  | 'idle'
-  | 'orienting'
-  | 'gap_analysis'
-  | 'action_planned'
-  | 'action_executing'
-  | 'evaluating'
-  | 'state_updated'
-  | 'checkpoint_pending'
-  | 'awaiting_human';
-export type ResearchActionKind =
-  | 'experiment'
-  | 'derivation'
-  | 'literature_review'
-  | 'data_analysis'
-  | 'simulation'
-  | 'other';
-export type ResearchActionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
-export type ResearchRunStage =
-  | 'queued'
-  | 'running'
-  | 'scf'
-  | 'band'
-  | 'analyzing'
-  | 'completed'
-  | 'failed'
-  | 'unknown';
-export type ResearchSchedulerState =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'unknown';
-export type ResearchHumanGateKind = 'approval' | 'review' | 'decision';
-
-export interface ResearchLine {
-  slug: string;
-  title: string;
-  objective?: string;
-  assessment?: string;
-  status: ResearchLineStatus;
-  createdAt: number;
-  revision: number;
+/**
+ * Research memory-mode snapshot — the only live Research surface. The legacy
+ * host Research executor (lines, questions, plans, checkpoints, loop) is
+ * retired; its historical records are preserved read-only on the server and
+ * are intentionally not re-exposed here as live state.
+ */
+export interface ResearchModeSnapshot {
+  enabled: boolean;
+  skillsAvailable: boolean;
 }
 
-export interface ResearchLineWorkstreamBinding {
-  confirmationId: string;
-  lineSlug: string;
-  workstream: string;
-  topicId: string;
-  observedRevision: number;
-  confirmedBy: 'user' | 'main_agent';
-  confirmedAt: number;
-}
-
-export type ResearchLineWorkstreamBindingStatus =
-  | 'unbound'
-  | 'unavailable'
-  | 'bound'
-  | 'stale'
-  | 'conflict';
-
-export interface ResearchLineWorkstreamAlignment {
-  lineSlug: string;
-  status: ResearchLineWorkstreamBindingStatus;
-  reason: string;
-  binding?: ResearchLineWorkstreamBinding;
-}
-
-export interface ResearchQuestion {
-  id: string;
-  lineSlug: string;
-  wording: string;
-  assessment?: string;
-  priority: number;
-  neededEvidence: string[];
-  evidenceRefs: string[];
-  falsifierRefs: string[];
-  nextBoundedAction?: string;
-  workflow: ResearchQuestionWorkflow;
-  epistemic: ResearchQuestionEpistemic;
-  persistence: ResearchQuestionPersistence;
-  revision: number;
-}
-
-export interface ResearchFocus {
-  questionId: string;
-  boundedAction?: string;
-  revision: number;
-}
-
-export interface ResearchEffectiveNextStep {
-  text: string;
-  source: ResearchNextStepSource;
-  freshness: ResearchNextStepFreshness;
-  observedAt: number;
-  derivedFrom: {
-    actionId?: string;
-    entryId?: string;
-    questionId?: string;
-    lineSlug?: string;
-  };
-}
-
-export interface ResearchAlert {
-  fingerprint: string;
-  kind: ResearchAlertKind;
-  classification?: ResearchAlertClassification;
-  source?: ResearchAlertSource;
-  state?: ResearchAlertState;
-  message: string;
-  questionId?: string;
-  lineSlug?: string;
-  relatedEntryId?: string;
-  workstream?: string;
-  retryOfEntryId?: string;
-  reason?: string;
-  createdAt: number;
-  acknowledgedAt?: number;
-}
-
-export interface ResearchAdapterHealth {
-  phase: ResearchModePhase;
-  contractVersion?: string;
-  pluginVersion?: string;
-  pythonVersion?: string;
-  lastCheckAt?: number;
-  lastError?: string;
-  notInitialized?: boolean;
-}
-
-export interface AitpMaintenanceFailureSummary {
-  entryId: string;
-  kind: 'observation' | 'result' | 'failure' | 'decision' | 'source' | 'code_change' | 'run' | 'closeout';
-  summary: string;
-  source: string;
-  authority: 'human' | 'agent' | 'source' | 'tool';
-  createdAt?: number;
-  workstream?: string;
-}
-
-export interface AitpMaintenanceNextAction {
-  text: string;
-  entryId: string;
-  authority: 'human' | 'agent' | 'source' | 'tool';
-  createdAt?: number;
-  source: string;
-}
-
-export interface ResearchProgramTopic {
-  id: string;
-  title: string;
-  goalText: string;
-  goalSource: string;
-}
-
-export type ResearchGoalAlignmentRelation =
-  | 'same_program_goal'
-  | 'goal_parent_of_program'
-  | 'goal_milestone_in_program'
-  | 'unrelated';
-export type ResearchGoalAlignmentStatus =
-  | 'unavailable'
-  | 'confirmation_required'
-  | 'aligned'
-  | 'stale'
-  | 'conflict';
-export interface ResearchGoalProgramBinding {
-  relation: ResearchGoalAlignmentRelation;
-  goalId: string;
-  topicId: string;
-  observedRevision: number;
-  confirmedAt: number;
-}
-export interface ResearchGoalAlignment {
-  status: ResearchGoalAlignmentStatus;
-  reason: string;
-  binding?: ResearchGoalProgramBinding;
-}
-
-export interface AitpMaintenanceReceipt {
-  status: AitpMaintenanceStatus;
-  refreshedAt: number;
-  memoryStatus: AitpMaintenanceMemoryStatus;
-  workstream?: string;
-  topic?: ResearchProgramTopic;
-  latestWorkingNoteAt?: number;
-  activeNewerThanWorkingNote: boolean | null;
-  unresolvedFailureCount: number;
-  unresolvedFailures: AitpMaintenanceFailureSummary[];
-  nextAction?: string;
-  nextActionDetails?: AitpMaintenanceNextAction;
-  warningSummaries: Array<{ level: 'warning'; code: string }>;
-  check: {
-    status: 'clean' | 'findings' | 'unavailable';
-    counts?: { entries: number; notes: number; errors: number; warnings: number };
-    findingCodes: string[];
-  };
-  degradedReason?: AitpMaintenanceDegradedReason;
-}
-
-export interface ResearchCheckpointCheckReceipt {
-  status: 'clean' | 'findings';
-  errors: number;
-  warnings: number;
-  findingFingerprints: string[];
-  errorFindingFingerprints: string[];
-  newErrorFindingFingerprints?: string[];
-  preExistingErrorFindingFingerprints?: string[];
-  checkedAt: number;
-}
-
-export type ResearchCheckpointPrepareReceipt =
-  | {
-      status: 'prepared';
-      id: string;
-      path: string;
-      idempotencyKey?: string;
-      workstreams?: string[];
-    }
-  | {
-      status: 'existing';
-      id?: string;
-      path: string;
-      idempotencyKey: string;
-      workstreams?: string[];
-    };
-
-export interface ResearchCheckpointSaveReceipt {
-  status: 'saved' | 'already_saved';
-  draftPath: string;
-  path: string;
-  source?: 'record_save' | 'prepare_existing';
-}
-
-export interface ResearchCheckpointReceipt {
-  prepare?: ResearchCheckpointPrepareReceipt;
-  save?: ResearchCheckpointSaveReceipt;
-  preSaveCheck?: ResearchCheckpointCheckReceipt;
-  postSaveCheck?: ResearchCheckpointCheckReceipt;
-}
-
-export interface ResearchDurableCommitCandidate {
-  sourceActionId: string;
-  progressRecordedAt: number;
-  entryKind: 'observation' | 'result' | 'failure' | 'decision' | 'source' | 'code_change' | 'run' | 'closeout';
-  authority: 'human' | 'agent' | 'source' | 'tool';
-  provenance: 'agent_verification' | 'tool_verification' | 'source_assessment' | 'human_assertion' | 'human_decision';
-  rationale: string;
-}
-
-export interface ResearchCommittedCursor {
-  checkpointId: string;
-  entryId?: string;
-  receipt?: ResearchCheckpointReceipt;
-  committedAt: number;
-}
-
-export interface ResearchLocalConclusion {
-  action: ResearchActionSpec;
-  progress: ResearchProgressReport;
-  candidate: ResearchDurableCommitCandidate;
-  program?: ResearchProgram;
-  line?: ResearchLine;
-}
-
-export interface ResearchCheckpoint {
-  checkpointId: string;
-  committedEntryId?: string;
-  questionId?: string;
-  questionRevision?: number;
-  lineSlug?: string;
-  workstreamBinding?: ResearchLineWorkstreamBinding;
-  commitCandidate?: ResearchDurableCommitCandidate;
-  assessment?: string;
-  nextAction?: string;
-  idempotencyKey: string;
-  persistence: ResearchQuestionPersistence;
-  receipt?: ResearchCheckpointReceipt;
-  createdAt: number;
-}
-
-export interface ResearchRunState {
-  actionId: string;
-  campaign: string;
-  jobId: string;
-  sourcePin?: string;
-  binaryPin?: string;
-  stage: ResearchRunStage;
-  schedulerState: ResearchSchedulerState;
-  lastObservedAt: number;
-  nextCheckAt?: number;
-  terminalState?: 'completed' | 'failed' | 'cancelled';
-  artifactRefs: string[];
-}
-
-export interface ResearchEvidencePacket {
-  packet_id: string;
-  kind: 'observation' | 'result' | 'failure' | 'derivation' | 'literature';
-  claim: string;
-  evidence: string;
-  question_id?: string;
-  line_slug?: string;
-  action_id?: string;
-  method?: string;
-  assumptions: string[];
-  tests: string[];
-  artifact_refs: string[];
-  source_refs: string[];
-  limitations: string[];
-  confidence: 'low' | 'medium' | 'high';
-}
-
-export interface ResearchActionSpec {
-  actionId: string;
-  questionId?: string;
-  questionRevision?: number;
-  lineSlug?: string;
-  lineRevision?: number;
-  kind: ResearchActionKind;
-  purpose: string;
-  expectedEvidence: string[];
-  stopCondition: string;
-  allowedToolKinds: string[];
-  retryOfEntryId?: string;
-  status: ResearchActionStatus;
-  createdAt: number;
-  completedAt?: number;
-  requiresHumanApproval: boolean;
-  researchPlanBinding?: { planId: string; planRevision: number; milestoneId: string };
-  actionPlanBinding?: {
-    schema: 'hakimi/action-plan-binding-0.1';
-    kind: 'minimal' | 'reviewed_plan';
-    planId: string;
-    planRevision: number;
-  };
-  run?: ResearchRunState;
-}
-
-export interface ResearchProgressDetail {
-  assumptions?: string[];
-  derivation?: string;
-  tests?: string[];
-  observations?: string[];
-  sources?: string[];
-  limitations?: string[];
-  detailHint?: string;
-  artifactRefs?: string[];
-}
-
-export interface ResearchProgressReport {
-  headline: string;
-  question?: string;
-  motivation: string;
-  workPerformed: string;
-  result: string;
-  mainlineImpact: string;
-  uncertainties: string[];
-  nextAction?: string;
-  phaseChange?: { from: ResearchPhase; to: ResearchPhase };
-  humanDecision?: string;
-  detail?: ResearchProgressDetail;
-  recordedAt: number;
-}
-
-export interface ResearchStateChange {
-  beforePhase: ResearchPhase;
-  afterPhase: ResearchPhase;
-  actionId?: string;
-  summary: string;
-  changedAt: number;
-}
-
-export interface ResearchHumanGate {
-  gateId: string;
-  kind: ResearchHumanGateKind;
-  actionId?: string;
-  questionId?: string;
-  prompt: string;
-  resolvedAt?: number;
-  resolution?: string;
-  createdAt: number;
-}
-
-export interface ResearchGoalSummary {
-  /** The current Goal milestone, distinct from the ResearchPlan objective. */
-  goalId?: string;
-  objective: string;
-  completionCriterion?: string;
-  status: 'active' | 'paused' | 'blocked' | 'complete';
-  turnBudget?: number;
-  remainingTurns?: number;
-  terminalReason?: string;
-  waitingFor?: {
-    taskIds: string[];
-    policy: 'any' | 'all';
-  };
-  continuation?: AppGoalContinuation;
-}
-
-export interface ResearchGoalProjection {
-  schema: 'hakimi/research-goal-0.1';
-  goalId: string;
-  objective: string;
-  completionCriterion?: string;
-  scope: {
-    programTopicId?: string;
-    lineSlug?: string;
-    questionId?: string;
-  };
-  nonGoals: string[];
-  budget: {
-    tokenBudget: number | null;
-    turnBudget: number | null;
-    wallClockBudgetMs: number | null;
-    remainingTokens: number | null;
-    remainingTurns: number | null;
-    remainingWallClockMs: number | null;
-    tokenBudgetReached: boolean;
-    turnBudgetReached: boolean;
-    wallClockBudgetReached: boolean;
-    overBudget: boolean;
-  };
-  stopConditions: Array<{ code: string; reached: boolean; reason: string }>;
-  status: 'active' | 'paused' | 'blocked' | 'complete';
-  terminalReason?: string;
-  waitingFor?: {
-    taskIds: string[];
-    policy: 'any' | 'all';
-  };
-  continuation?: AppGoalContinuation;
-  programRelation: ResearchGoalAlignment;
-  humanGates: ResearchHumanGate[];
-  persistenceGuards: Array<{
-    code: string;
-    status: 'clear' | 'blocked' | 'inactive';
-    reason: string;
-  }>;
-  researchRevision: number;
-}
-
-export interface ResearchProgram {
-  topicId: string;
-  title: string;
-  goalText: string;
-  goalSource: string;
-  establishedAt: number;
-  observedRevision: number;
-}
-
-export interface ResearchPeriod {
-  id: string;
-  lineSlug: string;
-  startedAt: number;
-  endedAt?: number;
-  loopCount: number;
-  currentQuestionId?: string;
-  summary?: string;
-}
-
-export interface ResearchStatusProjection {
-  currentLineSlug?: string;
-  currentQuestionId?: string;
-  currentActionId?: string;
-  phase: ResearchPhase;
-  nextStep?: string;
-  health: 'ok' | 'attention' | 'degraded' | 'blocked';
-  attention: string[];
-}
-
-export interface ResearchPlanResolution {
-  planId: string;
-  planRevision: number;
-  outcome: 'approved';
-  selectedLabel?: string;
-}
-
-export interface ResearchPlan {
-  planId: string;
-  researchRevision: number;
-  programId?: string;
-  periodId?: string;
-  lineSlug?: string;
-  questionId?: string;
-  lineRevision?: number;
-  questionRevision?: number;
-  objective: string;
-  steps: string[];
-  expectedEvidence: string[];
-  stopCondition: string;
-  status: 'draft' | 'finalized' | 'discarded';
-  resolution?: ResearchPlanResolution;
-}
-
-export interface ResearchPlanV2 {
-  schema: 'hakimi/research-plan-0.2';
-  planId: string;
-  revision: number;
-  goalId: string;
-  programId: string;
-  programObservedRevision: number;
-  goalRelation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program';
-  objective: string;
-  completionCriterion?: string;
-  milestones: Array<{
-    milestoneId: string;
-    title: string;
-    objective: string;
-    completionCriterion: string;
-    evidenceRequirements: string[];
-  }>;
-  evidenceRequirements: string[];
-  decisionPoints: Array<{
-    decisionId: string;
-    milestoneId: string;
-    prompt: string;
-    condition: string;
-  }>;
-  assumptions: string[];
-  currentMilestoneId: string;
-  stopConditions: string[];
-  replanConditions: string[];
-  status: 'draft' | 'active' | 'completed' | 'discarded';
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ResearchStatusSnapshot {
-  mode: ResearchModePhase;
-  loopStatus: ResearchLoopStatus;
-  currentLineSlug?: string;
-  currentWorkstreamBinding?: ResearchLineWorkstreamAlignment;
-  lineWorkstreamBindings: ResearchLineWorkstreamBinding[];
-  currentFocus?: ResearchFocus;
-  currentQuestion?: ResearchQuestion;
-  questions: ResearchQuestion[];
-  lines: ResearchLine[];
-  openQuestionCount: number;
-  activeQuestionCount: number;
-  blockedQuestionCount: number;
-  alerts: ResearchAlert[];
-  effectiveNextStep?: ResearchEffectiveNextStep;
-  goalSummary?: ResearchGoalSummary;
-  researchGoal?: ResearchGoalProjection;
-  goalAlignment?: ResearchGoalAlignment;
-  aitpHealth: ResearchAdapterHealth;
-  aitpMaintenance?: AitpMaintenanceReceipt;
-  pendingCheckpoint?: ResearchCheckpoint;
-  localConclusion?: ResearchLocalConclusion;
-  latestCommittedCheckpoint?: ResearchCommittedCursor;
-  committedCheckpointHistory?: ResearchCommittedCursor[];
-  distillationAttention?: ResearchDistillationAttention;
-  phase: ResearchPhase;
-  currentAction?: ResearchActionSpec;
-  currentRun?: ResearchRunState;
-  latestProgress?: ResearchProgressReport;
-  recentStateChange?: ResearchStateChange;
-  humanGate?: ResearchHumanGate;
-  program?: ResearchProgram;
-  period?: ResearchPeriod;
-  researchPlan?: ResearchPlan;
-  actionPlan?: ResearchPlan;
-  researchPlanV2?: ResearchPlanV2;
-  planningPolicy: ResearchPlanningPolicy;
-  status?: ResearchStatusProjection;
-  revision: number;
-}
-
-export type ResearchDistillationAttention =
-  | {
-      schema: 'hakimi/research-distillation-attention-0.1';
-      status: 'review_requested';
-      checkpointId: string;
-      entryId: string;
-      recordedAt: number;
-    }
-  | {
-      schema: 'hakimi/research-distillation-attention-0.1';
-      status: 'handoff_unavailable';
-      checkpointId: string;
-      entryId: string;
-      reason: string;
-      recordedAt: number;
-    };
-
+/**
+ * Only the mode toggle remains. Every other historical command kind is
+ * rejected server-side with `research.retired` and never completes or
+ * discards old records.
+ */
 export type ResearchCommand =
   | { kind: 'enter_mode'; actor: 'user' | 'model'; lineSlug?: string }
-  | { kind: 'exit_mode' }
-  | { kind: 'pause_loop'; expectedRevision: number; reason?: string }
-  | { kind: 'resume_loop'; expectedRevision: number; reason?: string }
-  | {
-      kind: 'create_question';
-      lineSlug: string;
-      wording: string;
-      assessment?: string;
-      priority?: number;
-      neededEvidence?: string[];
-    }
-  | {
-      kind: 'update_question';
-      questionId: string;
-      expectedRevision: number;
-      wording?: string;
-      assessment?: string;
-      priority?: number;
-      workflow?: ResearchQuestionWorkflow;
-      epistemic?: ResearchQuestionEpistemic;
-      neededEvidence?: string[];
-      nextBoundedAction?: string;
-      reason?: string;
-    }
-  | {
-      kind: 'set_focus';
-      questionId: string;
-      expectedRevision: number;
-      boundedAction?: string;
-      reason?: string;
-    }
-  | { kind: 'switch_line'; lineSlug: string; expectedRevision: number; reason?: string }
-  | { kind: 'reopen_question'; questionId: string; expectedRevision: number; reason?: string }
-  | { kind: 'defer_question'; questionId: string; expectedRevision: number; reason?: string }
-  | { kind: 'block_question'; questionId: string; expectedRevision: number; reason?: string }
-  | { kind: 'close_question'; questionId: string; expectedRevision: number; reason?: string }
-  | {
-      kind: 'create_line';
-      slug: string;
-      title: string;
-      objective?: string;
-      assessment?: string;
-    }
-  | {
-      kind: 'update_line';
-      lineSlug: string;
-      expectedRevision: number;
-      title?: string;
-      objective?: string;
-      status?: ResearchLineStatus;
-      assessment?: string;
-      reason?: string;
-    }
-  | {
-      kind: 'propose_checkpoint';
-      localConclusionId?: string;
-      confirmedBy?: 'user';
-      expectedRevision: number;
-      questionId?: string;
-      lineSlug?: string;
-      assessment?: string;
-      nextAction?: string;
-    }
-  | {
-      kind: 'discard_historical_checkpoint';
-      checkpointId: string;
-      expectedRevision: number;
-    }
-  | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
-  | { kind: 'confirm_goal_alignment'; relation: ResearchGoalAlignmentRelation; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
-  | { kind: 'clear_goal_alignment'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
-  | { kind: 'resolve_decision'; gateId: string; resolution: string; nextPhase: ResearchPhase }
-  | { kind: 'review_evidence'; packet: ResearchEvidencePacket; expectedRevision: number }
-  | {
-      kind: 'observe_run';
-      actionId: string;
-      expectedRevision: number;
-      campaign: string;
-      jobId: string;
-      sourcePin?: string;
-      binaryPin?: string;
-      stage: ResearchRunStage;
-      schedulerState: ResearchSchedulerState;
-      nextCheckAt?: number;
-      terminalState?: 'completed' | 'failed' | 'cancelled';
-      artifactRefs: string[];
-    }
-  | { kind: 'acknowledge_alert'; fingerprint: string }
-  | {
-      kind: 'confirm_line_workstream_binding';
-      lineSlug: string;
-      workstream: string;
-      expectedRevision: number;
-    }
-  | {
-      kind: 'clear_line_workstream_binding';
-      lineSlug: string;
-      expectedConfirmationId: string;
-      expectedRevision: number;
-    }
-  | { kind: 'set_planning_policy'; policy: ResearchPlanningPolicy; expectedRevision: number }
-  | {
-      kind: 'prepare_plan_v2';
-      planId?: string;
-      expectedRevision?: number;
-      objective: string;
-      completionCriterion?: string;
-      milestones: ResearchPlanV2['milestones'];
-      evidenceRequirements: string[];
-      decisionPoints: ResearchPlanV2['decisionPoints'];
-      assumptions: string[];
-      currentMilestoneId: string;
-      stopConditions: string[];
-      replanConditions: string[];
-    }
-  | { kind: 'activate_plan_v2' | 'complete_plan_v2' | 'discard_plan_v2'; planId: string; expectedRevision: number };
+  | { kind: 'exit_mode' };
 
 // ---------------------------------------------------------------------------
 // Terminal
@@ -1433,7 +691,7 @@ export type AppEvent =
   | { type: 'turnActiveChanged'; sessionId: string; active: boolean; reason?: string }
   | { type: 'turnProgress'; sessionId: string; update: AppTurnProgressUpdate }
   | { type: 'goalUpdated'; sessionId: string; goal: AppGoal | null }
-  | { type: 'researchUpdated'; sessionId: string; snapshot: ResearchStatusSnapshot }
+  | { type: 'researchUpdated'; sessionId: string; snapshot: ResearchModeSnapshot }
   | {
       type: 'subagentPresetEvaluated';
       sessionId: string;
@@ -1715,6 +973,52 @@ export interface ProviderExtraUsage {
   currency: string;
 }
 
+/** One currency entry of the independently queried official account balance. */
+export interface ProviderMeteredBalance {
+  currency: 'CNY' | 'USD';
+  total: string;
+  granted: string;
+  toppedUp: string;
+}
+
+export type ProviderMeteredBalanceResult =
+  | { kind: 'ok'; isAvailable: boolean; balances: ProviderMeteredBalance[] }
+  | { kind: 'error'; message: string; status?: number };
+
+/** Local metered usage for one calendar period (Asia/Shanghai). */
+export interface ProviderMeteredPeriod {
+  startAt: string;
+  endAt: string;
+  requestCount: number;
+  measuredRequestCount: number;
+  pendingRequestCount: number;
+  missingUsageRequestCount: number;
+  unpricedRequestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  /** High-precision estimated CNY cost (decimal string), or null when unknown. */
+  estimatedCost: string | null;
+  isPartial: boolean;
+}
+
+/**
+ * Local metered usage recorded by this machine — estimated CNY cost of observed
+ * requests, distinct from subscription quota windows and the official balance.
+ */
+export interface ProviderMeteredUsage {
+  source: 'local';
+  costSource: 'estimated';
+  currency: 'CNY';
+  timezone: 'Asia/Shanghai';
+  trackingStartedAt: string | null;
+  degraded: boolean;
+  today: ProviderMeteredPeriod;
+  month: ProviderMeteredPeriod;
+  balance: ProviderMeteredBalanceResult;
+}
+
 export type ProviderUsageResult =
   | {
       provider: string;
@@ -1722,6 +1026,7 @@ export type ProviderUsageResult =
       summary: ProviderUsageRow | null;
       limits: ProviderUsageRow[];
       extraUsage: ProviderExtraUsage | null;
+      meteredUsage?: ProviderMeteredUsage;
     }
   | {
       provider: string;
@@ -1822,11 +1127,11 @@ export interface KimiWebApi {
   getSessionStatus(sessionId: string): Promise<AppSessionRuntimeStatus>;
   /** Current goal snapshot, or null when the session has no active goal. */
   getSessionGoal(sessionId: string): Promise<AppGoal | null>;
-  getSessionResearch(sessionId: string): Promise<ResearchStatusSnapshot>;
+  getSessionResearch(sessionId: string): Promise<ResearchModeSnapshot>;
   commandSessionResearch(
     sessionId: string,
     command: ResearchCommand,
-  ): Promise<ResearchStatusSnapshot>;
+  ): Promise<ResearchModeSnapshot>;
   getSessionWarnings(sessionId: string): Promise<AppSessionWarning[]>;
   archiveSession(sessionId: string): Promise<{ archived: true }>;
   restoreSession(sessionId: string): Promise<AppSession>;
@@ -1872,6 +1177,9 @@ export interface KimiWebApi {
   getGitStatus(sessionId: string, paths?: string[]): Promise<{ branch: string; ahead: number; behind: number; entries: Record<string, string>; additions: number; deletions: number; pullRequest: { number: number; state: string; url: string } | null }>;
   getFileDiff(sessionId: string, path: string): Promise<{ path: string; diff: string }>;
   getFileDownloadUrl(sessionId: string, path: string): string;
+  /** Authenticated byte download of a workspace file — the Bearer-carrying
+      counterpart of getFileDownloadUrl for <iframe>/<img>/save-as flows. */
+  getWorkspaceFileBlob(sessionId: string, path: string): Promise<Blob>;
   openFile(sessionId: string, input: { path: string; line?: number }): Promise<{ opened: true }>;
   revealFile(sessionId: string, input: { path: string }): Promise<{ revealed: true }>;
   /** Open the session working directory (or a session-relative path) in an external application. */

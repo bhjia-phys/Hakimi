@@ -120,6 +120,7 @@ describe('Event public types', () => {
         case 'prompt.aborted':
         case 'prompt.steered':
         case 'research.updated':
+        case 'research_mode.updated':
         case 'aitp_mode.updated':
           return;
         default:

@@ -287,7 +287,7 @@ The `auto_preset` fields are:
 - `query_timeout_ms`: per-provider quota query timeout (`5000`).
 - `allow_extra_usage`: when `true`, a positive Kimi Extra Usage wallet balance covers a depleted plan quota: the provider's effective remaining percent is the larger of the lowest plan-window remaining and the wallet's remaining share. Extra Usage is never spent automatically; the default `false` never counts the wallet. When the wallet supplies the effective quota, the plan reset time is unknown and contributes no reset bonus.
 
-For every candidate, the route is resolved as if that candidate were active, and the final model's provider determines the quota and local evidence. The provider's remaining percent is the tightest valid usage window. The deterministic score is `quota remaining + priority bonus + reset bonus + route/model-fit bonus − token penalty − reliability penalty − latency penalty`. A valid reset within the next 24 hours contributes up to 2 points; a model resolved from a preset-specific route contributes 2 points, and a known model capability matching the requested Thinking setting contributes 1. Unknown model capability is not penalized.
+For every candidate, the route is resolved as if that candidate were active, and the final model's provider determines the quota and local evidence. The provider's remaining percent is the lowest remaining percentage across all valid usage windows, unless an opted-in positive Extra Usage wallet supplies a higher value. An exhausted window remains at zero until refreshed usage confirms recovery, even when another window is healthy or the reset time has arrived. Reset timing alone never restores quota or candidate eligibility. The deterministic score is `quota remaining + priority bonus + reset bonus + route/model-fit bonus − token penalty − reliability penalty − latency penalty`. A valid reset within the next 24 hours contributes up to 2 points; a model resolved from a preset-specific route contributes 2 points, and a known model capability matching the requested Thinking setting contributes 1. Unknown model capability is not penalized.
 
 Local evidence prefers runs for the requested profile once at least three samples exist, otherwise it falls back to all recent runs for that provider. Failure and first-token-latency penalties are reduced for small samples until five samples or LLM requests provide full confidence; cancelled runs do not count as reliability failures. Token usage is normalized against the busiest candidate provider, and latency against the slowest candidate with timing evidence. A lower-priority preset can therefore win when the weighted evidence exceeds its smaller priority bonus.
 
@@ -317,6 +317,12 @@ The legacy fields remain accepted for round-tripping through `getConfig` / `setC
 ## `thinking`
 
 `thinking` sets the global default behavior for Thinking mode.
+
+In Hakimi Web, open **Settings → Agent → Default thinking effort** to save `thinking.effort` for new sessions. The choices come from the default model's supported effort levels, including its highest tier. Changing effort does not change `thinking.enabled`; use **Thinking by default** to turn it on or off separately.
+
+When no effort is saved, the selector shows the model default without writing a preference. If the default model is unavailable or does not support adjustable effort, the selector is disabled. A saved effort that the default model no longer supports is marked as unsupported and kept unchanged until you select a supported level.
+
+When a model switch makes an OpenAI Responses session reject the previous turn's encrypted Thinking block, Hakimi rebuilds the current step without that provider-specific block and retries once. Visible Thinking summaries, user messages, and tool calls stay in the outgoing request, and the stored history is not rewritten.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

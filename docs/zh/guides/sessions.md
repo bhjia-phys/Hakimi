@@ -96,7 +96,9 @@ hakimi remote status
 hakimi remote stop
 ```
 
-`hakimi remote start` 会安装并启用用户服务，启动一个完整的全会话 Web listener，并打印 URL 和二维码。`hakimi remote status` 会再次打印当前 URL，并报告本地服务是否健康。`hakimi remote stop` 会禁用并停止服务，但保留 `~/.hakimi/remote/` 下的私有配置和控制 token，供下次启动复用。该服务会随 Linux 用户会话启动，并在进程意外退出后自动重启。
+`hakimi remote start` 会安装并启用用户服务，启动一个完整的全会话 Web listener，并打印 URL 和二维码。`hakimi remote status` 会再次打印当前 URL，并分别报告本地服务健康状态和隧道就绪状态；不提供隧道健康信息的旧版运行服务会显示 `unknown`。`hakimi remote stop` 会禁用并停止服务，但保留 `~/.hakimi/remote/` 下的私有配置和控制 token，供下次启动复用。该服务会随 Linux 用户会话启动，并在进程意外退出后自动重启。
+
+后台服务还能检测到 `cloudflared` 进程仍在运行、但与 Cloudflare 的连接已经丢失的情况。启动后最多等待 60 秒建立首个就绪连接，此后每 5 秒检查一次就绪状态，连续三次失败便重启服务。检查成功会清零失败次数，因此短暂中断不会立即触发重启。运行 `journalctl --user -u hakimi-remote.service` 可以查看故障原因和经过脱敏、长度受限的近期隧道日志；就绪检查不能保证公网域名从所有网络均可访问。
 
 后台服务会在重启后继续使用同一个控制 token，但 Quick Tunnel 不提供固定 hostname。同一个 `cloudflared` 进程持续运行时，`*.trycloudflare.com` 地址通常保持不变；重启 `cloudflared`、重启服务或重启电脑都会产生新地址。请在宿主电脑上运行 `hakimi remote status` 获取替换后的链接。
 

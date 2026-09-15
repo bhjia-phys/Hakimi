@@ -14,6 +14,7 @@ export class AitpResearchError extends Error2 {
 
 export const AitpResearchErrors = {
   codes: {
+    RESEARCH_RETIRED: 'research.retired',
     AITP_MODE_INACTIVE: 'aitp.mode_inactive',
     AITP_MODE_ALREADY_ACTIVE: 'aitp.mode_already_active',
     AITP_MODE_NOT_MAIN_AGENT: 'aitp.mode_not_main_agent',
@@ -44,6 +45,12 @@ export const AitpResearchErrors = {
     RESEARCH_HUMAN_APPROVAL_REQUIRED: 'research.human_approval_required',
   },
   info: {
+    'research.retired': {
+      title: 'Research execution API is retired',
+      retryable: false,
+      public: true,
+      action: 'Use local knowledge files and official AITP Skills. Historical records are preserved.',
+    },
     'aitp.mode_inactive': {
       title: 'AITP Research Mode is inactive',
       retryable: false,

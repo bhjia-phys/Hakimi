@@ -106,6 +106,7 @@ export type {
 // direct engine reads are type-compatible.
 export type {
   ResearchPlan,
+  ResearchModeSnapshot,
   ResearchStatusSnapshot,
 } from '@moonshot-ai/agent-core-v2';
 

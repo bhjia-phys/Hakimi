@@ -1,13 +1,17 @@
 /**
  * ResearchController — owns the research board's lifecycle and hydration.
  *
+ * Research Mode is a lightweight toggle (local knowledge + official AITP
+ * Skills visibility); the snapshot is just `{ enabled, skillsAvailable }`.
+ * The legacy executor's revision/optimistic-concurrency machinery is gone.
+ *
  * Session-lifecycle safety: every async Research read or command carries both
  * the session object it started from and a monotonic request generation. Live
  * snapshots and session resets advance that generation, so an older response
  * cannot remount the Board or roll the visible snapshot backwards.
  */
 
-import type { Session, ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
+import type { Session, ResearchModeSnapshot } from '@bhjia-phys/hakimi-sdk';
 
 import type { TUIState } from '../tui-state';
 
@@ -21,8 +25,6 @@ export interface ResearchControllerHost {
   getResearchSession(): Session | undefined;
   setAppState(patch: {
     researchMode?: boolean;
-    researchModePhase?: 'inactive' | 'probing' | 'ready' | 'degraded';
-    researchLoopStatus?: 'active' | 'paused';
   }): void;
   syncTodoPanelSlot(): void;
 }
@@ -60,7 +62,7 @@ export class ResearchController {
   /** Apply an async response only if it is still the current request. */
   applySnapshot(
     token: ResearchRequestToken,
-    snapshot: ResearchStatusSnapshot | null,
+    snapshot: ResearchModeSnapshot | null,
   ): boolean {
     if (!this.isCurrentRequest(token)) return false;
     return this.setSnapshot(snapshot, token.session);
@@ -75,13 +77,13 @@ export class ResearchController {
   }
 
   /**
-   * Hydrate the board when a session is started, resumed, or replaced. An
-   * `inactive` snapshot hides the board without probing AITP.
+   * Hydrate the board when a session is started, resumed, or replaced. A
+   * disabled snapshot hides the board without probing anything else.
    */
   async hydrate(session: Session): Promise<void> {
     const token = this.beginRequest(session);
     if (token === undefined) return;
-    let snapshot: ResearchStatusSnapshot;
+    let snapshot: ResearchModeSnapshot;
     try {
       snapshot = await session.getResearch();
     } catch {
@@ -91,37 +93,24 @@ export class ResearchController {
   }
 
   /**
-   * Live event handler for `research.updated`. Every accepted event supersedes
-   * in-flight reads and commands. A lower revision from the same session is
-   * ignored even when it arrives through the live path out of order. The
-   * optional session is supplied by the subscription so an old Session object
-   * cannot update a replacement session with the same id.
+   * Live event handler for `research_mode.updated`. Every accepted event
+   * supersedes in-flight reads and commands. The optional session is supplied
+   * by the subscription so an old Session object cannot update a replacement
+   * session with the same id.
    */
   setSnapshot(
-    snapshot: ResearchStatusSnapshot | null,
+    snapshot: ResearchModeSnapshot | null,
     session?: Session,
   ): boolean {
     if (session !== undefined && !this.isCurrentSession(session)) return false;
-    const { state } = this.host;
-    const current = state.researchBoard.getSnapshot();
-    if (
-      snapshot !== null &&
-      current !== null &&
-      snapshot.revision < current.revision
-    ) {
-      return false;
-    }
     this.generation++;
 
-    state.researchBoard.setSnapshot(snapshot);
-    const phase = snapshot?.mode ?? 'inactive';
+    this.host.state.researchBoard.setSnapshot(snapshot);
     this.host.setAppState({
-      researchMode: phase !== 'inactive',
-      researchModePhase: phase,
-      researchLoopStatus: snapshot?.loopStatus,
+      researchMode: snapshot?.enabled ?? false,
     });
     this.host.syncTodoPanelSlot();
-    state.ui.requestRender();
+    this.host.state.ui.requestRender();
     return true;
   }
 
@@ -133,16 +122,9 @@ export class ResearchController {
     state.researchBoard.clear();
     this.host.setAppState({
       researchMode: false,
-      researchModePhase: 'inactive',
-      researchLoopStatus: undefined,
     });
     this.host.syncTodoPanelSlot();
     state.ui.requestRender();
-  }
-
-  /** Get the current active snapshot revision for optimistic concurrency. */
-  getSnapshotRevision(): number | undefined {
-    return this.host.state.researchBoard.getSnapshotRevision();
   }
 
   /** The board is visible and occupying the Todo slot. */

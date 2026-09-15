@@ -54,20 +54,9 @@ export function goalArgumentCompletions(argumentPrefix: string): AutocompleteIte
 
 /** Subcommands offered when autocompleting `/research <…>`. */
 const RESEARCH_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
-  { value: 'status', description: 'Show research mode status' },
-  { value: 'on', description: 'Enter research mode' },
-  { value: 'off', description: 'Exit research mode' },
-  { value: 'pause', description: 'Pause the research loop' },
-  { value: 'resume', description: 'Resume the research loop' },
-  { value: 'manage', description: 'Open the question manager' },
-  { value: 'align', description: 'Confirm or clear Goal-to-AITP alignment' },
-  { value: 'edit', description: 'Edit a question' },
-  { value: 'focus', description: 'Set focus on a question' },
-  { value: 'defer', description: 'Defer a question' },
-  { value: 'block', description: 'Block a question' },
-  { value: 'close', description: 'Close a question' },
-  { value: 'reopen', description: 'Reopen a question' },
-  { value: 'line', description: 'Switch research line' },
+  { value: 'status', description: 'Show research memory mode status' },
+  { value: 'on', description: 'Enable research memory mode (AITP Skills visible)' },
+  { value: 'off', description: 'Disable research memory mode' },
 ];
 
 /** Argument autocompletion for the `/research` command (subcommands). */
@@ -347,18 +336,15 @@ export const BUILTIN_SLASH_COMMANDS = [
   {
     name: 'research',
     aliases: [],
-    description: 'Toggle AITP Research Mode or use a Research subcommand',
+    description: 'Toggle Research memory mode (local knowledge + official AITP Skills)',
     priority: 80,
-    argumentHint:
-      '[status|on|off|pause|resume|manage|align <relation>|edit|focus|defer|block|close|reopen|line] | <questionId>',
+    argumentHint: '[status|on|off]',
     completeArgs: researchArgumentCompletions,
-    // status / pause / resume are safe while streaming; the bare toggle,
-    // on / off / manage / alignment / question actions are idle-only.
+    // `status` is a pure read and safe while streaming; the mode toggle is a
+    // plain flag flip but stays idle-only to keep the grammar conservative.
     availability: (args) => {
       const trimmed = args.trim();
-      return trimmed === 'status' || trimmed === 'pause' || trimmed === 'resume'
-        ? 'always'
-        : 'idle-only';
+      return trimmed === 'status' ? 'always' : 'idle-only';
     },
   },
   {

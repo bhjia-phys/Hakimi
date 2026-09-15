@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
+import type { FilePreviewRequest, ToolCall, ToolMedia, ToolStatus } from '../../../types';
 import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
 import {
   answerFor,
@@ -97,7 +97,7 @@ const canExpand = computed(
 );
 const open = ref(props.tool.defaultExpanded === true && canExpand.value);
 
-const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
+const status = computed<ToolStatus>(() => props.tool.status);
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
 

@@ -14,7 +14,6 @@ import type {
   GoalChange,
   GoalUpdatedEvent,
   HookResultEvent,
-  ResearchUpdatedEvent,
   Session,
   SessionMetaUpdatedEvent,
   SkillActivatedEvent,
@@ -296,7 +295,7 @@ export class SessionEventHandler {
       case 'agent.status.updated': this.handleStatusUpdate(event); break;
       case 'session.meta.updated': this.handleSessionMetaChanged(event); break;
       case 'goal.updated': this.handleGoalUpdated(event); break;
-      case 'research.updated': this.handleResearchUpdated(event, sourceSession); break;
+      case 'research_mode.updated': this.handleResearchModeUpdated(event, sourceSession); break;
       case 'aitp_mode.updated': {
         const session = sourceSession ?? this.host.session;
         if (session !== undefined) void this.host.refreshSkillCommands(session);
@@ -823,22 +822,22 @@ export class SessionEventHandler {
     }
   }
 
-  private handleResearchUpdated(
-    event: ResearchUpdatedEvent,
+  private handleResearchModeUpdated(
+    event: Extract<Event, { readonly type: 'research_mode.updated' }>,
     sourceSession?: Session,
   ): void {
-    // The live board is only ever driven by this full snapshot event.
-    // `aitp_mode.updated` deliberately does not hydrate: the session pushes a
-    // `research.updated` snapshot for every structured research state change,
-    // so an extra getResearch round-trip would be redundant (and could race a
-    // fresher event). The controller also checks sourceSession identity so an
-    // unsubscribed callback cannot update a replacement session.
+    // The live board is only ever driven by this mode snapshot event. The
+    // controller also checks sourceSession identity so an unsubscribed
+    // callback cannot update a replacement session. Skill visibility follows
+    // the toggle, so refresh the dynamic skill commands alongside the board.
     if (sourceSession !== undefined && this.host.session !== sourceSession) return;
     if (sourceSession === undefined) {
       this.host.researchController.setSnapshot(event.snapshot);
     } else {
       this.host.researchController.setSnapshot(event.snapshot, sourceSession);
     }
+    const session = sourceSession ?? this.host.session;
+    if (session !== undefined) void this.host.refreshSkillCommands(session);
   }
 
   private scheduleQueuedGoalPromotion(): void {

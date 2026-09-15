@@ -381,42 +381,29 @@ export function defineKlientConformance(
       }
     });
 
-    it('research local conclusions round-trip without becoming canonical checkpoints', async () => {
-      const workDir = await mkdtemp(join(tmpdir(), 'klient-local-result-'));
-      const created = await target.klient.global.sessions.create({ workDir, title: 'Local research result' });
+    it('Research memory toggle round-trips and retired mutations fail explicitly', async () => {
+      const workDir = await mkdtemp(join(tmpdir(), 'klient-research-memory-'));
+      const created = await target.klient.global.sessions.create({ workDir, title: 'Research memory' });
       try {
         const agent = target.klient.session(created.id).agent('main');
-        await agent.aitpMode.enter({ actor: 'user' });
-        const action = await agent.research.planAndStartAction({
-          kind: 'derivation', purpose: 'Check one limiting case.',
-          expectedEvidence: ['Exact identity or counterexample'], stopCondition: 'The comparison is decided.',
-        });
-        const conclusion = await agent.research.concludeAction({
-          actionId: action.actionId, status: 'completed',
-          progress: {
-            headline: 'Exact counterexample', motivation: 'Check the convention.',
-            workPerformed: 'Compared exact coefficients.', result: 'The coefficients disagree.',
-            mainlineImpact: 'Revalidate this convention.',
-            detail: { limitations: ['Not a many-body obstruction proof.'] },
-          },
-          durability: {
-            status: 'durable_delta', entryKind: 'failure', authority: 'agent',
-            provenance: 'agent_verification', rationale: 'Verified counterexample.',
-          },
-        });
-        expect(conclusion.action.status).toBe('completed');
-        expect(conclusion.localConclusion?.candidate.sourceActionId).toBe(action.actionId);
-        const snapshot = await agent.research.getSnapshot();
-        expect(snapshot.localConclusion).toEqual(conclusion.localConclusion);
-        expect(snapshot.pendingCheckpoint).toBeUndefined();
-        expect(await agent.research.getPendingCheckpoint()).toBeUndefined();
-        const error = await captureRejection(agent.research.proposeCheckpoint({
-          expectedRevision: snapshot.revision, localConclusionId: action.actionId,
-          confirmedBy: 'user', lineSlug: 'missing-line',
-        }));
-        expect(error.code).toBe(40001);
-        expect(error.details).toEqual({ code: 'research.line_not_found' });
-        expect((await agent.research.getSnapshot()).localConclusion).toEqual(conclusion.localConclusion);
+        expect((await agent.research.getSnapshot()).enabled).toBe(false);
+        const events: AgentEventPayloads['research_mode.updated'][] = [];
+        const sub = agent.events.on('research_mode.updated', (event) => events.push(event));
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          await agent.aitpMode.enter({ actor: 'user' });
+          expect(await agent.aitpMode.getSnapshot()).toEqual({ enabled: true, skillsAvailable: false });
+          await expect.poll(() => events.some((event) => event.snapshot.enabled)).toBe(true);
+          const error = await captureRejection(agent.research.proposeCheckpoint({ expectedRevision: 0 }));
+          expect(error.code).toBe(40001);
+          expect(error.details).toEqual({ code: 'research.retired' });
+          await expect(agent.aitpMode.pauseLoop(0)).rejects.toThrow('retired');
+          await agent.aitpMode.exit();
+          expect((await agent.research.getSnapshot()).enabled).toBe(false);
+          await expect.poll(() => events.at(-1)?.snapshot.enabled).toBe(false);
+        } finally {
+          sub.dispose();
+        }
       } finally {
         await target.klient.session(created.id).close();
         await rm(workDir, { recursive: true, force: true });

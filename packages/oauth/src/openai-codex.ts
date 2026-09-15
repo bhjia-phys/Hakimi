@@ -72,6 +72,7 @@ interface OpenAICodexModel {
   readonly maxContextSize: number;
   readonly maxInputSize: number;
   readonly supportEfforts: readonly string[];
+  readonly defaultEffort: string;
 }
 
 const OPENAI_CODEX_MODELS: readonly OpenAICodexModel[] = [
@@ -81,6 +82,7 @@ const OPENAI_CODEX_MODELS: readonly OpenAICodexModel[] = [
     maxContextSize: 500_000,
     maxInputSize: 372_000,
     supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultEffort: 'medium',
   },
   {
     id: 'gpt-5.6-terra',
@@ -88,6 +90,7 @@ const OPENAI_CODEX_MODELS: readonly OpenAICodexModel[] = [
     maxContextSize: 500_000,
     maxInputSize: 372_000,
     supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultEffort: 'medium',
   },
   {
     id: 'gpt-5.6-luna',
@@ -95,6 +98,15 @@ const OPENAI_CODEX_MODELS: readonly OpenAICodexModel[] = [
     maxContextSize: 500_000,
     maxInputSize: 372_000,
     supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'medium',
+  },
+  {
+    id: 'gpt-6-astra',
+    displayName: 'GPT-6 Astra (ChatGPT)',
+    maxContextSize: 1_050_000,
+    maxInputSize: 922_000,
+    supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultEffort: 'low',
   },
 ] as const;
 
@@ -146,7 +158,7 @@ export function applyOpenAICodexConfig(
       maxInputSize: model.maxInputSize,
       capabilities: ['thinking', 'always_thinking', 'tool_use', 'image_in'],
       supportEfforts: [...model.supportEfforts],
-      defaultEffort: 'medium',
+      defaultEffort: model.defaultEffort,
       displayName: model.displayName,
     };
   }

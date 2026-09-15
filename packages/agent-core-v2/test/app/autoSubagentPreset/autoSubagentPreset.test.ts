@@ -346,6 +346,57 @@ describe('providerQuotaPercent', () => {
     expect(providerQuotaPercent(empty, false)).toBeUndefined();
   });
 
+  it('does not treat DeepSeek metered cost as quota evidence', () => {
+    const metered: ProviderUsageResult = {
+      kind: 'ok',
+      provider: 'deepseek',
+      summary: null,
+      limits: [],
+      extraUsage: null,
+      meteredUsage: {
+        source: 'local',
+        costSource: 'estimated',
+        currency: 'CNY',
+        timezone: 'Asia/Shanghai',
+        trackingStartedAt: '2026-09-01T00:00:00.000Z',
+        degraded: false,
+        today: {
+          startAt: '2026-09-07T00:00:00.000Z',
+          endAt: '2026-09-08T00:00:00.000Z',
+          requestCount: 100,
+          measuredRequestCount: 100,
+          pendingRequestCount: 0,
+          missingUsageRequestCount: 0,
+          unpricedRequestCount: 0,
+          inputTokens: 1_000_000,
+          outputTokens: 500_000,
+          cacheReadTokens: 0,
+          totalTokens: 1_500_000,
+          estimatedCost: '27.00',
+          isPartial: false,
+        },
+        month: {
+          startAt: '2026-09-01T00:00:00.000Z',
+          endAt: '2026-10-01T00:00:00.000Z',
+          requestCount: 100,
+          measuredRequestCount: 100,
+          pendingRequestCount: 0,
+          missingUsageRequestCount: 0,
+          unpricedRequestCount: 0,
+          inputTokens: 1_000_000,
+          outputTokens: 500_000,
+          cacheReadTokens: 0,
+          totalTokens: 1_500_000,
+          estimatedCost: '27.00',
+          isPartial: false,
+        },
+        balance: { kind: 'error', message: 'unavailable' },
+      },
+    };
+    expect(providerQuotaPercent(metered, false)).toBeUndefined();
+    expect(providerQuotaEvidence(metered, false)).toBeUndefined();
+  });
+
   it('uses the wallet percent only when Extra Usage is opted in and has positive balance', () => {
     const wallet = {
       balanceCents: 25,
@@ -430,13 +481,53 @@ describe('providerQuotaPercent', () => {
     ).toEqual({ remainingPercent: 25, resetAt: undefined });
   });
 
-  it('drops the plan reset when Extra Usage truly covers the tightest window', () => {
+  it.each([
+    ['future', '2026-01-01T00:30:00.000Z', Date.UTC(2026, 0, 1, 0, 30)],
+    ['missing', undefined, undefined],
+    ['past', '2025-12-31T23:59:59.999Z', undefined],
+    ['invalid', 'invalid-reset', undefined],
+  ] as const)('keeps an exhausted window at zero with a %s reset despite healthier windows', (_label, resetAt, expectedResetAt) => {
+    const now = Date.UTC(2026, 0, 1);
+    const result: ProviderUsageResult = {
+      kind: 'ok',
+      provider: 'provider',
+      summary: { used: 17, limit: 100, resetAt: new Date(now + 2 * 60 * 60 * 1000).toISOString() },
+      limits: [
+        { used: 100, limit: 100, resetAt },
+        { used: 5, limit: 100, resetAt: new Date(now + 3 * 60 * 60 * 1000).toISOString() },
+      ],
+      extraUsage: null,
+    };
+
+    expect(providerQuotaEvidence(result, false, now)).toEqual({
+      remainingPercent: 0,
+      resetAt: expectedResetAt,
+    });
+  });
+
+  it('keeps a depleted provider at zero when only one window exists', () => {
     const now = Date.UTC(2026, 0, 1);
     const result: ProviderUsageResult = {
       kind: 'ok',
       provider: 'provider',
       summary: null,
-      limits: [{ used: 90, limit: 100, resetAt: new Date(now + 60_000).toISOString() }],
+      limits: [{ used: 100, limit: 100, resetAt: new Date(now + 30 * 60 * 1000).toISOString() }],
+      extraUsage: null,
+    };
+
+    expect(providerQuotaEvidence(result, false, now)).toEqual({
+      remainingPercent: 0,
+      resetAt: now + 30 * 60 * 1000,
+    });
+  });
+
+  it.each([90, 100])('drops the plan reset when Extra Usage covers a window at %s percent used', (used) => {
+    const now = Date.UTC(2026, 0, 1);
+    const result: ProviderUsageResult = {
+      kind: 'ok',
+      provider: 'provider',
+      summary: null,
+      limits: [{ used, limit: 100, resetAt: new Date(now + 60_000).toISOString() }],
       extraUsage: {
         balanceCents: 50,
         totalCents: 100,
@@ -740,6 +831,83 @@ describe('AutoSubagentPresetService', () => {
 
       expect(result.activatedPreset).toBeUndefined();
       expect(currentPreset()).toBe('balanced');
+    });
+
+    it.each([
+      ['future', '2026-01-01T12:00:00.000Z', 1],
+      ['missing', undefined, 0],
+      ['past', '2025-12-31T23:59:59.999Z', 0],
+    ] as const)('rejects an exhausted candidate with a %s reset despite a healthy summary', async (_label, resetAt, resetBonus) => {
+      clockNow = Date.UTC(2026, 0, 1);
+      setQuota('provider-balanced', okResult(30));
+      setQuota('provider-kimi', {
+        kind: 'ok',
+        provider: 'provider-kimi',
+        summary: { used: 5, limit: 100, resetAt: '2026-01-08T00:00:00.000Z' },
+        limits: [{ used: 100, limit: 100, resetAt }],
+        extraUsage: null,
+      });
+
+      const result = await autoPreset.evaluate(REQUEST, CTX);
+
+      expect(result.activatedPreset).toBeUndefined();
+      expect(currentPreset()).toBe('balanced');
+      expect(result.status!.candidates.find((candidate) => candidate.preset === 'kimi-heavy')).toMatchObject({
+        availability: 'quota_below_floor',
+        selectable: false,
+        quotaRemainingPercent: 0,
+        contributions: { quotaRemaining: 0, resetBonus },
+      });
+    });
+
+    it('keeps an exhausted current unavailable after reset until refreshed usage confirms recovery', async () => {
+      clockNow = Date.UTC(2026, 0, 1);
+      const exhausted: ProviderUsageResult = {
+        kind: 'ok',
+        provider: 'provider-balanced',
+        summary: { used: 5, limit: 100, resetAt: '2026-01-08T00:00:00.000Z' },
+        limits: [{ used: 100, limit: 100, resetAt: '2026-01-01T00:01:00.000Z' }],
+        extraUsage: null,
+      };
+      setQuota('provider-balanced', exhausted);
+      setQuota('provider-kimi', okResult(30));
+
+      const escaped = await autoPreset.evaluate(REQUEST, CTX);
+      expect(escaped.activatedPreset).toBe('kimi-heavy');
+      expect(escaped.reasonCode).toBe('current_unhealthy');
+
+      clockNow += 61_000;
+      const afterReset = await autoPreset.evaluate(REQUEST, CTX);
+      expect(afterReset.status!.candidates[0]).toMatchObject({
+        availability: 'quota_below_floor',
+        selectable: false,
+        quotaRemainingPercent: 0,
+        quotaResetAt: undefined,
+        contributions: { resetBonus: 0 },
+      });
+      expect(afterReset.activatedPreset).toBeUndefined();
+
+      clockNow += 601_000;
+      const stillExhausted = await autoPreset.evaluate(REQUEST, CTX);
+      expect(stillExhausted.status!.candidates[0]).toMatchObject({
+        availability: 'quota_below_floor',
+        selectable: false,
+        quotaRemainingPercent: 0,
+      });
+      expect(stillExhausted.activatedPreset).toBeUndefined();
+
+      setQuota('provider-balanced', {
+        ...exhausted,
+        limits: [{ used: 10, limit: 100, resetAt: '2026-01-01T01:00:00.000Z' }],
+      });
+      clockNow += 301_000;
+      const recovered = await autoPreset.evaluate(REQUEST, CTX);
+      expect(recovered.status!.candidates[0]).toMatchObject({
+        availability: 'healthy',
+        selectable: true,
+        quotaRemainingPercent: 90,
+      });
+      expect(recovered.activatedPreset).toBe('balanced');
     });
 
     it('keeps no active preset when every candidate is below the floor', async () => {

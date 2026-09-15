@@ -1,4 +1,5 @@
-import type { AppSubagentPhase, AppTask } from '../api/types';
+import type { AppTask } from '../api/types';
+import type { AgentPhase } from '../types';
 
 export interface SwarmMember {
   id: string;
@@ -6,7 +7,7 @@ export interface SwarmMember {
   subagentType?: string;
   model?: string;
   thinkingEffort?: string;
-  phase: AppSubagentPhase;
+  phase: AgentPhase;
   summary?: string;
   outputLines?: string[];
   /** Accumulated streaming text (text-kind taskProgress) — preferred over
@@ -19,28 +20,32 @@ export interface SwarmMember {
 export interface SwarmGroup {
   id: string;
   members: SwarmMember[];
-  counts: Record<AppSubagentPhase, number>;
+  counts: Record<AgentPhase, number>;
 }
 
-const PHASES: readonly AppSubagentPhase[] = ['queued', 'working', 'suspended', 'completed', 'failed'];
+const PHASES: readonly AgentPhase[] = ['queued', 'working', 'suspended', 'completed', 'failed', 'cancelled'];
 
-export function phaseForTask(task: AppTask): AppSubagentPhase {
+export function phaseForTask(task: AppTask): AgentPhase {
   // Terminal statuses are authoritative over a possibly-stale subagentPhase: a
   // cancelled task keeps whatever phase it last had (e.g. 'working'), which
   // would otherwise keep it "live" and suppress the finished swarm card forever.
+  // Cancelled stays distinct from failed — an interrupted member is not a
+  // failure.
   if (task.status === 'completed') return 'completed';
-  if (task.status === 'failed' || task.status === 'cancelled') return 'failed';
+  if (task.status === 'failed') return 'failed';
+  if (task.status === 'cancelled') return 'cancelled';
   if (task.subagentPhase) return task.subagentPhase;
   return 'working';
 }
 
-function emptyCounts(): Record<AppSubagentPhase, number> {
+function emptyCounts(): Record<AgentPhase, number> {
   return {
     queued: 0,
     working: 0,
     suspended: 0,
     completed: 0,
     failed: 0,
+    cancelled: 0,
   };
 }
 
@@ -89,7 +94,7 @@ export function countSwarmMembers(groups: SwarmGroup[]): { done: number; total: 
   for (const group of groups) {
     total += group.members.length;
     for (const phase of PHASES) {
-      if (phase === 'completed' || phase === 'failed') done += group.counts[phase];
+      if (phase === 'completed' || phase === 'failed' || phase === 'cancelled') done += group.counts[phase];
     }
   }
   return { done, total };

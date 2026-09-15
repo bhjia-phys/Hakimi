@@ -31,6 +31,7 @@ import type {
   StreamDecodeStats,
   VideoUploadInput,
 } from '#/kosong/contract/provider';
+import type { TokenUsage } from '#/kosong/contract/usage';
 import { translateProviderError } from '#/kosong/protocol/errors';
 import type { IProtocolAdapterRegistry } from '#/kosong/protocol/protocol';
 
@@ -108,6 +109,7 @@ export class ModelRequesterImpl implements ModelRequester {
     let firstChunkAt: number | undefined;
     let streamEndedAt: number | undefined;
     let decodeStats: StreamDecodeStats | undefined;
+    let observedUsage: TokenUsage | null | undefined;
 
     const options: GenerateOptions = {
       signal,
@@ -131,7 +133,16 @@ export class ModelRequesterImpl implements ModelRequester {
         decodeStats = stats;
       },
       onTraceId: params?.onTraceId,
+      onUsage: (usage) => {
+        observedUsage = usage;
+      },
       responseFormat: input.responseFormat,
+    };
+
+    const pushObservedUsage = (): void => {
+      if (observedUsage !== undefined && observedUsage !== null) {
+        queue.push({ type: 'usage', usage: observedUsage, model: this.model.name });
+      }
     };
 
     let result: GenerateResult;
@@ -153,13 +164,15 @@ export class ModelRequesterImpl implements ModelRequester {
         );
       });
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      if (isAbortError(error) || signal?.aborted === true) {
+        pushObservedUsage();
+        throw error;
+      }
+      pushObservedUsage();
       throw translateProviderError(error);
     }
 
-    if (result.usage !== undefined && result.usage !== null) {
-      queue.push({ type: 'usage', usage: result.usage, model: this.model.name });
-    }
+    pushObservedUsage();
     queue.push({
       type: 'finish',
       message: result.message,

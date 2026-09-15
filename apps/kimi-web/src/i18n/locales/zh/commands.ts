@@ -5,7 +5,7 @@ export default {
   plan: { desc: '切换计划模式 开/关' },
   swarm: { desc: '切换 swarm 模式；/swarm <任务> 直接在 swarm 下执行' },
   goal: { desc: '创建/控制目标：/goal <目标>、/goal pause|resume|cancel' },
-  research: { desc: '切换 Research Mode，或查看并调整当前研究' },
+  research: { desc: '切换 Research 记忆模式（本地知识 + 官方 AITP Skills）' },
   btw: { desc: '侧边聊天：/btw <问题> 向 fork 的侧边会话提问' },
   yolo: { desc: '自动批准工具操作，Agent 仍可能提问' },
   auto: { desc: '自动批准工具，不问普通问题' },

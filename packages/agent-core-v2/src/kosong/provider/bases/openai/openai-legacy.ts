@@ -70,10 +70,12 @@ import {
   extractUsage,
   hasModelPrefix,
   isFunctionToolCall,
+  isOpenAIGpt6AstraModel,
   isOpenAIReasoningModel,
   normalizeOpenAIFinishReason,
   OPENAI_REASONING_CAPABILITY,
   OPENAI_TEXT_TOOL_CAPABILITY,
+  OPENAI_THINKING_VISION_TOOL_CAPABILITY,
   OPENAI_VISION_TOOL_CAPABILITY,
   OPENAI_VISION_TOOL_PREFIXES,
   type OpenAIContentPart,
@@ -171,7 +173,11 @@ interface OpenAIToolCallOut {
 
 function usesMaxCompletionTokens(model: string): boolean {
   const normalized = model.toLowerCase();
-  return /^o\d(?:$|[-.])/.test(normalized) || /^gpt-5(?:$|[-.])/.test(normalized);
+  return (
+    /^o\d(?:$|[-.])/.test(normalized) ||
+    /^gpt-5(?:$|[-.])/.test(normalized) ||
+    isOpenAIGpt6AstraModel(normalized)
+  );
 }
 
 function completionTokenKwargs(
@@ -788,6 +794,9 @@ export function getOpenAILegacyModelCapability(modelName: string) {
   const normalized = modelName.toLowerCase();
   if (isOpenAIReasoningModel(normalized)) {
     return OPENAI_REASONING_CAPABILITY;
+  }
+  if (isOpenAIGpt6AstraModel(normalized)) {
+    return OPENAI_THINKING_VISION_TOOL_CAPABILITY;
   }
   if (hasModelPrefix(normalized, DEEPSEEK_VISION_PREFIXES)) {
     return DEEPSEEK_VISION_CAPABILITY;

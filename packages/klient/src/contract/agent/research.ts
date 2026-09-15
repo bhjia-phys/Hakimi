@@ -1,14 +1,9 @@
 /**
- * Agent-scope AITP Research Mode service contracts. Mirror the engine's
- * `IAgentResearchService` and `IAgentAitpModeService` method signatures the
- * research facade calls: `getSnapshot` (read), `steer` (dispatch a
- * `HumanSteeringCommand`), `setFocus`, `createQuestion`, `createLine`,
- * `updateLine`, `updateQuestion`, `reopenQuestion`, `acknowledgeAlert`,
- * `resolveHumanDecision`, `proposeCheckpoint`, `discardHistoricalCheckpoint`,
- * `commitCheckpoint` on the
- * research service; `enter`, `exit`, `pauseLoop`, `resumeLoop` on the mode
- * service. The `HumanSteeringCommand` union and the snapshot shape are
- * mirrored as zod schemas in `./researchSchemas.ts`.
+ * Agent-scope Research memory-mode contracts: getSnapshot, enter, and exit.
+ * The agentResearchService name aliases the lightweight mode for getSnapshot.
+ * Other historical procedures remain validated for clear research.retired
+ * failures at the dispatcher, never to resolve the retired Research service.
+ * Historical schemas remain in researchSchemas for read-only decoding.
  */
 
 import { z } from 'zod';
@@ -24,7 +19,6 @@ import {
   researchLineWorkstreamBindingSchema,
   researchLineUpdateInputSchema,
   researchQuestionSchema,
-  researchStatusSnapshotSchema,
   researchAlertFingerprintSchema,
   resolveHumanDecisionInputSchema,
   researchHumanGateSchema,
@@ -174,8 +168,13 @@ const reopenQuestionArgsSchema = z.union([
   z.tuple([z.string(), z.string(), z.number()]),
 ]);
 
+export const researchModeSnapshotSchema = z.object({
+  enabled: z.boolean(),
+  skillsAvailable: z.boolean(),
+}).strict();
+
 export const agentResearchContract = {
-  getSnapshot: { input: z.tuple([]), output: researchStatusSnapshotSchema },
+  getSnapshot: { input: z.tuple([]), output: researchModeSnapshotSchema },
   getQuestions: { input: z.tuple([]), output: z.array(researchQuestionSchema) },
   getLines: { input: z.tuple([]), output: z.array(researchLineSchema) },
   getPendingCheckpoint: { input: z.tuple([]), output: maybe(researchCheckpointSchema) },
@@ -292,6 +291,7 @@ export const agentResearchContract = {
 } satisfies ServiceContract;
 
 export const agentAitpModeContract = {
+  getSnapshot: { input: z.tuple([]), output: researchModeSnapshotSchema },
   enter: { input: z.tuple([aitpModeEntryOptionsSchema]), output: noResult },
   exit: { input: z.tuple([]), output: noResult },
   pauseLoop: { input: z.tuple([z.number()]), output: noResult },

@@ -224,20 +224,15 @@ describe('built-in slash command registry', () => {
     const research = findBuiltInSlashCommand('research');
     expect(research).toBeDefined();
     expect((research as KimiSlashCommand).experimentalFlag).toBeUndefined();
-    // status / pause / resume are always available; the bare toggle mutates.
+    // Only the memory-mode toggle remains: status is a pure read (always);
+    // the bare toggle and on/off stay idle-only.
     expect(resolveSlashCommandAvailability(research!, '')).toBe('idle-only');
     expect(resolveSlashCommandAvailability(research!, 'status')).toBe('always');
-    expect(resolveSlashCommandAvailability(research!, 'pause')).toBe('always');
-    expect(resolveSlashCommandAvailability(research!, 'resume')).toBe('always');
-    // on / off / manage / alignment / question actions are idle-only
     expect(resolveSlashCommandAvailability(research!, 'on')).toBe('idle-only');
     expect(resolveSlashCommandAvailability(research!, 'off')).toBe('idle-only');
-    expect(resolveSlashCommandAvailability(research!, 'manage')).toBe('idle-only');
-    expect(resolveSlashCommandAvailability(research!, 'align same_program_goal')).toBe('idle-only');
-    expect((research as KimiSlashCommand).argumentHint).toContain('align <relation>');
-    expect(resolveSlashCommandAvailability(research!, 'edit q1 -- text')).toBe('idle-only');
-    expect(resolveSlashCommandAvailability(research!, 'focus q1 -- action')).toBe('idle-only');
-    expect(resolveSlashCommandAvailability(research!, 'defer q1')).toBe('idle-only');
+    // Retired executor subcommands no longer get special availability.
+    expect(resolveSlashCommandAvailability(research!, 'pause')).toBe('idle-only');
+    expect((research as KimiSlashCommand).argumentHint).toBe('[status|on|off]');
   });
 
   it('offers research subcommand argument completions', () => {
@@ -245,10 +240,7 @@ describe('built-in slash command registry', () => {
       const items = researchArgumentCompletions(prefix);
       return items === null ? null : items.map((item) => item.value);
     };
-    expect(values('')).toEqual([
-      'status', 'on', 'off', 'pause', 'resume', 'manage', 'align',
-      'edit', 'focus', 'defer', 'block', 'close', 'reopen', 'line',
-    ]);
+    expect(values('')).toEqual(['status', 'on', 'off']);
     expect(values('s')).toEqual(['status']);
     expect(values('st')).toEqual(['status']);
     expect(values('status')).toBeNull();

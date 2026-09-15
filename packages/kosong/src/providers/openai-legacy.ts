@@ -27,6 +27,7 @@ import {
   type ToolMessageConversion,
   toolToOpenAI,
 } from './openai-common';
+import { isOpenAIGpt6AstraModel } from './capability-registry';
 import {
   convertChatCompletionStreamToolCall,
   type BufferedChatCompletionToolCall,
@@ -135,7 +136,11 @@ interface OpenAICompatibleExtraBody {
 
 function usesMaxCompletionTokens(model: string): boolean {
   const normalized = model.toLowerCase();
-  return /^o\d(?:$|[-.])/.test(normalized) || /^gpt-5(?:$|[-.])/.test(normalized);
+  return (
+    /^o\d(?:$|[-.])/.test(normalized) ||
+    /^gpt-5(?:$|[-.])/.test(normalized) ||
+    isOpenAIGpt6AstraModel(normalized)
+  );
 }
 
 function completionTokenKwargs(

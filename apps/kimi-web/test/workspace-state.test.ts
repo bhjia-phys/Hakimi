@@ -10,7 +10,7 @@ import type {
   AppQuestionRequest,
   AppSession,
   AppTask,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
 } from '../src/api/types';
 import { DaemonApiError } from '../src/api/errors';
 import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
@@ -2876,22 +2876,10 @@ describe('useWorkspaceState — upsertWorkspacePreserveOrder hidden roots', () =
 });
 
 describe('useWorkspaceState — Research', () => {
-  function snapshot(revision: number): ResearchStatusSnapshot {
+  function snapshot(marker: number): ResearchModeSnapshot {
     return {
-      mode: 'ready',
-      loopStatus: 'active',
-      planningPolicy: 'collaborative',
-      lineWorkstreamBindings: [],
-      phase: 'idle',
-      currentLineSlug: 'line-a',
-      questions: [],
-      lines: [],
-      openQuestionCount: 0,
-      activeQuestionCount: 0,
-      blockedQuestionCount: 0,
-      alerts: [],
-      aitpHealth: { phase: 'ready' },
-      revision,
+      enabled: marker % 2 === 0,
+      skillsAvailable: marker % 3 !== 0,
     };
   }
 
@@ -2934,7 +2922,7 @@ describe('useWorkspaceState — Research', () => {
     const state = createResearchState();
     state.activeSessionId = 'sess_2';
     const ws = useWorkspaceState(state, createDeps());
-    const command = { kind: 'pause_loop', expectedRevision: 1 } as const;
+    const command = { kind: 'exit_mode' } as const;
 
     const result = await ws.commandResearchById('sess_1', command);
 
@@ -2949,7 +2937,7 @@ describe('useWorkspaceState — Research', () => {
     const state = createResearchState();
     const deps = createDeps();
     const ws = useWorkspaceState(state, deps);
-    const command = { kind: 'switch_line', lineSlug: 'line-a', expectedRevision: 1 } as const;
+    const command = { kind: 'enter_mode', actor: 'user' } as const;
 
     const result = await ws.commandResearch(command);
 
@@ -2971,9 +2959,9 @@ describe('useWorkspaceState — Research', () => {
     const state = createResearchState();
     const ws = useWorkspaceState(state, createDeps());
 
-    const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    const first = ws.commandResearch({ kind: 'exit_mode' });
     await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledTimes(1));
-    const second = ws.commandResearch({ kind: 'resume_loop', expectedRevision: 2 });
+    const second = ws.commandResearch({ kind: 'enter_mode', actor: 'user' });
     await Promise.resolve();
     expect(apiMock.commandSessionResearch).toHaveBeenCalledTimes(1);
 
@@ -2995,9 +2983,9 @@ describe('useWorkspaceState — Research', () => {
     const state = createState();
     const ws = useWorkspaceState(state, createDeps());
 
-    const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    const first = ws.commandResearch({ kind: 'exit_mode' });
     await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce());
-    const queued = ws.commandResearch({ kind: 'resume_loop', expectedRevision: 2 });
+    const queued = ws.commandResearch({ kind: 'enter_mode', actor: 'user' });
     await Promise.resolve();
     state.backend = 'v1';
 
@@ -3019,7 +3007,7 @@ describe('useWorkspaceState — Research', () => {
     const state = createResearchState();
     const ws = useWorkspaceState(state, createDeps());
 
-    const command = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    const command = ws.commandResearch({ kind: 'exit_mode' });
     await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce());
     state.researchVersionBySession = { sess_1: 1 };
     state.researchBySession = { sess_1: liveSnapshot };
@@ -3123,7 +3111,7 @@ describe('useWorkspaceState — Research', () => {
     const deps = createDeps();
     const ws = useWorkspaceState(createResearchState(), deps);
 
-    const result = await ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    const result = await ws.commandResearch({ kind: 'exit_mode' });
 
     expect(result).toBeNull();
     expect(deps.refreshSessionResearch).toHaveBeenCalledWith('sess_1');
@@ -3203,9 +3191,9 @@ describe('useWorkspaceState — Research', () => {
     const deps = createDeps();
     const ws = useWorkspaceState(state, deps);
 
-    const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    const first = ws.commandResearch({ kind: 'exit_mode' });
     await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce());
-    const queued = ws.commandResearch({ kind: 'resume_loop', expectedRevision: 2 });
+    const queued = ws.commandResearch({ kind: 'enter_mode', actor: 'user' });
     state.backend = 'v1';
     resolveFirst(firstSnapshot);
 

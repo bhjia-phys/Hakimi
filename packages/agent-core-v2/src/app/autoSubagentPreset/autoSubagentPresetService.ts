@@ -129,28 +129,40 @@ export function providerQuotaEvidence(
 ): ProviderQuotaEvidence | undefined {
   if (result === undefined || result.kind !== 'ok') return undefined;
   const rows = result.summary === null ? [...result.limits] : [result.summary, ...result.limits];
-  let plan: ProviderQuotaEvidence | undefined;
+  const evidence: ProviderQuotaEvidence[] = [];
   for (const row of rows) {
     const remainingPercent = windowRemainingPercent(row.limit, row.used);
     if (remainingPercent === undefined) continue;
-    const resetAt = futureResetAt(row.resetAt, now);
-    if (
-      plan === undefined ||
-      remainingPercent < plan.remainingPercent ||
-      (remainingPercent === plan.remainingPercent &&
-        resetAt !== undefined &&
-        (plan.resetAt === undefined || resetAt < plan.resetAt))
-    ) {
-      plan = { remainingPercent, resetAt };
-    }
+    evidence.push({ remainingPercent, resetAt: futureResetAt(row.resetAt, now) });
   }
+  let plan = providerQuotaEvidenceOf(evidence);
 
   const wallet = walletRemainingPercent(result, allowExtraUsage);
   if (plan === undefined) {
-    return wallet === undefined ? undefined : { remainingPercent: wallet };
+    if (wallet === undefined) return undefined;
+    plan = { remainingPercent: wallet };
+  } else if (wallet !== undefined && wallet > plan.remainingPercent) {
+    // A positive wallet can truly take over the tightest plan window, so its
+    // remaining percent is a valid alternative quota boundary.
+    plan = { remainingPercent: wallet };
   }
-  if (wallet !== undefined && wallet > plan.remainingPercent) {
-    return { remainingPercent: wallet };
+  return plan;
+}
+
+function providerQuotaEvidenceOf(
+  rows: readonly ProviderQuotaEvidence[],
+): ProviderQuotaEvidence | undefined {
+  let plan: ProviderQuotaEvidence | undefined;
+  for (const row of rows) {
+    if (
+      plan === undefined ||
+      row.remainingPercent < plan.remainingPercent ||
+      (row.remainingPercent === plan.remainingPercent &&
+        row.resetAt !== undefined &&
+        (plan.resetAt === undefined || row.resetAt < plan.resetAt))
+    ) {
+      plan = row;
+    }
   }
   return plan;
 }

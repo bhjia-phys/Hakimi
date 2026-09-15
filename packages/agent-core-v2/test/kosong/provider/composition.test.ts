@@ -20,6 +20,11 @@
  * composed-provider shape (`name` is the base's, `uploadVideo` is bound only
  * when a trait declares it).
  *
+ * DeepSeek probes cover official endpoint/auth isolation, per-turn thinking,
+ * kwargs precedence, output budgets, and reasoning/tool-image replay through
+ * the real base. A fixture trait seeds conflicting defaults via public hooks.
+ * Run: pnpm --filter @moonshot-ai/agent-core-v2 test test/kosong/provider/composition.test.ts
+ *
  * The final sections drive `generate` with mocked SDK clients and assert the
  * exact request params on the wire (the morph era asserted baked provider
  * state instead):
@@ -85,6 +90,7 @@ import {
   registerProviderDefinition,
   resolveProviderEndpoint,
 } from '#/kosong/provider/providerDefinition';
+import { deepseekOpenAITrait } from '#/kosong/provider/providers/deepseek/deepseek.contrib';
 import '#/kosong/provider/providers/kimi/kimi.contrib';
 import '#/kosong/provider/providers/standard.contrib';
 
@@ -118,7 +124,32 @@ registerProviderDefinition({
   ],
 });
 
+registerProviderDefinition({
+  id: 'deepseek-seeded',
+  baseProtocol: 'openai',
+  traits: [
+    {
+      provides: () => ({ thinkingEffort: 'high' }),
+      cacheKey: () => ({
+        thinking: { type: 'enabled', keep: 'all' },
+        reasoning_effort: 'medium',
+        temperature: 0.7,
+        max_completion_tokens: 16,
+        extra_body: {
+          thinking: { type: 'enabled', keep: 'all' },
+          reasoning_effort: 'medium',
+          max_tokens: 32,
+          vendor_option: 'preserved',
+        },
+      }),
+    },
+    deepseekOpenAITrait,
+  ],
+});
+
 const ENV_KEYS = [
+  'DEEPSEEK_API_KEY',
+  'DEEPSEEK_BASE_URL',
   'OPENAI_API_KEY',
   'OPENAI_BASE_URL',
   'KIMI_API_KEY',
@@ -309,6 +340,25 @@ describe('resolveCapability', () => {
     expect(deepSeekVision.image_in).toBe(true);
     expect(deepSeekVision.thinking).toBe(true);
     expect(deepSeekVision.tool_use).toBe(true);
+    const astra = registry.resolveCapability('openai', 'gpt-6-astra');
+    expect(astra.image_in).toBe(true);
+    expect(astra.thinking).toBe(true);
+    expect(astra.tool_use).toBe(true);
+    const astraSuffixed = registry.resolveCapability('openai', 'gpt-6-astra-2026-08-01');
+    expect(astraSuffixed.image_in).toBe(true);
+    expect(astraSuffixed.thinking).toBe(true);
+    expect(astraSuffixed.tool_use).toBe(true);
+    const astraResponses = registry.resolveCapability('openai_responses', 'gpt-6-astra');
+    expect(astraResponses.image_in).toBe(true);
+    expect(astraResponses.thinking).toBe(true);
+    expect(astraResponses.tool_use).toBe(true);
+    const astraResponsesSuffixed = registry.resolveCapability(
+      'openai_responses',
+      'gpt-6-astra-2026-08-01',
+    );
+    expect(astraResponsesSuffixed.tool_use).toBe(true);
+    expect(isUnknownCapability(registry.resolveCapability('openai', 'gpt-6-astral'))).toBe(true);
+    expect(isUnknownCapability(registry.resolveCapability('openai', 'gpt-6-astraX'))).toBe(true);
     expect(isUnknownCapability(registry.resolveCapability('openai', 'deepseek-not-real'))).toBe(true);
     expect(isUnknownCapability(registry.resolveCapability('openai', 'mystery-model'))).toBe(true);
     expect(registry.resolveCapability('anthropic', 'claude-opus-4-1').thinking).toBe(true);
@@ -669,6 +719,7 @@ async function captureGoogleBody(
 async function captureResponsesBody(
   provider: ChatProvider,
   options?: GenerateOptions,
+  history: Message[] = PROBE_HISTORY,
 ): Promise<Record<string, unknown>> {
   let captured: Record<string, unknown> | undefined;
   const client = sdkClient(provider) as { responses: { create: unknown } };
@@ -676,10 +727,176 @@ async function captureResponsesBody(
     captured = params as Record<string, unknown>;
     return Promise.resolve(responsesEventStream());
   });
-  await drain(await provider.generate('', [], PROBE_HISTORY, options));
+  await drain(await provider.generate('', [], history, options));
   if (captured === undefined) throw new Error('expected responses.create to be called');
   return captured;
 }
+
+describe('DeepSeek Flash composition (official OpenAI wire)', () => {
+  it('uses the official endpoint and DeepSeek credentials without inheriting OpenAI env', async () => {
+    process.env['OPENAI_API_KEY'] = 'unrelated-key';
+    process.env['OPENAI_BASE_URL'] = 'https://unrelated.example.test/v1';
+    process.env['DEEPSEEK_API_KEY'] = 'deepseek-test-key';
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash',
+    });
+    expect(sdkClient(provider)).toMatchObject({
+      apiKey: 'deepseek-test-key', baseURL: 'https://api.deepseek.com',
+    });
+    expect(provider.name).toBe('openai');
+    expect(await captureOpenAIBody(provider)).toMatchObject({ model: 'deepseek-flash' });
+  });
+
+  it('prefers explicit endpoint credentials over DeepSeek env', () => {
+    process.env['DEEPSEEK_API_KEY'] = 'env-key';
+    process.env['DEEPSEEK_BASE_URL'] = 'https://env.example.test/v1';
+    const config = { protocol: 'openai' as const, providerType: 'deepseek', modelName: 'deepseek-flash' };
+    expect(sdkClient(registry.createChatProvider(config))).toMatchObject({
+      apiKey: 'env-key', baseURL: 'https://env.example.test/v1',
+    });
+    expect(sdkClient(registry.createChatProvider({
+      ...config, apiKey: 'explicit-key', baseUrl: 'https://explicit.example.test/v1',
+    }))).toMatchObject({ apiKey: 'explicit-key', baseURL: 'https://explicit.example.test/v1' });
+  });
+
+  it('does not construct an OpenAI-authenticated client when DeepSeek credentials are absent', () => {
+    process.env['OPENAI_API_KEY'] = 'unrelated-key';
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash',
+    });
+    expect(sdkClient(provider)).toBeUndefined();
+  });
+
+  it.each(['low', 'high', 'max'])('sends explicit %s unchanged even with reasoning history', async (effort) => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    const body = await captureOpenAIBody(provider, { thinking: { effort, keep: 'all' } }, THINK_HISTORY);
+    expect(body['thinking']).toEqual({ type: 'enabled' });
+    expect(body['reasoning_effort']).toBe(effort);
+    expect(body).not.toHaveProperty('extra_body');
+  });
+
+  it.each([
+    ['off', 'disabled'],
+    ['on', 'enabled'],
+  ])('encodes %s without injecting an effort from reasoning history', async (effort, type) => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    const body = await captureOpenAIBody(provider, { thinking: { effort } }, THINK_HISTORY);
+    expect(body['thinking']).toEqual({ type });
+    expect(body).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('leaves thinking unspecified when no intent is supplied, even with reasoning history', async () => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    const body = await captureOpenAIBody(provider, undefined, THINK_HISTORY);
+    expect(body).not.toHaveProperty('thinking');
+    expect(body).not.toHaveProperty('reasoning_effort');
+  });
+
+  it.each([
+    ['low', 'enabled', 'low'],
+    ['high', 'enabled', 'high'],
+    ['max', 'enabled', 'max'],
+    ['on', 'enabled', undefined],
+    ['off', 'disabled', undefined],
+  ] as const)('lets per-request %s override provider defaults and conflicting seeded kwargs', async (effort, type, reasoningEffort) => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek-seeded', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    const body = await captureOpenAIBody(provider, {
+      cacheKey: 'seed-kwargs', thinking: { effort, keep: 'all' }, maxCompletionTokens: 200000,
+    }, THINK_HISTORY);
+    expect(body['thinking']).toEqual({ type });
+    expect(body['reasoning_effort']).toBe(reasoningEffort);
+    if (reasoningEffort === undefined) expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body).toMatchObject({ temperature: 0.7, vendor_option: 'preserved', max_tokens: 200000 });
+    expect(body).not.toHaveProperty('max_completion_tokens');
+    expect(body).not.toHaveProperty('extra_body');
+  });
+
+  it.each(['medium', 'xhigh', 'invalid'])('rejects unsupported effort %s with config.invalid', async (effort) => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    await expect(captureOpenAIBody(provider, { thinking: { effort } })).rejects.toMatchObject({
+      code: 'config.invalid', details: { provider: 'deepseek', effort },
+      message: expect.stringContaining('off, on, low, high, or max'),
+    });
+  });
+
+  it.each([
+    [undefined, undefined, 200000],
+    [950000, 1048576, 98576],
+    [1048576, 1048576, 1],
+  ])('keeps the explicit output budget subject only to remaining context (%s used)', async (usedContextTokens, maxContextTokens, expected) => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    const body = await captureOpenAIBody(provider, {
+      maxCompletionTokens: 200000, usedContextTokens, maxContextTokens,
+    });
+    expect(body['max_tokens']).toBe(expected);
+    expect(body).not.toHaveProperty('max_completion_tokens');
+  });
+
+  it('replays reasoning and all tool results before attached tool images on the shared wire', async () => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'deepseek', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    const history: Message[] = [
+      { role: 'user', content: [
+        { type: 'text', text: 'Compare these images.' },
+        { type: 'image_url', imageUrl: { url: 'https://example.test/input.png' } },
+      ], toolCalls: [] },
+      { role: 'assistant', content: [{ type: 'think', think: 'Inspect both sources.' }], toolCalls: [
+        { type: 'function', id: 'call_a', name: 'read_image', arguments: '{"name":"a"}' },
+        { type: 'function', id: 'call_b', name: 'read_image', arguments: '{"name":"b"}' },
+      ] },
+      { role: 'tool', toolCallId: 'call_a', toolCalls: [], content: [
+        { type: 'text', text: 'Image A' },
+        { type: 'image_url', imageUrl: { url: 'https://example.test/a.png' } },
+      ] },
+      { role: 'tool', toolCallId: 'call_b', toolCalls: [], content: [
+        { type: 'image_url', imageUrl: { url: 'https://example.test/b.png' } },
+      ] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Compared.' }], toolCalls: [] },
+    ];
+    const body = await captureOpenAIBody(provider, { thinking: { effort: 'high' } }, history);
+    expect(body['messages']).toEqual([
+      { role: 'user', content: [
+        { type: 'text', text: 'Compare these images.' },
+        { type: 'image_url', image_url: { url: 'https://example.test/input.png' } },
+      ] },
+      { role: 'assistant', reasoning_content: 'Inspect both sources.', tool_calls: [
+        { type: 'function', id: 'call_a', function: { name: 'read_image', arguments: '{"name":"a"}' } },
+        { type: 'function', id: 'call_b', function: { name: 'read_image', arguments: '{"name":"b"}' } },
+      ] },
+      { role: 'tool', tool_call_id: 'call_a', content: 'Image A' },
+      { role: 'tool', tool_call_id: 'call_b', content: '(see attached media)' },
+      { role: 'user', content: [
+        { type: 'text', text: 'Attached media from tool result:' },
+        { type: 'image_url', image_url: { url: 'https://example.test/a.png' } },
+        { type: 'image_url', image_url: { url: 'https://example.test/b.png' } },
+      ] },
+      { role: 'assistant', content: 'Compared.' },
+    ]);
+  });
+
+  it('does not apply DeepSeek thinking or budget rules to generic OpenAI with a Flash model name', async () => {
+    const provider = registry.createChatProvider({
+      protocol: 'openai', providerType: 'openai', modelName: 'deepseek-flash', apiKey: 'sk-probe',
+    });
+    const body = await captureOpenAIBody(provider, { maxCompletionTokens: 200000 }, THINK_HISTORY);
+    expect(body['reasoning_effort']).toBe('medium');
+    expect(body).not.toHaveProperty('thinking');
+    expect(body['max_tokens']).toBe(131072);
+  });
+});
 
 describe('per-turn intent wire encoding (behavior probes)', () => {
   it('encodes cacheKey + thinking + budget on the Kimi wire as prompt_cache_key + expanded thinking, never reasoning_effort', async () => {
@@ -703,6 +920,22 @@ describe('per-turn intent wire encoding (behavior probes)', () => {
     expect(body).not.toHaveProperty('max_tokens');
     expect(body).not.toHaveProperty('reasoning_effort');
   });
+
+  it.each(['gpt-6-astra', 'gpt-6-astra-2026-08-01'])(
+    'encodes the generate budget for %s on the OpenAI wire as max_completion_tokens',
+    async (modelName) => {
+      const provider = registry.createChatProvider({
+        protocol: 'openai',
+        modelName,
+        apiKey: 'sk-probe',
+      });
+
+      const body = await captureOpenAIBody(provider, { maxCompletionTokens: 5000 });
+
+      expect(body['max_completion_tokens']).toBe(5000);
+      expect(body).not.toHaveProperty('max_tokens');
+    },
+  );
 
   it('encodes cacheKey on plain OpenAI as the native prompt_cache_key', async () => {
     const provider = registry.createChatProvider({
@@ -798,6 +1031,36 @@ describe('reasoning-only assistant history projection', () => {
       parts: [{ text: 'earlier reasoning', thought: true }],
     });
   });
+});
+
+describe('OpenAI Responses developer-role projection', () => {
+  it.each(['gpt-6-astra', 'gpt-6-astra-2026-08-01'])(
+    'maps a history system message to developer for %s',
+    async (modelName) => {
+      const provider = registry.createChatProvider({
+        protocol: 'openai_responses',
+        modelName,
+        apiKey: 'sk-probe',
+      });
+      const history: Message[] = [
+        { role: 'system', content: [{ type: 'text', text: 'Remember this.' }], toolCalls: [] },
+        { role: 'user', content: [{ type: 'text', text: 'hi' }], toolCalls: [] },
+      ];
+      const body = await captureResponsesBody(provider, undefined, history);
+      const input = body['input'] as Array<Record<string, unknown>>;
+
+      expect(input[0]).toEqual({
+        content: [{ type: 'input_text', text: 'Remember this.' }],
+        role: 'developer',
+        type: 'message',
+      });
+      expect(input[1]).toEqual({
+        content: [{ type: 'input_text', text: 'hi' }],
+        role: 'user',
+        type: 'message',
+      });
+    },
+  );
 });
 
 describe('quota-exhausted classification through the real composition (behavior probes)', () => {

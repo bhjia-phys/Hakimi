@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { log, type GoalSnapshot, type ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
+import { log, type GoalSnapshot, type ResearchModeSnapshot } from '@bhjia-phys/hakimi-sdk';
 import type { MigrationPlan } from '@moonshot-ai/migration-legacy';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -156,30 +156,8 @@ function goalSnapshot(overrides: Partial<GoalSnapshot> = {}): GoalSnapshot {
   };
 }
 
-function researchSnapshot(mode: 'ready' | 'degraded'): ResearchStatusSnapshot {
-  return {
-    mode,
-    loopStatus: 'active',
-    planningPolicy: 'collaborative',
-    currentLineSlug: 'line-a',
-    questions: [],
-    lines: [{
-      slug: 'line-a',
-      title: 'Line A',
-      objective: 'Investigate A',
-      status: 'active',
-      createdAt: 1,
-      revision: 1,
-    }],
-    openQuestionCount: 0,
-    activeQuestionCount: 0,
-    blockedQuestionCount: 0,
-    alerts: [],
-    lineWorkstreamBindings: [],
-    aitpHealth: { phase: mode },
-    phase: 'action_executing',
-    revision: 1,
-  };
+function researchSnapshot(enabled: boolean): ResearchModeSnapshot {
+  return { enabled, skillsAvailable: true };
 }
 
 function createResumeState(overrides: { permissionMode?: string; planMode?: boolean } = {}) {
@@ -635,11 +613,11 @@ describe('KimiTUI startup', () => {
     expect(driver.state.appState.sessionId).toBe('ses-latest');
   });
 
-  it('hydrates Research Board after resume subscription for ready and degraded snapshots', async () => {
-    for (const mode of ['ready', 'degraded'] as const) {
-      const getResearch = vi.fn(async () => researchSnapshot(mode));
+  it('hydrates Research Board after resume subscription for on and off snapshots', async () => {
+    for (const enabled of [true, false] as const) {
+      const getResearch = vi.fn(async () => researchSnapshot(enabled));
       const session = makeSession({
-        id: `ses-${mode}`,
+        id: `ses-${String(enabled)}`,
         getResearch,
       });
       const harness = makeHarness(session, {
@@ -653,7 +631,8 @@ describe('KimiTUI startup', () => {
       ).finishStartup(true);
 
       expect(getResearch).toHaveBeenCalledOnce();
-      expect(driver.state.researchBoard.getSnapshot()?.mode).toBe(mode);
+      expect(driver.state.researchBoard.getSnapshot()?.enabled).toBe(enabled);
+      expect(driver.state.researchBoard.isVisible()).toBe(enabled);
     }
   });
 

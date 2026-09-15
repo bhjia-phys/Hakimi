@@ -34,20 +34,18 @@ Hakimi 不是一次性回答机器。它以有界的工作追问一个理论物�
   → 下一项判别性行动
 ```
 
-只有一项行动能够改变接下来应当相信什么或做什么时，问题才构成科研。Hakimi 将这条闭环显式化：每项行动都有边界，每个结果都记录其限制，每一步都根据区分现存可能性的能力来选择。
+只有一项行动能够改变接下来应当相信什么或做什么时，问题才构成科研。这条闭环是工作方法，不是必须登记的 host 状态机：行动有边界，结果有证据和限制，下一步应能区分现存可能性。
 
-## 目前已经具备
+## 研究支持
 
-- **科研界面：** TUI 和 Web 提供 Research Board 与 Research Manager，用于追踪和引导进行中的工作。
-- **科研结构：** Research Line、Question 和 Focus 让当前未知、假设与优先级可见。
-- **有界行动：** `BeginResearchAction` 与 `ConcludeResearchAction` 以结果、限制、下一步和一次显式 durability assessment 框定科研工作。没有 durable delta 时不做账本持久化；已绑定的 durable delta 只生成一个 typed pending candidate，并复用现有 AITP commit barrier。未绑定的结果会关闭 Action 并保留为本地结论，不冒充 AITP 记录，等待研究者明确确认归属。
-- **科学优先的进展：** 进展围绕证据与不确定性组织，而非工具活动或 transcript 数量。
-- **审阅与人工控制：** human gate 与 alert 支持明确判断，类型化的子 Agent 证据审阅使委派工作可检查。
-- **外部计算观察：** Hakimi 可以记录外部 HPC 工作的结构化观察，同时严格区分 scheduler 状态与科学证据。它不调度任务、不轮询至结束，也不认证成功。Goal 是跨 turn continuation 的唯一 owner。
+- **本地知识：** 用普通文件工具维护结论、假设、来源与开放问题，沿用项目既有索引。
+- **长期记忆：** 通过官方 AITP Skills 与 CLI 保存值得记忆的进展；该架构已在本地实现并安装，正式发布和剩余验收缺口见下文记录。
+- **科学优先：** 保留证据和不确定性，不把工具活动、轮次数量或保存记录等同于科学进展。
+- **按需组织工作：** 普通 Goal、Plan、工具权限各司其职，不增加逐步科研审批或第二套推进引擎。
 
 ## 理论物理研究规程
 
-可选的 `theory-physics` domain pack 是持续理论物理研究的上层使用手册。它支持先讨论未知、回读相关记录，再通过有归属的文献或推导工作形成候选。一个科学 loop 可以跨多个 bounded Action 和 turn；Goal 可选，reviewed local plan 服务复杂 Action，Research Plan 指导里程碑策略。读取既有 AITP 知识不要求先产生 durable delta。持久记录与条件性方法 review 仍遵循外部 `using-aitp` 和 `distilling-methods` skill，不在 Hakimi 复制第二套协议。
+可选的 `theory-physics` domain pack 提供理论物理方法指引：讨论未知、回读证据、检查推导与数值结果，并解释限制。它不要求为每一步创建 Line、Question、Action 或 Research Plan。需要长期记忆时，遵循外部 `using-aitp` 与 `distilling-methods` Skills，不在 Hakimi 复制第二套协议；回读既有记录不要求先有新结果。
 
 普通的一次性物理问答不需要 Research Mode。这个 pack 提供的是规程而不是物理预言机：它不是文献库、物理正确性服务、调度器、第二套 runtime、账本或后台自主 loop。研究者仍然负责物理约定、重要性判断和最终的科学结论；AITP 仍是协议 authority。
 
@@ -59,61 +57,17 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
-Goal 的纯用量更新保持 Research revision 不变，同时继续刷新 Board。读取状态与确认 workstream 之间的 token 记账不再使确认请求过期；Goal 控制状态变化和实际 Research 修改仍使旧请求失效，不会自动推断或确认绑定。已从 `172875fa2` 本地安装，运行中的 Hakimi 需重启加载；不会自动恢复 Goal。见[集成交接](docs/aitp/README.md)。
+**已在本地实现并安装；不声称正式发布或完整端到端验收。** Research Mode 已采用本地知识层与研究长期记忆架构，不是把 Research Board 做小。普通项目文件回答**现在知道什么**，官方 AITP 记录保留**怎么走到这里**。沿用项目已有的 `AGENTS.md` 与 `README` 索引，不强制新的目录格式。
 
-Goal 恢复前会先检查剩余预算。已耗尽时保持 blocked，明确告诉模型“未恢复”，不短暂切到 active，也不让立即到期的定时器取消收尾说明。原用量、预算和已有阻塞原因保留。源码验证与安装状态见[有界恢复修复](docs/aitp/theory-physics-collaborator-program.md#goal-budget-resume-preflight)。
+`/research on`、`/research off`、`/research status` 只控制或查看轻量模式和官方 AITP Skills 可见性，不安装或运行 CLI、不初始化存储、不写账本、不启动后台 loop。会话恢复和普通轮次边界也不自动执行 AITP maintenance。本地知识用普通文件工具；有新知识或值得记忆的进展时，才按需通过官方 Skills 与 CLI 保存。普通追问没有 delta，就不写知识文件或账本。当前 CLI wrapper 指向本工作区构建产物，因此**新启动**的 `hakimi` 进程会使用新实现；已在运行的进程要重新启动才会加载新代码。未强行重启任何用户会话。
 
-原生会话和 print mode 与 Hakimi SDK 使用同一 home：显式 `homeDir` → `HAKIMI_HOME` → 兼容的 `KIMI_CODE_HOME` → `~/.hakimi`。这修复了真实科研验收中原生引擎误用旧 Kimi home、找不到已安装 AITP contract 的问题。不会迁移或合并任何旧配置、插件或会话；旧目录中的会话需显式选择原 home 恢复。真实课题验收与剩余限制见[合作者规划](docs/aitp/theory-physics-collaborator-program.md#1911-g7-首次真实运行与启动目录修复)。
+选定的上游源码是 [AITP commit `3bebd4cc0fe786ea30420ab45692d8968cc0990b`](https://github.com/bhjia-phys/AITP-Research-Protocol/tree/3bebd4cc0fe786ea30420ab45692d8968cc0990b)：版本 0.10.0、`aitp/adapter-contract-0.3`，支持 Entry 与 Note 的原子作用域保存。它来自源码归档，不是 Git checkout，也不是 release tag。官方 `using-aitp`、`distilling-methods` Skills 仍是协议依据；Hakimi 不复制协议，也不自动批准或发布方法。0.10.0 插件已作为 managed plugin 安装到本地 Hakimi home；实际安装的是下面的本地派生版。
 
-Print mode 退出时会先暂停 active Goal 并刷出日志，再释放运行时，包括 SIGINT、SIGTERM 和 SIGHUP。已经停止的 Goal 不变；中断不会完成科研工作或写入 AITP 记录。原有有界清理不能保证 SIGKILL 或存储写入卡住时的持久化。详见[非交互执行](docs/zh/reference/kimi-command.md#非交互执行)。
+实际安装的是**本地派生版 `0.10.0+repo.1`**，不是上游 release。其 base 仍是 commit `3bebd4cc0fe786ea30420ab45692d8968cc0990b`，`aitp/adapter-contract-0.3` 不变。派生只增加一处 AITP 自身的仓库边界修复：`resolve_root` 现在在最近的 Git 根停下（`.git` 文件，或含 `HEAD` 的 `.git` 目录），不再跨过它去找父 store。因此没有 local store 的 Git 仓库 `enter`/`check` 会报 `not_initialized`，不借用上层 memory；显式 `init --adopt` 可在仓库根创建 store。已有 store 与仓库内子目录行为照旧；无 Git、或 `.git` 目录为空/损坏时，仍保留原祖先继承。不新增 CLI flags、registry、host hook 或数据库，也不是 OS 级隔离。一研究线对应一个 Git 仓库：知识正文与其 `.aitp/` store 都在该仓库内，全局研究索引只作可选导航，各仓库沿用自己的目录名，不强制固定 `knowledge/` 布局。
 
-干净构建安装版已通过独立进程信号测试和真实 PTY 验证。这证明退出持久化，不代表跨 turn 科研验收完成；详见[交付证据](docs/aitp/theory-physics-collaborator-program.md#print-goal-shutdown)。
+已实现的后端生产依赖图不再挂载 host ResearchService、Line/Question/Action 管理、Research Plan、checkpoint/loop/maintenance/distillation 机制、Research Goal veto、native adapter 或八个 `aitp_*` wrappers。历史记录通过原始会话日志或会话 export 只读查阅，不再提供结构化 Research history API 或 Manager。旧研究管理及推进 mutation 不再支持，不提供第二套 legacy 执行模式。已有 AITP 记录保留，不自动迁移或 backfill。
 
-交互式 TUI 收到 SIGTERM 后，会保留信号监听直至 Session 清理完成，避免信号辅助库在 active turn 的取消和 Goal 暂停保存前终止进程。重复 SIGTERM 不会跳过清理。SIGHUP／终端失效的紧急退出以及 SIGKILL 不在此保证范围；详见 [TUI 退出验证与交付状态](docs/aitp/theory-physics-collaborator-program.md#tui-sigterm-shutdown)。
-
-冷恢复时，AITP discovery 会等待会话 Skill catalog 就绪。退出或 reset 会取消等待，迟到结果不能恢复旧权限；插件缺失、不兼容或 catalog 初始化失败仍如实显示不可用，不额外添加 maintenance 重试。
-
-委派的 operator 不拥有共享 AITP 生命周期：子 agent 的恢复或 undo 不能 reset 主研究者的 adapter 或 maintenance 状态。进入或恢复 active Research Mode 时，也会为旧 tool allowlist 补齐已有的 evidence review、run observation 和 historical checkpoint discard 工具；这些修复不批准证据、不改变 checkpoint 或 human decision 语义。
-
-上一动作已经收束后，新的显式 `BeginResearchAction` 可以直接从 `state_updated` 开始，不再要求改 phase、改 Focus 或重复写进度。pending checkpoint、live action/run、未决 human gate 和过期计划仍阻止替换。这修复的是动作衔接，不替代科学判断，也不另行调度 Goal。
-
-未绑定的结果会在 Board 显示真实结论并请求确认记录归属，不再把已结束的工作标成运行中。目标 Line/workstream 明确确认后，可以在 Research Manager 或通过 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]` 接纳原结果。这只生成 pending checkpoint，AITP 保存和验证仍是独立步骤。新科研 Action 与 Goal continuation 会等待，防止覆盖待处理结果。详见[恢复说明](docs/zh/guides/research-mode.md#保留的本地结论)。
-
-该恢复修复已从 commit `06b8524102df` 安装，并在真实 Heisenberg 旧会话中完成既有 Action 的收尾与冷恢复，没有重算。这尚不代表已绑定 AITP 持久化或 Goal 自动科研通过；[验收记录](docs/aitp/theory-physics-collaborator-program.md#1923-本地结论交付与原会话恢复验收)区分了这些未完成项及一处模型归因错误。
-
-作业观察恢复修复已交付并本地安装：已关闭的 Action 可以登记其既有外部作业的新观察，不重开 Action，也不改写原结论。这不授予轮询或新科研权限。[有界恢复切片](docs/aitp/theory-physics-collaborator-program.md#retained-run-recovery) 记录了安装版 CLI 重启与 WebSocket 检查；这些是 fixture 测试，不是科学或 Goal 续行验收。
-
-Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会明确区分 Hakimi Goal、observed AITP Program（含其顶层 **Research goal**）和 Local Research Loop。Hakimi 只通过 AITP `enter` 观测该顶层目标，从不写 `TOPIC.md` 或 AITP Topic。Goal↔Program alignment 是仅在本地 checkpointed、由用户显式确认的 binding，不会根据文本相似度推断。在 active Research Mode 中，缺少 binding、binding stale 或明确 conflict 都会阻止 Goal completion 和 automatic continuation；inactive Goal 不受影响。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay；没有 Goal 时交互式 Research 仍可正常工作。TUI/Web 的紧凑 Board 统一为 Project、Current cycle、Attention、Next 四个位置，并把旧 period counter 准确标为 Research turn 数；健康 AITP 与 provenance 折叠到展开详情。已收尾的 `state_updated` cycle 可以直接切换 Line，归档旧 period 并回到 `idle`，不额外写入 AITP；未完成工作、待持久化内容、未解决 human gate 和其他非 idle phase 仍阻止切线。其他 Line 的 alert 也不会冒充当前 attention。默认 Goal engine 还会公开派生的 `idle`/`deciding`/`enqueued`/`running`/`held`/`waiting` continuation 状态，因此被 Research policy hold 的 active Goal 会显示为 `active · continuation held` 及其 owner/reason，而不会与 paused Goal 混淆。缺少该可选字段的旧 snapshot 会标为 unavailable，多 Line Board 状态则始终按当前选中 Line 隔离。每个 admitted Research turn 都会在注入模型上下文前执行一次确定性本地 reconciliation，因此可机械判定的 Line/Action/phase/period/cursor 漂移会在回答前修复；这不会额外跑一轮 AITP maintenance，也不推断科学结果。historical checkpoint 只有在 Hakimi 能够证明它没有 save receipt、committed Entry 或 committed-history 痕迹，且其捕获的 Question 或 Program binding 已 stale 时才会自动丢弃；任何含糊状态都保持 blocked，等待显式恢复。replay 只修复可确定的 Action/phase 结构：同一个 Action 保持 live、阻止 Goal completion，并在下一次 interactive Research turn 中根据证据解决，不会被自动完成或自动放弃。
-
-上段的 “Plan” 特指短期 Action-local Plan/Todo；带 revision 的 Research Plan 是跨多轮、可随证据演化的科学策略，但同样不拥有 continuation，也不能完成 Goal。经审阅的 local Action Plan 可以独立执行，不强制创建 Goal 或完整 Research Plan；如果已有 draft/active Research Plan，planned action 仍须同时绑定其 active milestone 和经审阅的小计划，缺项或过期 binding 继续拒绝执行。simple 小检验也可以显式关联当前 active milestone，不必再写详细的小计划；省略关联仍合法，系统不会自动推断归属。该修复已从干净 commit 安装，安装版 CLI 的 REST/WS 和进程重启复测通过；软件 fixture 不代替真实模型科研验收，见[里程碑关联验收](docs/aitp/theory-physics-collaborator-program.md#simple-action-milestone)。
-
-紧凑 Board 优先显示当前研究线、科学目标或里程碑，以及正在做的工作。live Action 的目的与其运行中的作业同时可见；明确属于其他 Line 的 Action/run 不混入当前研究线，旧单 Line 视图也一样。turn 计数和明确分类的历史失败保留在展开审计中，不冒充科学进展或当前阻塞。Action 结论没有待保存 checkpoint 时显示“下一步／就绪”，Goal 明确等待时显示“等待”。Research 上下文不再仅因预算计数或内部 revision 变化重复整段提示，但范围、完成条件、续跑和预算上限等实质变化仍会刷新。这些显示修复只是[合作者总体规划](docs/aitp/theory-physics-collaborator-program.md)的一部分，不代表整个科研工作流已经验收。
-
-Research 协作策略与工具权限模式相互正交。`collaborative` 只在会改变 Research Plan 的关键不确定性上询问研究者。`dreaming` 表示一旦 Goal、scope 和 completion criterion 已明确，Hakimi 就记录 reversible、low-cost、in-scope 的默认假设，并让 Goal 拥有的 continuation 在不逐步确认的情况下继续推进课题。两者在改变 Goal/scope、会影响结论的科学约定歧义、昂贵或不可逆操作，以及 AITP/其他 human decision 处都仍会停下。`auto` 只决定常规工具风险确认；因此 Goal + `dreaming` + `auto` 可以在已约定的科学与操作边界内自动推进，但不会获得新的科学决策权。
-
-Research Mode 一旦 active，Action 归属就由 Tool Executor 强制执行，不需要实验开关。由模型发起的科研工具必须属于一个 fresh、in-progress 的 bounded Action，并且拥有显式授权的 capability；control/recovery 和精确 checkpoint draft 持久化另有更窄的 lease。被拒绝的 `BeginResearchAction` 不能再被 Web、workspace、shell、subagent、scheduler 或未知 plugin/MCP 工具绕过，而创建 Action 与执行科研工具不能放在同一批次。这是 executor-enforced policy，不是 OS-level isolation：被授权的 shell capability 仍很宽，仍受通用 permission system 和 host sandbox 约束。
-
-Research Line 与 AITP workstream 也是两个不同的 identity。Hakimi 观测到当前 Topic 后，必须由用户或 main agent 显式确认一条带 revision 的本地 Line→workstream binding；slug、文本、路径或 ID 相同都不表示 membership。每次确认都有 server-owned opaque identity，clear 必须同时比较该 identity 与不随 undo 回退的 public Research revision。`unbound`、`unavailable`、`stale` 或 `conflict` 的 Line 仍可做低风险本地探索，但 scoped maintenance 和 Hakimi checkpoint adoption 必须使用精确的 confirmed binding。Hakimi 会在 scoped maintenance 与 checkpoint write 前重新做无作用域 Topic observation，post-save commit barrier 同时校验 captured Topic 与唯一一个 captured workstream。checkpoint-bound save 要求 AITP 0.9.0 adapter-contract 0.2：Hakimi 会把 captured Topic 与 exact singleton workstream 传给 atomic `record save`，因此 mismatch 不产生 canonical Entry；post-save `show` 和 scoped `check` 继续作为 defense in depth。重新绑定前必须先显式清除；undo 或 cold restore 会重新校验已保存的 Topic 与 observed revision，不会自动修复 binding。REST、WebSocket、Node SDK、klient、TUI 和 Web 投影同一个 binding status 与 typed durable-candidate state。
-
-[AITP](docs/aitp/) 是可选的外部持久证据账本，通过其 CLI 与文件使用；它不是 Hakimi 的第二套 runtime 或数据库。`ConcludeResearchAction` 之后，Hakimi 可以把一个 assessed durable delta 路由到现有 prepare/fill/save/show/checkpoint 路径；no-delta 结论不会安排 persistence 或 distillation，human assertion/decision 也始终与 agent/tool/source verification 分开。一个新 checkpoint 首次成功 commit 后，Hakimi 会在同一轮把且只把本次 touched Entry best-effort 交给精确的外部 `distilling-methods` Skill 做一次有界 review。重复 commit 或 Skill 不可用是非阻塞 no-op；是否满足既有 trigger 只由外部 Skill 判断。Research snapshot 只会显示最新精确 handoff 已请求或不可用，不会声称 trigger、card、trial、review 完成、批准或发布。Hakimi 不自行解析 marker、创建或 revision card、approval 或 publish，也不会自动初始化/adopt/backfill workspace，不增加 `/research goal` 或 workstream registry，并且仍没有计划中的 native H6b coordinator。Hakimi 本地的 Goal–Program 与 Line–workstream binding 绝不写入 AITP。AITP 不可用时，Research Mode 会明确显示 degraded，并阻止 durable write、checkpoint 和 active Research Goal completion。详细兼容性与运行边界见 [AITP 文档](docs/aitp/)。
-
-提交后 Note review 保留经过验证的来源 Line/Topic/workstream confirmation，并在 Note 工具真正执行时再次核验。切线、重新绑定、失去 ready、undo 或 restore 都不能沿用旧 draft 的写权限；只有恢复出的 review marker 时仍只读。阶段综合或中断的 review 可以通过新的 bounded Note Action 继续：host 在准备和保存新草稿前，通过 canonical Entry 回读核验所选 Question 的证据，不要求伪造新的科研 delta。这是本地归属保护，不等同于 AITP Entry 的原子 compare-and-save，也不新增自动卡片批准、发布或蒸馏协调器。
-
-AITP degraded 时，用户指导的 Research 回合仍可在 fresh bounded Action 内做临时探索，正常 scope 和权限检查不变；自动 Goal 工作、AITP 写入和 Goal 完成仍被 hold。已确认记录归属的新结果或失败保留为本地 pending candidate 等待恢复，不会悄悄改成 no-delta。这修复了“允许创建本地科研行动，却拒绝其全部工作工具”的冲突。
-
-同一用户回合内打开 Research Mode 后，入口收敛即开始 Research context 和一次本地 boundary，无需再发提示。暂停或退出会撤销准入，模式恢复不会赋予自动 Goal continuation。
-
-证据保存并不等于科学 Question 已更新。持久结果的收尾指引先完成捕获的 checkpoint；首次提交成功后，再提示模型有条件地综合仍属当前上下文的 Question：评价、相关证据、剩余未知和下一步。重复提交或上下文已变化时不重复该定向提示。综合仍由模型通过现有 Question 工具完成；receipt 不会自动提升科学可信度或关闭 Question。
-
-当前问题优先尊重显式 Focus；没有 Focus 时，可使用前台 Action 明确引用且属于当前 Line 的 Question，不设置 Focus，也不猜测归属。更高优先级的行动、作业、决定和持久化事项处理完后，Question 明确保存的下一步优先于历史 progress。Snapshot、status 和提交后的指引共用该上下文。详见 [Question 上下文修复与验证状态](docs/aitp/theory-physics-collaborator-program.md#question-context-projection)。
-
-从既有证据整理阶段 Note 时，模型应先确定 Question 的 canonical evidence refs，再开始捕获该 revision 的 Note Action。现有上下文也会在 Topic 与已确认绑定匹配时标明原生 scoped maintenance 已完成；仅加载 Skill 不要求再做一次 `enter/check`。证据回读、真正过期后的刷新及必要的保存验证仍须执行。这是指引修正，不是新增阶段或自动科学判断。
-
-可选 Theory Physics 插件包含 `calculation-operator` agent profile，用于限定范围的编译、输入、数值计算和后处理。主 agent 给出科学检验与范围，审查现有 typed evidence packet，并独占 Research/AITP mutation。这个角色不同于 `/preset` 的模型路由池；不安装 runner 或 scheduler，也不提供 OS 级隔离。真实科研验收单独记录在合作者计划中。
-
-Theory Physics 0.2.3 将委派要点直接放进主研究者可见的 agent 类型说明：传递整项任务的剩余时间并预留父侧审阅和收尾，要求一份保存的 packet 加简短交接，或一份 inline packet。助手的详细指引仍独立保留；调用者不必先读取助手的完整 prompt 才能看到这些要点。受托 packet 保存和有依据的失败报告仍然必要：未尝试写入不能证明工具缺失，交接失败也不抹去实际数值结果。这是指导，不是 runtime 截止时间机制，也不保证模型必然遵守。
-
-checkpoint 屏障还会在接纳前将已保存 Entry 的 kind、authority 和 creator 与已结束 Action 的候选对照。不一致时保留实际记录和 receipt 供审查，checkpoint 保持 pending，不触发提交后的蒸馏 handoff。这是保存后的身份核对，不是内容语义验证，也不是保存前 authority 的原子保证。
+普通 Goal、Plan 和权限行为不变。取消 host Research veto 后，普通文件工具没有额外保证阻止直接访问 AITP 正式记录文件：官方 CLI 校验只约束它自己的操作，不覆盖所有文件写入，也不是 OS 级隔离。默认模型的一次只读 smoke 已跨进程恢复来源固定的记忆，知识与 ledger 零变化，未启动 Goal、Plan 或 subagent；这是单个 fixture，不是科学结果，也不代表普遍模型适配。使用方式和剩余收口项见[研究模式指南](docs/zh/guides/research-mode.md)与[部署记录](docs/aitp/TRACKING.md#research-memory-lite-20260913)。
 
 ## 从源码安装
 
@@ -143,10 +97,12 @@ hakimi -p "Summarize the test failures in this repository."
 hakimi -c
 ```
 
-在交互式会话中，当工作需要时直接切换 Research Mode：
+在交互式会话中，用保留的基本命令打开、查看或关闭 Research Mode；轻量版行为仍待部署验收：
 
 ```text
-/research
+/research on
+/research status
+/research off
 ```
 
 使用 `/login` 配置可用的 provider。配置 DeepSeek 时运行 `hakimi provider deepseek`。登录必须显式触发，Hakimi 不会在启动时自动开始 OAuth 登录。配置、session、日志和缓存默认保存在 `~/.hakimi`；设置 `HAKIMI_HOME` 可使用其他数据目录。
@@ -156,7 +112,7 @@ Windows 用户首次启动前请安装 [Git for Windows](https://gitforwindows.o
 ## 当前状态
 
 - Hakimi 是可从源码构建的开发版本。
-- Research Loop 和可选的 `theory-physics` pack 仍是实验性功能，可能继续变化。
+- Research Mode 的知识与记忆工作流已在本地实现、安装，并在本工作区内完成全套测试；运行中的 Hakimi 进程需重新启动才能加载。尚未声称正式发布或完整 server+browser 端到端通过。可选的 `theory-physics` pack 仍可能变化。
 - 当前没有公开 npm 包或 release installer；请使用上面的源码构建路径。
 - Hakimi 不取代专家判断、人工审阅或可复现的科学验证。
 
@@ -165,9 +121,9 @@ Windows 用户首次启动前请安装 [Git for Windows](https://gitforwindows.o
 - [快速开始](docs/zh/guides/getting-started.md)
 - [配置](docs/zh/configuration/config-files.md)
 - [Research Mode](docs/zh/guides/research-mode.md)
-- [理论物理合作者总体规划](docs/aitp/theory-physics-collaborator-program.md)
-- [理论物理合作者与 Research Loop 设计](docs/aitp/theory-research-agent-design.md)
-- [AITP 文档与兼容性记录](docs/aitp/)
+- [历史理论物理合作者规划与验收记录](docs/aitp/theory-physics-collaborator-program.md)
+- [历史理论物理合作者与 Research Loop 设计](docs/aitp/theory-research-agent-design.md)
+- [AITP 本次兼容性说明与历史记录](docs/aitp/compatibility-matrix.md#research-memory-lite-20260913)
 - [实现说明](IMPLEMENTATION.md)
 
 ## 项目背景
@@ -185,6 +141,18 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false -C apps/kimi-code typecheck
 corepack pnpm --config.engine-strict=false -C apps/kimi-code test
 ```
+
+使用 Node.js 24.15.0+ 并安装工作区依赖后，一条命令即可打开源码开发版 Web UI：
+
+```sh
+./dev
+# 在仓库根目录也可以：pnpm dev
+# 在父目录可以直接：./Hakimi/dev
+```
+
+命令会启动源码后端和 Vite 前端，按实际端口自动连接并打开浏览器。端口占用时自动顺延，不影响已有实例。修改前端会热更新；修改后端后重新运行命令。Ctrl+C 只停止本次开发实例。加 `--no-open` 仅打印访问链接、不打开浏览器，`--help` 查看端口选项。Windows 下使用 `node dev` 代替 `./dev`。
+
+开发实例沿用正常的 Hakimi 数据目录和配置（包括已有会话），并非隔离测试环境。需要隔离时，把 `HAKIMI_HOME` 设为单独目录。普通 `hakimi` 命令和 `pnpm dev:cli` 保持不变；后者启动源码 TUI，不启动 Vite 前端。
 
 CLI 位于 `apps/kimi-code`；其他 package 提供应用使用的 SDK、模型/provider 集成和 agent runtime。
 

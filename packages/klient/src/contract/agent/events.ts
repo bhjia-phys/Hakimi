@@ -190,7 +190,12 @@ export const researchUpdatedEventSchema = z.object({
   snapshot: researchStatusSnapshotSchema,
 });
 
-/** `aitp_mode.updated` is a bare signal (no payload). */
+export const researchModeUpdatedEventSchema = z.object({
+  type: z.literal('research_mode.updated'),
+  snapshot: z.object({ enabled: z.boolean(), skillsAvailable: z.boolean() }).strict(),
+});
+
+/** Historical `aitp_mode.updated` signal, retained for decoding. */
 export const aitpModeUpdatedEventSchema = z.object({
   type: z.literal('aitp_mode.updated'),
 });
@@ -270,6 +275,7 @@ export interface AgentEventPayloads {
   warning: z.infer<typeof warningEventSchema>;
   'agent.status.updated': z.infer<typeof agentStatusUpdatedEventSchema>;
   'research.updated': z.infer<typeof researchUpdatedEventSchema>;
+  'research_mode.updated': z.infer<typeof researchModeUpdatedEventSchema>;
   'aitp_mode.updated': z.infer<typeof aitpModeUpdatedEventSchema>;
   'goal.updated': z.infer<typeof goalUpdatedEventSchema>;
 }
@@ -337,6 +343,12 @@ export const agentEvents = {
     name: 'events',
     type: 'research.updated',
     schema: researchUpdatedEventSchema,
+  },
+  'research_mode.updated': {
+    kind: 'stream',
+    name: 'events',
+    type: 'research_mode.updated',
+    schema: researchModeUpdatedEventSchema,
   },
   'aitp_mode.updated': {
     kind: 'stream',

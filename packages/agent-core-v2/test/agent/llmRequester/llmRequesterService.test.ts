@@ -2,7 +2,8 @@
  * Scenario: LLM requester uses bounded recovery projections after a
  * deterministic provider rejection — strict projection for tool-use
  * adjacency, degraded media followed by full stripping for body-size 413s,
- * and media stripping for image-format rejections.
+ * media stripping for image-format rejections, and encrypted-thinking
+ * stripping for unverifiable encrypted reasoning content.
  *
  * Responsibilities: assert retry eligibility, projection order and bounds,
  * per-turn recovery stickiness, request recording, and usage accounting.
@@ -63,6 +64,8 @@ import { ILogService } from '#/_base/log/log';
 import { Error2, ErrorCodes } from '#/errors';
 import { IWireService } from '#/wire/wire';
 import type { WireRecord } from '#/wire/record';
+import { IProviderUsageLedgerService, type MeteredAttemptFinish, type MeteredAttemptStart } from '#/app/providerUsageLedger/providerUsageLedger';
+import { aggregateMeteredUsage } from '#/app/providerUsageLedger/providerUsageLedgerService';
 import { recordingTelemetry, type TelemetryRecord } from '../../app/telemetry/stubs';
 
 import { recordingWireLog, registerTestAgentWire } from '../../wire/stubs';
@@ -131,6 +134,34 @@ beforeEach(() => {
 
 afterEach(() => disposables.dispose());
 
+interface RecordingLedger {
+  readonly service: IProviderUsageLedgerService;
+  readonly starts: MeteredAttemptStart[];
+  readonly finishes: Array<{ attemptId: string; finish: MeteredAttemptFinish }>;
+}
+
+function recordingLedger(): RecordingLedger {
+  const starts: MeteredAttemptStart[] = [];
+  const finishes: Array<{ attemptId: string; finish: MeteredAttemptFinish }> = [];
+  let counter = 0;
+  return {
+    starts,
+    finishes,
+    service: {
+      _serviceBrand: undefined,
+      startAttempt: (start) => {
+        starts.push(start);
+        counter += 1;
+        return `attempt-${counter}`;
+      },
+      finishAttempt: (attemptId, finish) => {
+        finishes.push({ attemptId, finish });
+      },
+      getMeteredUsage: async () => aggregateMeteredUsage([], Date.now(), false, null),
+    },
+  };
+}
+
 function createService(
   requester: ModelRequester,
   projector:
@@ -141,12 +172,14 @@ function createService(
             | 'captureMediaStripSnapshot'
             | 'projectMediaDegraded'
             | 'projectMediaStripped'
+            | 'projectEncryptedStripped'
           >
         >)
     | undefined,
   options: {
     readonly thinkingLevel?: ThinkingEffort;
     readonly contextMessages?: Message[];
+    readonly ledger?: IProviderUsageLedgerService;
   } = {},
 ) {
   const ix = disposables.add(new TestInstantiationService());
@@ -213,6 +246,7 @@ function createService(
       captureMediaStripSnapshot: () => testSnapshot,
       projectMediaDegraded: projector.project,
       projectMediaStripped: projector.project,
+      projectEncryptedStripped: projector.project,
       ...projector,
     });
   }
@@ -220,6 +254,8 @@ function createService(
   ix.stub(IAgentToolRegistryService, tools);
   ix.stub(IAgentProfileService, profile);
   ix.stub(IAgentUsageService, usage);
+  const ledger = recordingLedger();
+  ix.stub(IProviderUsageLedgerService, options.ledger ?? ledger.service);
   ix.stub(IConfigService, config);
   ix.stub(ILogService, log);
   ix.stub(ITelemetryService, telemetry);
@@ -247,6 +283,7 @@ function createService(
     events,
     telemetryRecords,
     measuredCalls,
+    ledger,
   };
 }
 
@@ -654,6 +691,159 @@ describe('AgentLLMRequesterService media-degraded resend', () => {
   });
 });
 
+describe('AgentLLMRequesterService encrypted-reasoning resend', () => {
+  const ENCRYPTED_VERIFY_400 = new APIStatusError(
+    400,
+    'The encrypted content could not be verified for a reasoning item in the conversation.',
+  );
+
+  const encryptedHistory: Message[] = [
+    { role: 'user', content: [{ type: 'text', text: 'hello' }], toolCalls: [] },
+    {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'visible' },
+        { type: 'think', think: 'thinking summary', encrypted: 'enc-1' },
+      ],
+      toolCalls: [],
+    },
+  ];
+
+  it('resends once with the encrypted-stripped projection after an unverifiable 400', async () => {
+    const calls = { value: 0 };
+    const order: string[] = [];
+    const { service } = createService(createRequester(calls, ENCRYPTED_VERIFY_400), {
+      project: (messages: readonly ContextMessage[]) => {
+        order.push('normal');
+        return messages;
+      },
+      projectStrict: (messages: readonly ContextMessage[]) => {
+        order.push('strict');
+        return messages;
+      },
+      projectEncryptedStripped: (messages: readonly ContextMessage[]) => {
+        order.push('encrypted-stripped');
+        return messages;
+      },
+    });
+
+    const result = await service.request({ messages: encryptedHistory });
+
+    expect(result.message.content).toEqual([{ type: 'text', text: 'ok' }]);
+    expect(calls.value).toBe(2);
+    expect(order).toEqual(['normal', 'encrypted-stripped']);
+  });
+
+  it('sends the retry without any encrypted think field while keeping the summary', async () => {
+    const calls = { value: 0 };
+    const capturedInputs: ModelRequestInput[] = [];
+    const { service } = createService(
+      createRequester(calls, ENCRYPTED_VERIFY_400, [], capturedInputs),
+      undefined,
+    );
+
+    await service.request({ messages: encryptedHistory });
+
+    expect(calls.value).toBe(2);
+    const assistantContents = capturedInputs.map(
+      (input) => input.messages.find((message) => message.role === 'assistant')?.content,
+    );
+    expect(assistantContents[0]).toEqual([
+      { type: 'text', text: 'visible' },
+      { type: 'think', think: 'thinking summary', encrypted: 'enc-1' },
+    ]);
+    expect(assistantContents[1]).toEqual([
+      { type: 'text', text: 'visible' },
+      { type: 'think', think: 'thinking summary' },
+    ]);
+  });
+
+  it('keeps later steps of the same turn on the encrypted-stripped projection', async () => {
+    const calls = { value: 0 };
+    let projectCalls = 0;
+    let encryptedStrippedCalls = 0;
+    const { service } = createService(createRequester(calls, ENCRYPTED_VERIFY_400), {
+      project: (messages: readonly ContextMessage[]) => {
+        projectCalls += 1;
+        return messages;
+      },
+      projectStrict: (messages: readonly ContextMessage[]) => messages,
+      projectEncryptedStripped: (messages: readonly ContextMessage[]) => {
+        encryptedStrippedCalls += 1;
+        return messages;
+      },
+    });
+
+    await service.request({
+      messages: encryptedHistory,
+      source: { type: 'turn', turnId: 1, step: 1 },
+    });
+    expect(calls.value).toBe(2);
+    expect(projectCalls).toBe(1);
+    expect(encryptedStrippedCalls).toBe(1);
+
+    await service.request({
+      messages: encryptedHistory,
+      source: { type: 'turn', turnId: 1, step: 2 },
+    });
+    expect(calls.value).toBe(3);
+    expect(projectCalls).toBe(1);
+    expect(encryptedStrippedCalls).toBe(2);
+  });
+
+  it('does not loop when the encrypted-stripped request fails again', async () => {
+    const calls = { value: 0 };
+    let projectCalls = 0;
+    let encryptedStrippedCalls = 0;
+    const { service } = createService(
+      createRequester(calls, ENCRYPTED_VERIFY_400, [ENCRYPTED_VERIFY_400]),
+      {
+        project: (messages: readonly ContextMessage[]) => {
+          projectCalls += 1;
+          return messages;
+        },
+        projectStrict: (messages: readonly ContextMessage[]) => messages,
+        projectEncryptedStripped: (messages: readonly ContextMessage[]) => {
+          encryptedStrippedCalls += 1;
+          return messages;
+        },
+      },
+    );
+
+    await expect(
+      service.request({
+        messages: encryptedHistory,
+        source: { type: 'turn', turnId: 1, step: 1 },
+      }),
+    ).rejects.toBe(ENCRYPTED_VERIFY_400);
+    expect(calls.value).toBe(2);
+    expect(projectCalls).toBe(1);
+    expect(encryptedStrippedCalls).toBe(1);
+  });
+
+  it('does not resend for an unrelated 400', async () => {
+    const calls = { value: 0 };
+    let encryptedStrippedCalls = 0;
+    const { service } = createService(
+      createRequester(calls, new APIStatusError(400, 'some other validation problem')),
+      {
+        project: (messages: readonly ContextMessage[]) => messages,
+        projectStrict: (messages: readonly ContextMessage[]) => messages,
+        projectEncryptedStripped: (messages: readonly ContextMessage[]) => {
+          encryptedStrippedCalls += 1;
+          return messages;
+        },
+      },
+    );
+
+    await expect(service.request({ messages: encryptedHistory })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(calls.value).toBe(1);
+    expect(encryptedStrippedCalls).toBe(0);
+  });
+});
+
 describe('AgentLLMRequesterService trace id', () => {
   const passthroughProjector = {
     project: (messages: readonly ContextMessage[]) => messages,
@@ -932,5 +1122,123 @@ describe('AgentLLMRequesterService tool call id normalization', () => {
 
     const result = await service.request();
     expect(result.message.toolCalls[0]!.id).toBe('Bash_0__2');
+  });
+});
+
+describe('AgentLLMRequesterService metered ledger recording', () => {
+  const model: Model = {
+    id: 'm',
+    name: 'wire-model',
+    aliases: [],
+    protocol: 'anthropic',
+    baseUrl: 'https://example.test',
+    headers: {},
+    capabilities,
+    maxContextSize: 1000,
+    alwaysThinking: false,
+    providerName: 'p',
+    authProvider: { getAuth: async () => undefined },
+  };
+
+  function usageThenFailRequester(usage: TokenUsage): ModelRequester {
+    return {
+      model,
+      request: async function* () {
+        yield { type: 'usage', usage };
+        throw new APIStatusError(500, 'boom after usage');
+      },
+    };
+  }
+
+  it('records a start and finish around a successful request', async () => {
+    const { service, ledger } = createService(createRequester({ value: 0 }, null), undefined);
+
+    await service.request();
+
+    expect(ledger.starts).toHaveLength(1);
+    expect(ledger.starts[0]).toMatchObject({
+      providerName: 'p',
+      modelName: 'wire-model',
+      modelAlias: 'm',
+      baseUrl: 'https://example.test',
+    });
+    expect(ledger.finishes).toHaveLength(1);
+    expect(ledger.finishes[0]!.attemptId).toBe('attempt-1');
+    expect(ledger.finishes[0]!.finish).toEqual({ usage: null, outcome: 'success' });
+  });
+
+  it('opens a fresh attempt id for each projection retry', async () => {
+    const calls = { value: 0 };
+    const BODY_TOO_LARGE = new APIRequestTooLargeError(413, 'Request Entity Too Large');
+    const { service, ledger } = createService(
+      createRequester(calls, new Error2(ErrorCodes.PROVIDER_API_ERROR, 'x', { cause: BODY_TOO_LARGE })),
+      {
+        project: (messages: readonly ContextMessage[]) => messages,
+        projectStrict: (messages: readonly ContextMessage[]) => messages,
+        projectMediaDegraded: (messages: readonly ContextMessage[]) => messages,
+        projectMediaStripped: (messages: readonly ContextMessage[]) => messages,
+      },
+    );
+
+    await service.request();
+
+    expect(calls.value).toBe(2);
+    expect(ledger.starts).toHaveLength(2);
+    expect(ledger.finishes).toHaveLength(2);
+    expect(ledger.finishes.map((f) => f.attemptId)).toEqual(['attempt-1', 'attempt-2']);
+    expect(ledger.finishes[0]!.finish.outcome).toBe('error');
+    expect(ledger.finishes[1]!.finish.outcome).toBe('success');
+  });
+
+  it('records observed usage when the request fails after a usage event', async () => {
+    const usage: TokenUsage = { inputOther: 7, output: 3, inputCacheRead: 1, inputCacheCreation: 0 };
+    const { service, ledger } = createService(usageThenFailRequester(usage), undefined);
+
+    await expect(service.request()).rejects.toThrow();
+
+    expect(ledger.finishes).toHaveLength(1);
+    expect(ledger.finishes[0]!.finish.outcome).toBe('error');
+    expect(ledger.finishes[0]!.finish.usage).toEqual(usage);
+  });
+
+  it('records a cancelled outcome for an aborted request', async () => {
+    const controller = new AbortController();
+    const requester: ModelRequester = {
+      model,
+      request: async function* () {
+        yield { type: 'part', part: { type: 'text', text: 'x' } };
+        controller.abort();
+        throw new DOMException('aborted', 'AbortError');
+      },
+    };
+    const { service, ledger } = createService(requester, undefined);
+
+    await expect(service.request(undefined, undefined, controller.signal)).rejects.toThrow();
+
+    expect(ledger.finishes).toHaveLength(1);
+    expect(ledger.finishes[0]!.finish.outcome).toBe('cancelled');
+  });
+
+  it('does not let a throwing ledger override the request result or error', async () => {
+    const throwingLedger: IProviderUsageLedgerService = {
+      _serviceBrand: undefined,
+      startAttempt: () => {
+        throw new Error('ledger start failed');
+      },
+      finishAttempt: () => {
+        throw new Error('ledger finish failed');
+      },
+      getMeteredUsage: async () => aggregateMeteredUsage([], Date.now(), false, null),
+    };
+    const success = createService(createRequester({ value: 0 }, null), undefined, { ledger: throwingLedger });
+    await expect(success.service.request()).resolves.toMatchObject({ model: 'm' });
+
+    const calls = { value: 0 };
+    const failing = createService(
+      createRequester(calls, new APIStatusError(500, 'boom')),
+      undefined,
+      { ledger: throwingLedger },
+    );
+    await expect(failing.service.request()).rejects.toThrow('boom');
   });
 });

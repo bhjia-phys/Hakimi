@@ -14,8 +14,8 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await page.route('**/*', route => route.request().url().startsWith('http://127.0.0.1:5193/')
   ? route.continue() : route.abort());
-const trigger = page.getByRole('button', { name: 'Research board', exact: true });
-const hide = page.getByRole('button', { name: 'Hide research board', exact: true });
+const trigger = page.getByRole('button', { name: 'Research', exact: true });
+const hide = page.getByRole('button', { name: 'Hide panel', exact: true });
 const board = page.locator('.research-floating-board');
 const call = (method, arg) => page.evaluate(([method, arg]) => window.researchPanelHarness[method](arg), [method, arg]);
 const visible = async locator => assert.equal(await locator.isVisible(), true);
@@ -28,45 +28,40 @@ try {
   const emptyComposer = await page.locator('.empty-composer').boundingBox();
   await trigger.click();
   await visible(hide);
+  // The minimal board states the mode, its purpose, and the read-only history note.
+  const body = await board.innerText();
+  assert.match(body, /On/, 'Shows the on state');
+  assert.match(body, /AITP Skills visible/, 'Shows skill visibility');
+  assert.match(body, /read-only/, 'Marks legacy records read-only');
   assert.deepEqual(await page.locator('.empty-composer').boundingBox(), emptyComposer, 'No empty composer shift');
   await hide.press('Escape');
   assert.equal(await trigger.evaluate(el => el === document.activeElement), true, 'Escape restores focus');
   assert.deepEqual(await page.evaluate(() => window.researchPanelHarness.commands), [], 'Escape must not interrupt Research');
-  await call('update');
-  await visible(trigger);
-  await trigger.click();
-  assert.match(await board.innerText(), /Updated primitive evidence/, 'Collapsed board still receives live state');
   await call('conversation');
-  await visible(hide);
+  await visible(trigger);
   assert.equal(await page.locator('.research-board').count(), 1, 'One Board after first turn');
   await page.waitForTimeout(200);
   const dock = await page.locator('.chat-dock').boundingBox();
   const chat = await page.locator('.chat-scroll').boundingBox();
+  await trigger.click();
+  await visible(hide);
   await hide.click();
   assert.deepEqual(await page.locator('.chat-dock').boundingBox(), dock, 'Collapse does not resize composer');
   assert.deepEqual(await page.locator('.chat-scroll').boundingBox(), chat, 'Collapse does not resize chat');
-  await trigger.click();
-  await call('update');
-  await visible(hide);
-  await page.getByRole('button', { name: 'Manage', exact: true }).click();
-  assert.deepEqual(await page.evaluate(() => window.researchPanelHarness.commands), ['manage']);
   for (const theme of ['light', 'dark']) {
     await call('theme', theme);
+    await trigger.click();
     await hide.hover();
-    await page.screenshot({ path: join(out, `compact-hover-${theme}.png`) });
+    await page.screenshot({ path: join(out, `hover-${theme}.png`) });
     await hide.press('Tab');
     await page.keyboard.press('Shift+Tab');
     assert.equal(await hide.evaluate(el => el.matches(':focus-visible')), true);
-    await page.screenshot({ path: join(out, `compact-focus-${theme}.png`) });
+    await hide.click();
   }
-  await page.getByRole('button', { name: 'Expand', exact: true }).click();
-  const scroller = board.locator('.ui-card__body');
-  assert.equal(await scroller.evaluate(el => el.scrollHeight > el.clientHeight), true, 'Details scroll inside floating panel');
-  await scroller.evaluate(el => { el.scrollTop = el.scrollHeight; });
-  await visible(hide);
+  await trigger.click();
   const panelBox = await board.boundingBox();
   assert.ok(panelBox.y + panelBox.height <= dock.y, 'Panel stops above dock');
-  await page.screenshot({ path: join(out, 'expanded-dark.png') });
+  await page.screenshot({ path: join(out, 'open-dark.png') });
   await call('session', 'session-b');
   await visible(trigger);
   assert.equal(await board.isVisible(), false, 'Session change resets panel');
@@ -77,9 +72,9 @@ try {
   await call('reveal');
   await visible(hide);
   await hide.click();
-  await call('mode', 'inactive');
-  assert.equal(await page.locator('.research-floating').count(), 0);
-  await call('mode', 'degraded');
+  await call('mode', 'off');
+  assert.equal(await page.locator('.research-floating').count(), 0, 'Disabled mode hides the panel');
+  await call('mode', 'on');
   await visible(trigger);
   await trigger.click();
   await call('preview');
@@ -90,7 +85,7 @@ try {
   await page.reload({ waitUntil: 'networkidle' });
   await page.setViewportSize({ width: 390, height: 844 });
   await call('locale', 'zh');
-  await page.getByRole('button', { name: '研究看板', exact: true }).click();
+  await page.getByRole('button', { name: 'Research', exact: true }).click();
   await call('conversation');
   for (const theme of ['light', 'dark']) {
     await call('theme', theme);
@@ -98,10 +93,8 @@ try {
   }
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth), true, 'No mobile document overflow');
   assert.equal(await board.evaluate(el => el.scrollWidth <= el.clientWidth), true, 'Board has no horizontal overflow');
-  await page.getByRole('button', { name: '展开', exact: true }).click();
-  assert.equal(await scroller.evaluate(el => el.scrollWidth <= el.clientWidth), true, 'Narrow details wrap');
-  await page.getByRole('button', { name: '收起研究看板', exact: true }).press('Escape');
-  await visible(page.getByRole('button', { name: '研究看板', exact: true }));
+  await page.getByRole('button', { name: '隐藏面板', exact: true }).press('Escape');
+  await visible(page.getByRole('button', { name: 'Research', exact: true }));
   assert.deepEqual(errors, [], 'No browser errors');
   await writeFile(join(out, 'report.json'), JSON.stringify({ passed: true, errors }, null, 2));
   console.log(`Research panel browser checks passed; screenshots: ${out}`);

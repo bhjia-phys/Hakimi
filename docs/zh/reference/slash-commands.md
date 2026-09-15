@@ -102,51 +102,17 @@ Prompt 模式在目标完成时以退出码 `0` 退出，在目标阻塞时以 `
 
 ## Research Mode
 
-`/research` 在 TUI 和 Web 中直接切换 AITP Research Mode——由 AITP 证据账本支撑的联合科研能力。该命令、Web **Modes** 入口和面向模型的 `EnterAITPMode` 能力默认可发现，但运行时初始为 `inactive`。inactive 状态下的 `getResearch` 读取、会话恢复加载和状态检查只使用本地快照：不会探测 AITP，不发生 AITP I/O，不显示 Research Board，也不会向模型暴露其他 Research/AITP 工具和 plugin skill。运行 `/research`、在 Web 中选择 **Research**，或让模型调用 `EnterAITPMode`，即可显式进入；此时 Hakimi 才探测适配器，并在探测就绪后执行只读的 `enter` → `check` 维护周期。
-
-旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 环境变量、`[experimental].aitp_research_mode` 和 `KIMI_CODE_EXPERIMENTAL_FLAG` 对这个正式开放的入口均不生效。旧开关输入仅为兼容保留，不会隐藏或启用 `/research`。从 `manual` 或 `yolo` 权限模式进入时，会提示是否先切换到 `auto` 或 `yolo`——在 `manual` 模式下循环可能因等待审批而暂停。
-
-::: warning 注意
-用 `/research` 进入时只激活 adapter 与 Board，不会调度模型轮次或启动独立的多轮循环。跨轮次 continuation 只由 Goal 负责，`manual` 权限模式下的研究轮次仍可能等待审批。
-:::
-
-TUI 与 Web 使用相同语法：保留子命令仅作为第一个 token 时生效，`--` 用于分隔参数和自由文本。Web 会把手工输入的 `/research` 路由到 Research endpoint，而不是作为模型提示词发送。
+**已在本地实现并安装；运行中的进程需重新启动。** 轻量 Research Mode 只保留基本模式命令，用于本地知识层与长期记忆指引。打开模式会让已发现的官方 AITP Skills 可见；关闭模式会隐藏这些 Skills，但保留既有项目知识和 AITP 记录。`/research status` 读取本地模式状态。这些命令都不安装 AITP、不探测或初始化存储、不运行 CLI maintenance、不写账本，也不启动后台 loop。
 
 | 命令 | 作用 | Surface / 可用性 |
 | --- | --- | --- |
-| `/research` | 切换 Research Mode：inactive 时进入，任一 active phase 时退出。TUI 从 `manual` 或 `yolo` 进入时提示选择权限模式；Web 使用当前 session 权限模式 | TUI 与 Web；仅空闲时 |
-| `/research status` | 刷新当前 snapshot。TUI 显示模式、循环、研究线、焦点和 AITP 健康；Web 展开刷新后的 Board | TUI 与 Web；随时可用 |
-| `/research on` | 显式进入 Research Mode 的兼容形式 | TUI 与 Web；仅空闲时 |
-| `/research on -- <line slug>` | 进入 Research Mode 并切换到指定研究线 | TUI 与 Web；仅空闲时 |
-| `/research off` | 显式退出 Research Mode 的兼容形式；已保存的 AITP 记录保留 | TUI 与 Web；仅空闲时 |
-| `/research pause` | 暂停研究循环，不退出 AITP 模式 | TUI 与 Web；随时可用 |
-| `/research resume` | 恢复已暂停的研究循环 | TUI 与 Web；随时可用 |
-| `/research manage` | 打开 line-first Manager。TUI 使用键盘导航和动作键；Web 提供 Line、Question、Science 和 Checkpoint 区，包括 human decision、alert、evidence review 与 external run 控件 | TUI 与 Web；仅空闲时 |
-| `/research edit <questionId> -- <新表述>` | 使用当前 snapshot revision 替换问题表述 | TUI 与 Web；仅空闲时 |
-| `/research focus <questionId> -- <bounded action>` | 设置当前焦点问题及下一个有界动作 | TUI 与 Web；仅空闲时 |
-| `/research defer <questionId> [-- <原因>]` | 暂缓问题（workflow 变更，原因可选） | TUI 与 Web；仅空闲时 |
-| `/research block <questionId> [-- <原因>]` | 阻塞问题 | TUI 与 Web；仅空闲时 |
-| `/research close <questionId> [-- <原因>]` | 关闭问题 | TUI 与 Web；仅空闲时 |
-| `/research reopen <questionId> [-- <原因>]` | 重新打开已关闭的问题 | TUI 与 Web；仅空闲时 |
-| `/research line <slug>` | 切换当前研究线 | TUI 与 Web；仅空闲时 |
-| `/research align same_program_goal\|goal_parent_of_program\|goal_milestone_in_program\|unrelated` | 显式确认当前 Hakimi Goal 与 observed AITP Program 的本地 checkpointed 关系。它要求两者同时存在，绝不写 AITP；`unrelated` 是明确 conflict | TUI 和 Web；仅空闲时 |
-| `/research align clear` | 清除本地 Goal–Program binding；下一次 active Research Mode 的 Goal completion 或 automatic continuation 将再次要求确认 | TUI 和 Web；仅空闲时 |
+| `/research on` | 启用轻量模式和官方 AITP Skills 可见性 | TUI 与 Web；本地可用 |
+| `/research status` | 读取本地模式状态，不运行 AITP CLI | TUI 与 Web；本地可用 |
+| `/research off` | 关闭模式与 Skills 可见性；既有知识和记录保留 | TUI 与 Web；本地可用 |
 
-子命令（`on`、`off`、`pause`、`resume`、`manage`、`status`、`align`、`edit`、`focus`、`defer`、`block`、`close`、`reopen`、`line`）仅作为第一个 token 时生效。如果文本需要以这些词开头，请加 `--`：
+旧研究管理与推进命令——包括 pause/resume、Manager、Question/Line mutation、alignment 和 checkpoint 操作——不再支持。不要从历史记录推断别名、额外参数或 legacy 命令流程。历史记录通过原始会话日志或会话 export 只读查阅，不再有结构化 Research history API 或 Manager。CLI wrapper 当前指向本工作区构建产物，因此新启动进程使用新实现；已在运行的进程需重新启动才加载新代码，未强行重启任何用户会话。
 
-```sh
-/research focus q-17 -- on the boundary zero mode
-```
-
-主轮次或上下文压缩运行期间，两个 surface 都只接受 `/research status`、`/research pause` 和 `/research resume`；Web 在当前操作结束前不会打开 Manager，也不会接受 Manager mutation。
-
-带 revision 的 mutation 会携带草稿捕获的 snapshot 或 entity `revision` 作为 `expectedRevision`；stale revision 会失败且不应用变更。其他 mutation 不携带 `expectedRevision`，而是依赖捕获的 target 或 pending-checkpoint identity，以及服务端状态约束。TUI 会刷新 Board；Web 会重新读取同一 session 的 authoritative snapshot，并在表单 dirty 时保留草稿、显示 stale warning，供你刷新后重试。
-
-只读 Research Board 会在两个 surface 的输入区上方显示 `probing`、`ready` 或 `degraded` 健康状态，以及当前研究线与焦点、问题计数、alerts、checkpoint 和 active Goal–Program 对齐阻塞。TUI 还会投影 Todo Actions，并用 `Ctrl-O` 展开或折叠 Board。Web 使用 **Expand**、**Collapse** 和 **Manage** 按钮及表单；TUI 快捷键不适用于 Web。
-
-Web 的 checkpoint 控件不写 AITP。只有存在 pending checkpoint 且显式填写已有 AITP `entryId` 时，**Commit** 才可用；Web 只通过 Research endpoint 关联该 ID，不会调用 `record`/`note` 或写 canonical ledger 文件。
-
-显式进入后，如果 AITP 未安装、未初始化或其 `check` 返回 exit 2，两个 surface 都会显示 `degraded`。读工具仍可用，但 AITP 写工具、checkpoint commit、问题关闭、active Research Mode 的 Goal 完成和 session closeout 都会被阻止，直到 adapter 恢复或用户明确选择在无持久化的情况下继续；未观测到 Program 或未解决的 Goal–Program 对齐也会阻止 active Goal 完成与 automatic continuation。本地 Question/Line mutation 仍可能发生，但不是持久化的 AITP write。Research Mode 不执行 automatic session closeout，也绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`；`backfill` 不作为模型工具暴露。除 `EnterAITPMode` 外的 Research/AITP 工具以及 AITP plugin skill 仍仅在 active 状态下可见。
+Research Mode 不创建第二套 Goal、Plan 模式或权限层。Goal 仍负责跨轮次 continuation、预算与完成；普通工具权限继续适用。退役的 host Research veto 不会变成普通文件工具无法访问 AITP 正式文件的新保证：官方 CLI 校验只约束自己的操作，不是 OS 级隔离。
 
 ## 信息与状态
 

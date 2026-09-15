@@ -150,6 +150,25 @@ describe('getModelCapability: openai', () => {
     expect(cap.tool_use).toBe(true);
   });
 
+  it('gpt-6-astra → image_in + thinking + tool_use', () => {
+    const cap = getModelCapability('openai', 'gpt-6-astra');
+    expect(cap.image_in).toBe(true);
+    expect(cap.thinking).toBe(true);
+    expect(cap.tool_use).toBe(true);
+  });
+
+  it('gpt-6-astra date suffix → image_in + thinking + tool_use', () => {
+    const cap = getModelCapability('openai', 'gpt-6-astra-2026-08-01');
+    expect(cap.image_in).toBe(true);
+    expect(cap.thinking).toBe(true);
+    expect(cap.tool_use).toBe(true);
+  });
+
+  it('gpt-6-astral / gpt-6-astraX are not mistaken for the gpt-6-astra family', () => {
+    expect(getModelCapability('openai', 'gpt-6-astral')).toEqual(UNKNOWN_CAPABILITY);
+    expect(getModelCapability('openai', 'gpt-6-astraX')).toEqual(UNKNOWN_CAPABILITY);
+  });
+
   it('unknown OpenAI-legacy model → UNKNOWN_CAPABILITY', () => {
     expect(getModelCapability('openai', 'gpt-mystery')).toEqual(UNKNOWN_CAPABILITY);
   });
@@ -171,6 +190,24 @@ describe('getModelCapability: openai_responses', () => {
   it('o3-mini → thinking=true', () => {
     const cap = getModelCapability('openai_responses', 'o3-mini');
     expect(cap.thinking).toBe(true);
+  });
+
+  it('gpt-6-astra → image_in + thinking + tool_use', () => {
+    const cap = getModelCapability('openai_responses', 'gpt-6-astra');
+    expect(cap.image_in).toBe(true);
+    expect(cap.thinking).toBe(true);
+    expect(cap.tool_use).toBe(true);
+  });
+
+  it('gpt-6-astra date suffix → image_in + thinking + tool_use', () => {
+    const cap = getModelCapability('openai_responses', 'gpt-6-astra-2026-08-01');
+    expect(cap.image_in).toBe(true);
+    expect(cap.thinking).toBe(true);
+    expect(cap.tool_use).toBe(true);
+  });
+
+  it('gpt-6-astral is not mistaken for the gpt-6-astra family', () => {
+    expect(getModelCapability('openai_responses', 'gpt-6-astral')).toEqual(UNKNOWN_CAPABILITY);
   });
 
   it('unknown Responses model → UNKNOWN_CAPABILITY', () => {

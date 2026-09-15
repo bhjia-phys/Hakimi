@@ -69,6 +69,12 @@ export const RemoteStateSchema = z
     origin: z.string().url(),
     /** Epoch milliseconds recorded by the serve process when it became ready. */
     startedAt: z.number().int().positive(),
+    /**
+     * Loopback metrics port of this serve process's cloudflared (present after
+     * the metrics address is parsed; absent for older/short-lived state).
+     * `status` uses it to report tunnel health; it never grants access.
+     */
+    metricsPort: z.number().int().min(1).max(65_535).optional(),
   })
   .strict();
 export type RemoteState = z.infer<typeof RemoteStateSchema>;

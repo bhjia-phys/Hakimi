@@ -96,7 +96,9 @@ hakimi remote status
 hakimi remote stop
 ```
 
-`hakimi remote start` installs and enables the user service, starts a full all-session Web listener, and prints its URL and QR code. `hakimi remote status` prints the current URL again and reports whether the local service is healthy. `hakimi remote stop` disables and stops the service but keeps its private configuration and control token under `~/.hakimi/remote/` for the next start. The service starts again with your Linux user session and is restarted automatically after an unexpected process failure.
+`hakimi remote start` installs and enables the user service, starts a full all-session Web listener, and prints its URL and QR code. `hakimi remote status` prints the current URL again and reports local service health and tunnel readiness separately; older running services without tunnel health information report `unknown`. `hakimi remote stop` disables and stops the service but keeps its private configuration and control token under `~/.hakimi/remote/` for the next start. The service starts again with your Linux user session and is restarted automatically after an unexpected process failure.
+
+The background service also detects a tunnel that has lost its Cloudflare connection even when `cloudflared` is still running. It allows up to 60 seconds for the first ready connection, then checks readiness every 5 seconds and restarts after three consecutive failures. A successful check resets the failure count, so a brief interruption does not immediately restart the service. For failure reasons and a bounded, redacted tail of tunnel logs, run `journalctl --user -u hakimi-remote.service`; readiness checks do not guarantee that the public hostname is reachable from every network.
 
 The background service keeps the same control token across restarts, but a Quick Tunnel does not provide a stable hostname. Its `*.trycloudflare.com` address normally remains unchanged while the same `cloudflared` process is running; restarting `cloudflared`, restarting the service, or rebooting the computer creates a new address. Run `hakimi remote status` on the host computer to retrieve the replacement link.
 

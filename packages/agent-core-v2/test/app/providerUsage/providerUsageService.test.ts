@@ -31,18 +31,34 @@ import {
 } from '@moonshot-ai/kimi-code-oauth';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createScopedTestHost } from '#/_base/di/test';
+import { createScopedTestHost, stubPair } from '#/_base/di/test';
 import { IOAuthService } from '#/app/auth/auth';
+import { IFlagService } from '#/app/flag/flag';
 import { IProviderUsageService } from '#/app/providerUsage/providerUsage';
+import type { LocalMeteredUsage } from '#/app/providerUsage/meteredUsage';
 import {
   CODEX_OAUTH_USAGE_ERROR_MESSAGE,
   MANAGED_OAUTH_USAGE_ERROR_MESSAGE,
 } from '#/app/providerUsage/providerUsageService';
+import { IProviderUsageLedgerService } from '#/app/providerUsageLedger/providerUsageLedger';
 import {
   IProviderService,
   type ProviderConfig,
 } from '#/kosong/provider/provider';
 import '#/kosong/provider/providers/kimi/kimi.contrib';
+
+import { stubFlag } from '../flag/stubs';
+import { stubProviderUsageLedger } from '../providerUsageLedger/stubs';
+
+function makeHost(
+  seeds: NonNullable<Parameters<typeof createScopedTestHost>[0]> = [],
+): ReturnType<typeof createScopedTestHost> {
+  return createScopedTestHost([
+    ...seeds,
+    stubPair(IFlagService, stubFlag(false)),
+    stubPair(IProviderUsageLedgerService, stubProviderUsageLedger()),
+  ]);
+}
 
 const OFFICIAL_V1_BASE = 'https://api.kimi.com/coding/v1';
 const OFFICIAL_ROOT_BASE = 'https://api.kimi.com/coding';
@@ -185,7 +201,7 @@ afterEach(() => {
 describe('IProviderUsageService', () => {
   it('delegates the managed Kimi OAuth provider and maps the result', async () => {
     const oauth = stubOAuth([MANAGED_OK]);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ [KIMI_CODE_PROVIDER_NAME]: { type: 'anthropic' } })],
       [IOAuthService, oauth],
     ]);
@@ -203,7 +219,7 @@ describe('IProviderUsageService', () => {
 
   it('fetches official v1 usage with an inline api key', async () => {
     stubFetchOk(PAYLOAD);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ kimi: { apiKey: 'sk-test-inline', baseUrl: OFFICIAL_V1_BASE } })],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -237,7 +253,7 @@ describe('IProviderUsageService', () => {
 
   it('resolves the Anthropic protocol root to the same v1 usages endpoint', async () => {
     stubFetchOk(PAYLOAD);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ kimi: { apiKey: 'sk-test-inline', baseUrl: OFFICIAL_ROOT_BASE } })],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -253,7 +269,7 @@ describe('IProviderUsageService', () => {
 
   it('resolves the api key from the provider env bag when no inline apiKey is set', async () => {
     stubFetchOk(PAYLOAD);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({ kimi: { type: 'kimi', env: { KIMI_API_KEY: 'sk-env-bag' }, baseUrl: OFFICIAL_V1_BASE } }),
@@ -273,7 +289,7 @@ describe('IProviderUsageService', () => {
 
   it('resolves base URL and api key both from the provider env bag', async () => {
     stubFetchOk(PAYLOAD);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -304,7 +320,7 @@ describe('IProviderUsageService', () => {
         }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -333,7 +349,7 @@ describe('IProviderUsageService', () => {
         }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -362,7 +378,7 @@ describe('IProviderUsageService', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     const oauth = stubOAuth([MANAGED_OK]);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -384,7 +400,7 @@ describe('IProviderUsageService', () => {
   });
 
   it('returns an error when an official provider has no credential', async () => {
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ kimi: { baseUrl: OFFICIAL_V1_BASE } })],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -399,7 +415,7 @@ describe('IProviderUsageService', () => {
   });
 
   it('returns unsupported for a provider without a Kimi usage endpoint', async () => {
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({ deepseek: { apiKey: 'sk-d', baseUrl: 'https://api.deepseek.com/v1' } }),
@@ -417,7 +433,7 @@ describe('IProviderUsageService', () => {
   });
 
   it('rejects an explicit Moonshot Open Platform base URL as unsupported', async () => {
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({ kimi: { apiKey: 'sk-x', baseUrl: 'https://api.moonshot.cn/v1' } }),
@@ -435,7 +451,7 @@ describe('IProviderUsageService', () => {
   });
 
   it('reports an unknown provider as an error', async () => {
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({})],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -451,7 +467,7 @@ describe('IProviderUsageService', () => {
 
   it('surfaces HTTP 401 as a redacted error entry', async () => {
     stubFetchError(401, { message: 'invalid key sk-test-401' });
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ kimi: { apiKey: 'sk-test-401', baseUrl: OFFICIAL_V1_BASE } })],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -467,7 +483,7 @@ describe('IProviderUsageService', () => {
 
   it('surfaces HTTP 404 as a redacted error entry', async () => {
     stubFetchError(404, { detail: 'usage endpoint moved sk-404' });
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ kimi: { apiKey: 'sk-404', baseUrl: OFFICIAL_V1_BASE } })],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -483,7 +499,7 @@ describe('IProviderUsageService', () => {
 
   it('redacts the api key from network failure messages', async () => {
     stubFetchNetworkError('fetch failed for sk-test-net');
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ kimi: { apiKey: 'sk-test-net', baseUrl: OFFICIAL_V1_BASE } })],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -506,7 +522,7 @@ describe('IProviderUsageService', () => {
       message: `refresh failed: token_endpoint rejected ${sentinel}`,
     });
 
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({})],
       [IOAuthService, oauth],
     ]);
@@ -563,7 +579,7 @@ describe('IProviderUsageService', () => {
         oauthRef: { key: oauthKey },
       });
 
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({})],
       [IOAuthService, oauth],
     ]);
@@ -596,7 +612,7 @@ describe('IProviderUsageService', () => {
     vi.stubGlobal('fetch', fetchMock);
     const aborted = new AbortController();
     aborted.abort();
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({ kimi: { apiKey: 'sk-a', baseUrl: OFFICIAL_V1_BASE } }),
@@ -615,7 +631,7 @@ describe('IProviderUsageService', () => {
   });
 
   it('uses the managed default base URL for an oauth provider without a config entry', async () => {
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({})],
       [IOAuthService, stubOAuth([MANAGED_OK])],
     ]);
@@ -643,7 +659,7 @@ describe('IProviderUsageService', () => {
     };
     oauth.resolveTokenProvider = (provider, ref) =>
       provider === OPENAI_CODEX_PROVIDER_NAME ? tokenProvider : undefined;
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -707,7 +723,7 @@ describe('IProviderUsageService', () => {
       provider === OPENAI_CODEX_PROVIDER_NAME
         ? { getAccessToken: async () => 'codex-bare-token' }
         : undefined;
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -747,7 +763,7 @@ describe('IProviderUsageService', () => {
             },
           }
         : undefined;
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -770,7 +786,7 @@ describe('IProviderUsageService', () => {
   it('returns an error when the Codex OAuth token provider cannot be resolved', async () => {
     const oauth = stubOAuth([]);
     oauth.resolveTokenProvider = () => undefined;
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -796,7 +812,7 @@ describe('IProviderUsageService', () => {
   it('rejects a non-official Codex base URL as unsupported', async () => {
     const oauth = stubOAuth([]);
     oauth.resolveTokenProvider = vi.fn(() => undefined);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -831,7 +847,7 @@ describe('IProviderUsageService', () => {
       provider === OPENAI_CODEX_PROVIDER_NAME
         ? { getAccessToken: async () => token, getRequestAuth: async () => ({ apiKey: token }) }
         : undefined;
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -864,7 +880,7 @@ describe('IProviderUsageService', () => {
       provider === OPENAI_CODEX_PROVIDER_NAME
         ? { getAccessToken: async () => 'codex-discovery-token' }
         : undefined;
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -888,7 +904,7 @@ describe('IProviderUsageService', () => {
 
   it('fetches OpenCode Go usage with an inline api key', async () => {
     stubFetchOk(OPENCODE_PAYLOAD);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({ opencode: { apiKey: 'oc-go-api-key', baseUrl: OPENCODE_BASE } }),
@@ -928,7 +944,7 @@ describe('IProviderUsageService', () => {
         }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -950,7 +966,7 @@ describe('IProviderUsageService', () => {
   });
 
   it('rejects a non-official OpenCode Go base URL as unsupported', async () => {
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({ opencode: { apiKey: 'oc-go', baseUrl: 'https://opencode.ai/zen/go/v2' } }),
@@ -972,7 +988,7 @@ describe('IProviderUsageService', () => {
   });
 
   it('returns an error when an OpenCode Go provider has no credential', async () => {
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({ opencode: { baseUrl: OPENCODE_BASE } })],
       [IOAuthService, stubOAuth([])],
     ]);
@@ -988,7 +1004,7 @@ describe('IProviderUsageService', () => {
 
   it('redacts an OpenCode Go api key echoed by the usage server', async () => {
     stubFetchError(403, { message: 'rejected oc-go-echoed-key' });
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({ opencode: { apiKey: 'oc-go-echoed-key', baseUrl: OPENCODE_BASE } }),
@@ -1026,7 +1042,7 @@ describe('IProviderUsageService', () => {
     oauth.getManagedUsage = async () => {
       throw new Error(sentinel);
     };
-    const host = createScopedTestHost([
+    const host = makeHost([
       [
         IProviderService,
         stubProviders({
@@ -1104,7 +1120,7 @@ describe('IProviderUsageService', () => {
           }),
       ),
     );
-    const host = createScopedTestHost([
+    const host = makeHost([
       [IProviderService, stubProviders({})],
       [IOAuthService, oauth],
     ]);
@@ -1125,6 +1141,133 @@ describe('IProviderUsageService', () => {
         },
       ]);
       expect(seenOptions[0]).toEqual({ signal: controller.signal });
+    } finally {
+      host.dispose();
+    }
+  });
+});
+
+describe('IProviderUsageService DeepSeek metered usage', () => {
+  const DEEPSEEK_BASE = 'https://api.deepseek.com/v1';
+  const DEEPSEEK_BALANCE_URL = 'https://api.deepseek.com/user/balance';
+  const DEEPSEEK_BALANCE_PAYLOAD = {
+    is_available: true,
+    balance_infos: [
+      { currency: 'CNY', total_balance: '10.50', granted_balance: '2.00', topped_up_balance: '8.50' },
+    ],
+  };
+
+  function meteredUsage(overrides: Partial<LocalMeteredUsage> = {}): LocalMeteredUsage {
+    return {
+      source: 'local',
+      costSource: 'estimated',
+      currency: 'CNY',
+      timezone: 'Asia/Shanghai',
+      trackingStartedAt: '2026-09-07T00:00:00.000Z',
+      degraded: false,
+      today: {
+        startAt: '2026-09-07T00:00:00.000Z',
+        endAt: '2026-09-08T00:00:00.000Z',
+        requestCount: 1,
+        measuredRequestCount: 1,
+        pendingRequestCount: 0,
+        missingUsageRequestCount: 0,
+        unpricedRequestCount: 0,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 20,
+        totalTokens: 170,
+        estimatedCost: '0.0001',
+        isPartial: false,
+      },
+      month: {
+        startAt: '2026-09-01T00:00:00.000Z',
+        endAt: '2026-10-01T00:00:00.000Z',
+        requestCount: 1,
+        measuredRequestCount: 1,
+        pendingRequestCount: 0,
+        missingUsageRequestCount: 0,
+        unpricedRequestCount: 0,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 20,
+        totalTokens: 170,
+        estimatedCost: '0.0001',
+        isPartial: false,
+      },
+      ...overrides,
+    };
+  }
+
+  it('merges local metered usage with the official balance when the flag is on', async () => {
+    stubFetchOk(DEEPSEEK_BALANCE_PAYLOAD);
+    const local = meteredUsage();
+    const host = createScopedTestHost([
+      [IProviderService, stubProviders({ deepseek: { apiKey: 'sk-ds', baseUrl: DEEPSEEK_BASE } })],
+      [IOAuthService, stubOAuth([])],
+      stubPair(IFlagService, stubFlag(true)),
+      stubPair(IProviderUsageLedgerService, stubProviderUsageLedger({ getMeteredUsage: async () => local })),
+    ]);
+    try {
+      const results = await host.app.accessor.get(IProviderUsageService).queryUsage('deepseek');
+      expect(results).toEqual([
+        {
+          kind: 'ok',
+          provider: 'deepseek',
+          summary: null,
+          limits: [],
+          extraUsage: null,
+          meteredUsage: {
+            ...local,
+            balance: {
+              kind: 'ok',
+              isAvailable: true,
+              balances: [
+                { currency: 'CNY', total: '10.50', granted: '2.00', toppedUp: '8.50' },
+              ],
+            },
+          },
+        },
+      ]);
+      const calls = vi.mocked(fetch).mock.calls as unknown as [string, RequestInit?][];
+      expect(calls[0]?.[0]).toBe(DEEPSEEK_BALANCE_URL);
+    } finally {
+      host.dispose();
+    }
+  });
+
+  it('keeps local metered usage when the balance query fails', async () => {
+    stubFetchError(401, { message: 'invalid key sk-ds' });
+    const local = meteredUsage();
+    const host = createScopedTestHost([
+      [IProviderService, stubProviders({ deepseek: { apiKey: 'sk-ds', baseUrl: DEEPSEEK_BASE } })],
+      [IOAuthService, stubOAuth([])],
+      stubPair(IFlagService, stubFlag(true)),
+      stubPair(IProviderUsageLedgerService, stubProviderUsageLedger({ getMeteredUsage: async () => local })),
+    ]);
+    try {
+      const results = await host.app.accessor.get(IProviderUsageService).queryUsage('deepseek');
+      expect(results[0]).toMatchObject({ kind: 'ok', provider: 'deepseek', summary: null, limits: [], extraUsage: null });
+      expect(results[0]).toMatchObject({
+        meteredUsage: { ...local, balance: { kind: 'error', status: 401 } },
+      });
+    } finally {
+      host.dispose();
+    }
+  });
+
+  it('stays unsupported for an official DeepSeek base when the flag is off', async () => {
+    const host = createScopedTestHost([
+      [IProviderService, stubProviders({ deepseek: { apiKey: 'sk-ds', baseUrl: DEEPSEEK_BASE } })],
+      [IOAuthService, stubOAuth([])],
+      stubPair(IFlagService, stubFlag(false)),
+      stubPair(IProviderUsageLedgerService, stubProviderUsageLedger()),
+    ]);
+    try {
+      const results = await host.app.accessor.get(IProviderUsageService).queryUsage('deepseek');
+      expect(results).toEqual([
+        { kind: 'unsupported', provider: 'deepseek', message: 'Usage endpoint is not available for this provider.' },
+      ]);
     } finally {
       host.dispose();
     }

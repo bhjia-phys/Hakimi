@@ -7,7 +7,7 @@ import { computed } from 'vue';
 
 const props = defineProps<{ status?: string }>();
 
-type DotKind = 'ok' | 'error' | 'running' | 'suspended' | 'idle';
+type DotKind = 'ok' | 'error' | 'running' | 'suspended' | 'cancelled' | 'idle';
 
 function normalize(s?: string): DotKind {
   switch (s) {
@@ -27,6 +27,8 @@ function normalize(s?: string): DotKind {
       return 'running';
     case 'suspended':
       return 'suspended';
+    case 'cancelled':
+      return 'cancelled';
     default:
       return 'idle';
   }
@@ -50,6 +52,7 @@ const kind = computed(() => normalize(props.status));
 .kw-dot--ok { background: var(--color-success); }
 .kw-dot--error { background: var(--color-danger); }
 .kw-dot--suspended { background: var(--color-warning); }
+.kw-dot--cancelled { background: var(--color-warning); }
 .kw-dot--running {
   background: var(--color-accent);
   animation: kw-dot-pulse 1.4s var(--ease-out) infinite;

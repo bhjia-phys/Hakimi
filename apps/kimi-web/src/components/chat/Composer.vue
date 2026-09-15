@@ -9,7 +9,7 @@ import { buildSlashItems, parseSlash, SKILL_COMMAND_PREFIX } from '../../lib/sla
 import { formatTokens } from '../../lib/formatTokens';
 import type { FileItem } from './MentionMenu.vue';
 import type { ActivationBadges, ConversationStatus, PermissionMode, QueuedPromptView } from '../../types';
-import type { AppGoal, AppModel, AppSkill, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, ResearchModeSnapshot, ThinkingLevel } from '../../api/types';
 import { researchComposerEntryState } from '../../lib/researchCommand';
 import {
   commitLevel,
@@ -59,7 +59,7 @@ const props = withDefaults(defineProps<{
   swarmMode?: boolean;
   goalMode?: boolean;
   researchEnabled?: boolean;
-  research?: ResearchStatusSnapshot | null;
+  research?: ResearchModeSnapshot | null;
   goal?: AppGoal | null;
   activationBadges?: ActivationBadges;
   /** Available models for the quick-switch dropdown. */
@@ -109,7 +109,7 @@ const emit = defineEmits<{
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   focusGoal: [];
   startResearch: [];
-  manageResearch: [];
+  stopResearch: [];
   focusSwarm: [];
   compact: [];
   pickModel: [];
@@ -296,6 +296,10 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('mousedown', onModesDocClick);
   clearCompositionEndTimer();
+  if (attachmentOpenFailedTimer !== null) {
+    clearTimeout(attachmentOpenFailedTimer);
+    attachmentOpenFailedTimer = null;
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -322,9 +326,24 @@ function toPromptAttachment(a: Attachment): PromptAttachment {
 // Chip primary action: media opens the lightbox preview; a generic file opens
 // in a new tab (browser-renderable types) or downloads, once its upload has
 // completed and produced a daemon file id.
+// Transient hint when the byte fetch behind a file chip fails — mirrors
+// ChatPane's attachmentOpenFailed pattern; cleared on unmount.
+const attachmentOpenFailedName = ref<string | null>(null);
+let attachmentOpenFailedTimer: ReturnType<typeof setTimeout> | null = null;
+
 function onAttachmentActivate(att: Attachment): void {
   if (att.kind === 'file') {
-    if (att.fileId !== undefined) void openFileAttachment(att.fileId, att.name, att.mediaType);
+    if (att.fileId !== undefined) {
+      void openFileAttachment(att.fileId, att.name, att.mediaType).then((result) => {
+        if (result !== 'failed') return;
+        attachmentOpenFailedName.value = att.name ?? att.fileId ?? '';
+        if (attachmentOpenFailedTimer !== null) clearTimeout(attachmentOpenFailedTimer);
+        attachmentOpenFailedTimer = setTimeout(() => {
+          attachmentOpenFailedTimer = null;
+          attachmentOpenFailedName.value = null;
+        }, 2400);
+      });
+    }
     return;
   }
   openAttachmentPreview(att);
@@ -591,15 +610,17 @@ function toggleDropdown(): void {
     permDropdownOpen.value = false;
     closeModes();
     document.addEventListener('click', onDocClick, true);
+    window.addEventListener('resize', onScrollOrResize);
+    window.addEventListener('scroll', onScrollOrResize, true);
   } else {
-    document.removeEventListener('click', onDocClick, true);
+    removeToolbarDismissListeners();
   }
 }
 
 function closeDropdown(): void {
   dropdownOpen.value = false;
   if (!permDropdownOpen.value) {
-    document.removeEventListener('click', onDocClick, true);
+    removeToolbarDismissListeners();
   }
 }
 
@@ -609,16 +630,24 @@ function togglePermDropdown(): void {
     dropdownOpen.value = false;
     closeModes();
     document.addEventListener('click', onDocClick, true);
+    window.addEventListener('resize', onScrollOrResize);
+    window.addEventListener('scroll', onScrollOrResize, true);
   } else {
-    document.removeEventListener('click', onDocClick, true);
+    removeToolbarDismissListeners();
   }
 }
 
 function closePermDropdown(): void {
   permDropdownOpen.value = false;
   if (!dropdownOpen.value) {
-    document.removeEventListener('click', onDocClick, true);
+    removeToolbarDismissListeners();
   }
+}
+
+function removeToolbarDismissListeners(): void {
+  document.removeEventListener('click', onDocClick, true);
+  window.removeEventListener('resize', onScrollOrResize);
+  window.removeEventListener('scroll', onScrollOrResize, true);
 }
 
 function onDocClick(e: MouseEvent): void {
@@ -628,8 +657,17 @@ function onDocClick(e: MouseEvent): void {
   }
 }
 
+/** The transcript streams and auto-scrolls while the model is answering. That
+ *  scroll is not user intent to dismiss the picker, so ignore all scroll events
+ *  here; click-away, Escape, and an actual viewport resize still close it. */
+function onScrollOrResize(e: Event): void {
+  if (e.type === 'scroll') return;
+  closeDropdown();
+  closePermDropdown();
+}
+
 onUnmounted(() => {
-  document.removeEventListener('click', onDocClick, true);
+  removeToolbarDismissListeners();
 });
 
 // Clamped to 0–100: ctxUsed can momentarily exceed ctxMax (estimates), and
@@ -699,17 +737,16 @@ const goalArmed = computed(() => goalActive.value || props.goalMode === true);
 const goalCanPause = computed(() => goalStatus.value === 'active');
 const goalCanResume = computed(() => goalStatus.value === 'paused' || goalStatus.value === 'blocked');
 const researchEntryAction = computed(() =>
-  researchComposerEntryState(props.researchEnabled, props.research?.mode),
+  researchComposerEntryState(props.researchEnabled, props.research?.enabled),
 );
 const researchVisible = computed(() => researchEntryAction.value !== 'hidden');
-const researchActive = computed(() => researchEntryAction.value === 'manage');
-const planBlockedByResearch = computed(() => researchActive.value && !planOn.value);
+const researchActive = computed(() => researchEntryAction.value === 'stop');
 function activateResearchEntry(): void {
   const action = researchEntryAction.value;
   if (action === 'hidden') return;
   closeModesAndFocus();
   if (action === 'start') emit('startResearch');
-  else emit('manageResearch');
+  else emit('stopResearch');
 }
 
 // Modes selector (plan / goal / swarm / research) — the popover that replaces
@@ -915,6 +952,11 @@ function selectModel(modelId: string): void {
       />
     </div>
 
+    <!-- Transient hint after a file chip's open/download fails. -->
+    <div v-if="attachmentOpenFailedName !== null" class="att-open-failed" role="status">
+      {{ t('composer.attachmentOpenFailed', { name: attachmentOpenFailedName }) }}
+    </div>
+
     <div v-if="previewAttachment" class="att-lightbox" @click.self="closeAttachmentPreview">
       <div class="att-lightbox-card">
         <Tooltip :text="t('model.close')">
@@ -1079,7 +1121,6 @@ function selectModel(modelId: string): void {
                 type="button"
                 class="mode-row"
                 :class="{ on: planOn }"
-                :disabled="planBlockedByResearch"
                 @click="emit('togglePlan')"
               >
                 <span class="mode-row-icon"><Icon name="file-edit" size="sm" /></span>
@@ -1144,7 +1185,7 @@ function selectModel(modelId: string): void {
                   </Button>
                 </div>
               </div>
-              <!-- Research — inactive starts the capability; active opens Manager. -->
+              <!-- Research — a plain memory-mode toggle: off starts it, on stops it. -->
               <div
                 v-if="researchVisible"
                 class="mode-row mode-row-lifecycle"
@@ -1160,19 +1201,8 @@ function selectModel(modelId: string): void {
                     <span class="mode-row-name">{{ t('status.researchLabel') }}</span>
                     <span class="mode-row-desc">{{ t('status.researchDesc') }}</span>
                   </span>
-                  <span v-if="!researchActive" class="mode-switch"><span class="mode-knob" /></span>
+                  <span class="mode-switch"><span class="mode-knob" /></span>
                 </button>
-                <div v-if="researchActive" class="mode-row-actions">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    class="mode-row-action"
-                    @click="activateResearchEntry"
-                  >
-                    <Icon name="search" size="sm" />
-                    <span>{{ t('status.researchManage') }}</span>
-                  </Button>
-                </div>
               </div>
             </div>
           </div>
@@ -1326,9 +1356,32 @@ function selectModel(modelId: string): void {
 
 <style scoped>
 .composer {
+  /* Anchor for the floating .att-open-failed hint. Safe for the fixed
+     lightbox: no transform here, so fixed children stay viewport-anchored. */
+  position: relative;
   padding: 7px var(--dock-inline-right, 16px) 12px var(--dock-inline-left, 16px);
   background: transparent;
   transition: background 0.12s;
+}
+
+/* Floating transient hint (mirrors ChatPane's .open-unsupported). */
+.att-open-failed {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(90%, 480px);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  font-size: var(--ui-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: var(--z-dropdown);
 }
 
 .composer.drag-over {

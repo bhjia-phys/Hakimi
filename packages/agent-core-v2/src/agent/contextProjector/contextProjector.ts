@@ -3,7 +3,9 @@
  *
  * Defines wire-safe history projections and an opaque snapshot of the media
  * identities that a provider rejected, allowing later steps to strip only
- * that content while preserving newly generated recovery media.
+ * that content while preserving newly generated recovery media. The
+ * encrypted-stripped projection removes the `encrypted` field from `think`
+ * parts when a provider cannot verify the encrypted reasoning content.
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
@@ -23,6 +25,7 @@ export interface IAgentContextProjectorService {
   project(messages: readonly ContextMessage[]): readonly Message[];
   projectStrict(messages: readonly ContextMessage[]): readonly Message[];
   projectMediaDegraded(messages: readonly ContextMessage[]): readonly Message[];
+  projectEncryptedStripped(messages: readonly ContextMessage[]): readonly Message[];
   captureMediaStripSnapshot(messages: readonly ContextMessage[]): MediaStripSnapshot;
   projectMediaStripped(
     messages: readonly ContextMessage[],

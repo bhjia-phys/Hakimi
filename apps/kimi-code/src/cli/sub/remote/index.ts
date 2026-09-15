@@ -28,6 +28,7 @@ import { runRemoteControl, type RemoteRunnerDeps } from './run';
 export * from './cloudflared';
 export * from './control';
 export * from './group';
+export * from './monitor';
 export * from './options';
 export * from './run';
 export * from './serve';

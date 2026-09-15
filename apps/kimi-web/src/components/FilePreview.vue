@@ -55,18 +55,16 @@ provide('resolveImage', resolveMarkdownImage);
 // Resolve a Markdown `[link](./foo.md)` target against the current file's
 // directory before forwarding it to the app's file opener. Absolute paths and
 // URLs/anchors are passed through unchanged (Markdown.vue skips those itself).
-// `?query` and `#fragment` are stripped so they don't become part of the path.
+// The target path is already a decoded file path — Markdown.vue's
+// hrefToFilePath stripped the `?query`/`#fragment` URI syntax BEFORE decoding,
+// so a literal `#`/`?` that arrived encoded (`%23`/`%3F`) must survive here.
 function resolveMarkdownFileTarget(target: { path: string; line?: number }): FilePreviewRequest {
-  let href = target.path;
-  if (/^(https?:|mailto:|tel:|data:|blob:|#)/i.test(href) || href.startsWith('/')) {
+  const path = target.path;
+  if (/^(https?:|mailto:|tel:|data:|blob:|#)/i.test(path) || path.startsWith('/')) {
     return target;
   }
-  for (const sep of ['#', '?']) {
-    const idx = href.indexOf(sep);
-    if (idx !== -1) href = href.slice(0, idx);
-  }
   const base = markdownBaseDir.value;
-  return { ...target, path: resolveRelativePath(href, base) };
+  return { ...target, path: resolveRelativePath(path, base) };
 }
 
 const props = defineProps<{
@@ -75,8 +73,18 @@ const props = defineProps<{
   error?: string | null;
   line?: number;
   downloadUrl?: string | null;
+  /** Authenticated blob URL for the PDF preview (fetched by the composable —
+      the bare download URL carries no Bearer token and 40101s in an iframe). */
+  pdfUrl?: string | null;
   closable?: boolean;
   externalActions?: boolean;
+  /** The preview is store-backed media with no workspace path — the original
+      bytes can still be downloaded through the file store (see the
+      downloadAttachment emit). */
+  canDownloadAttachment?: boolean;
+  /** Inline failure of the attachment download action — shown under the
+      header so the loaded preview (and its retry button) stays on screen. */
+  actionError?: string | null;
   /** Open a linked file from inside a Markdown preview (resolved against the
       current file's directory before being called). */
   openFile?: (target: FilePreviewRequest) => void;
@@ -86,6 +94,8 @@ const emit = defineEmits<{
   close: [];
   openExternal: [];
   reveal: [];
+  download: [];
+  downloadAttachment: [];
 }>();
 
 function handleMarkdownOpenFile(target: { path: string; line?: number }): void {
@@ -321,7 +331,9 @@ const videoSrc = computed<string | null>(() => {
 const pdfSrc = computed<string | null>(() => {
   const f = props.file;
   if (!f || contentKind.value !== 'pdf') return null;
-  if (props.downloadUrl) return props.downloadUrl;
+  // Authenticated blob URL first — a bare downloadUrl carries no Bearer token
+  // and 40101s in an <iframe> under daemon auth.
+  if (props.pdfUrl) return props.pdfUrl;
   if (f.encoding === 'base64') return `data:${f.mime};base64,${f.content}`;
   return null;
 });
@@ -416,12 +428,28 @@ function truncatePath(path: string, maxLen = 55): string {
 
 <template>
   <div ref="rootRef" class="file-preview">
-    <!-- Empty state: nothing selected -->
+    <!-- Error state: content could not be read — still offer the external
+         actions when the target has a valid workspace path, so the user can
+         open the original file or its folder instead of a dead end. -->
     <div v-if="error && !loading" class="fp-empty fp-error">
       <span>{{ error }}</span>
-      <Button v-if="closable" variant="secondary" size="sm" @click="emit('close')">
-        {{ t('filePreview.close') }}
-      </Button>
+      <div class="fp-error-actions">
+        <template v-if="externalActions">
+          <Button variant="secondary" size="sm" @click="emit('openExternal')">
+            {{ t('filePreview.openFile') }}
+          </Button>
+          <Button variant="secondary" size="sm" @click="emit('reveal')">
+            {{ t('filePreview.openFolder') }}
+          </Button>
+        </template>
+        <Button v-if="closable" variant="secondary" size="sm" @click="emit('close')">
+          {{ t('filePreview.close') }}
+        </Button>
+      </div>
+      <!-- Open/reveal from the error state can fail too (no usable opener on
+           the server) — surface that failure here; the loaded-preview branch
+           shows the same line under its header. -->
+      <div v-if="actionError" class="fp-action-error" role="alert">{{ actionError }}</div>
     </div>
 
     <div v-else-if="!file && !loading" class="fp-empty">
@@ -510,17 +538,25 @@ function truncatePath(path: string, maxLen = 55): string {
         <IconButton v-if="externalActions" size="sm" :label="t('filePreview.reveal')" @click="emit('reveal')">
           <Icon name="folder" size="md" />
         </IconButton>
-        <a
+        <!-- The workspace download goes through the composable's authenticated
+             blob fetch — a bare <a href> carries no Bearer token and 40101s
+             under daemon auth. downloadUrl here only gates availability. -->
+        <IconButton
           v-if="downloadUrl"
-          class="fp-download"
-          :href="downloadUrl"
-          target="_blank"
-          rel="noreferrer"
-          download
-          :aria-label="t('filePreview.download')"
+          size="sm"
+          :label="t('filePreview.download')"
+          @click="emit('download')"
         >
           <Icon name="download" size="md" />
-        </a>
+        </IconButton>
+        <IconButton
+          v-else-if="canDownloadAttachment"
+          size="sm"
+          :label="t('filePreview.download')"
+          @click="emit('downloadAttachment')"
+        >
+          <Icon name="download" size="md" />
+        </IconButton>
         <IconButton
           v-if="!file.isBinary && contentKind !== 'image'"
           size="sm"
@@ -532,6 +568,10 @@ function truncatePath(path: string, maxLen = 55): string {
           <Icon v-else class="fp-check" name="check" size="md" />
         </IconButton>
       </PanelHeader>
+
+      <!-- Inline action failure (e.g. the attachment download's byte fetch
+           failed) — keeps the loaded preview and its retry button visible. -->
+      <div v-if="actionError" class="fp-action-error" role="alert">{{ actionError }}</div>
 
       <!-- Body: Markdown -->
       <div v-if="contentKind === 'markdown'" class="fp-body" :class="{ 'fp-markdown': markdownMode === 'preview' }">
@@ -777,30 +817,6 @@ function truncatePath(path: string, maxLen = 55): string {
   text-align: right;
 }
 
-/* Download is a real link (<a href download>), so it can't be an IconButton;
-   mirror the IconButton sm look so the action row stays visually uniform. */
-.fp-download {
-  display: inline-grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-}
-.fp-download:hover {
-  background: var(--color-surface-sunken);
-  color: var(--color-text);
-}
-.fp-download:focus-visible {
-  outline: none;
-  box-shadow: var(--p-focus-ring);
-}
-.fp-download svg {
-  width: var(--p-ic-sm);
-  height: var(--p-ic-sm);
-}
-
 /* "Copied" confirmation: tint the check glyph green. */
 .fp-check {
   color: var(--color-success);
@@ -980,6 +996,19 @@ function truncatePath(path: string, maxLen = 55): string {
   flex-direction: column;
   padding: 24px;
   text-align: center;
+}
+.fp-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.fp-action-error {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-danger);
+  font-size: var(--ui-font-size-sm);
 }
 
 /* ---- Spinner ---- */

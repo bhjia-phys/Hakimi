@@ -44,6 +44,7 @@ import { ISubagentPresetActivationService } from '#/session/subagent/presetActiv
 import { SubagentPresetActivationService } from '#/session/subagent/presetActivationService';
 import '#/session/agentLifecycle/profile/profiles';
 import { stubFlag } from '../../app/flag/stubs';
+import { stubProviderUsageLedger } from '../../app/providerUsageLedger/stubs';
 import { StubConfigService } from '../../kosong/stubs';
 
 const signal = new AbortController().signal;
@@ -256,6 +257,8 @@ describe('GetProviderUsageTool', () => {
     const usage = new ProviderUsageService(
       providers as unknown as IProviderService,
       oauth as unknown as IOAuthService,
+      stubFlag(false),
+      stubProviderUsageLedger(),
     );
     const tool = new GetProviderUsageTool(usage);
     const execution = tool.resolveExecution({ provider: 'managed:kimi-code' });

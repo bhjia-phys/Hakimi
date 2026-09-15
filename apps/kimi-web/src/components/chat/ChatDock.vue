@@ -6,7 +6,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ConversationStatus, PermissionMode, QueuedPromptView, TaskItem, TodoView, UIQuestion } from '../../types';
-import type { AppGoal, AppModel, AppSkill, QuestionResponse, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, QuestionResponse, ResearchModeSnapshot, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { ComposerCommandEvent } from '../../composables/useComposerDraft';
@@ -41,7 +41,7 @@ const props = defineProps<{
   skills?: AppSkill[];
   goal?: AppGoal | null;
   goalExpandSignal?: number;
-  research?: ResearchStatusSnapshot | null;
+  research?: ResearchModeSnapshot | null;
   dockPanel: 'bash' | 'subagent' | 'todos' | null;
   bashTasks: TaskItem[];
   subagentTasks: TaskItem[];
@@ -74,7 +74,7 @@ const emit = defineEmits<{
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   focusGoal: [];
   startResearch: [];
-  manageResearch: [];
+  stopResearch: [];
   focusSwarm: [];
   compact: [];
   pickModel: [];
@@ -307,7 +307,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       @control-goal="emit('controlGoal', $event)"
       @focus-goal="emit('focusGoal')"
       @start-research="emit('startResearch')"
-      @manage-research="emit('manageResearch')"
+      @stop-research="emit('stopResearch')"
       @focus-swarm="emit('focusSwarm')"
       @compact="emit('compact')"
       @pick-model="emit('pickModel')"

@@ -733,6 +733,10 @@ const _researchSnapshot: AssertEngineToWire<
   typeof researchStatusSnapshotSchema,
   EngineResearchSnapshot
 > = true;
+const _researchModeSnapshot: AssertWire<
+  typeof agentResearchContract.getSnapshot.output,
+  import('@moonshot-ai/agent-core-v2/features/aitpResearch/mode/agentAitpMode').ResearchModeSnapshot
+> = true;
 const _researchRun: AssertWire<typeof researchRunStateSchema, EngineResearchRunState> = true;
 const _researchEvidencePacket: AssertWire<
   typeof researchEvidencePacketSchema,

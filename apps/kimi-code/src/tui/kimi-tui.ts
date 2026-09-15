@@ -3237,7 +3237,8 @@ export class KimiTUI {
     state.todoPanelContainer.clear();
     if (state.researchBoard.isVisible()) {
       state.todoPanelContainer.addChild(state.researchBoard);
-    } else if (!state.todoPanel.isEmpty()) {
+    }
+    if (!state.todoPanel.isEmpty()) {
       state.todoPanelContainer.addChild(state.todoPanel);
     }
   }

@@ -72,6 +72,15 @@ const OPENAI_VISION_TOOL_CAPABILITY: ModelCapability = Object.freeze({
   max_context_tokens: 0,
 });
 
+const OPENAI_THINKING_VISION_TOOL_CAPABILITY: ModelCapability = Object.freeze({
+  image_in: true,
+  video_in: false,
+  audio_in: false,
+  thinking: true,
+  tool_use: true,
+  max_context_tokens: 0,
+});
+
 const DEEPSEEK_VISION_CAPABILITY: ModelCapability = Object.freeze({
   image_in: true,
   video_in: false,
@@ -132,6 +141,10 @@ const OPENAI_LEGACY_CAPABILITY_CATALOG: readonly CapabilityCatalogEntry[] = [
     capability: OPENAI_REASONING_CAPABILITY,
   },
   {
+    matches: (name) => isOpenAIGpt6AstraModel(name),
+    capability: OPENAI_THINKING_VISION_TOOL_CAPABILITY,
+  },
+  {
     matches: (name) => hasPrefix(name, DEEPSEEK_VISION_PREFIXES),
     capability: DEEPSEEK_VISION_CAPABILITY,
   },
@@ -149,6 +162,10 @@ const OPENAI_RESPONSES_CAPABILITY_CATALOG: readonly CapabilityCatalogEntry[] = [
   {
     matches: isOpenAIReasoningModel,
     capability: OPENAI_REASONING_CAPABILITY,
+  },
+  {
+    matches: (name) => isOpenAIGpt6AstraModel(name),
+    capability: OPENAI_THINKING_VISION_TOOL_CAPABILITY,
   },
   {
     matches: (name) => hasPrefix(name, OPENAI_VISION_TOOL_PREFIXES),
@@ -177,6 +194,10 @@ function hasPrefix(modelName: string, prefixes: readonly string[]): boolean {
 
 function isOpenAIReasoningModel(modelName: string): boolean {
   return /^o\d/.test(modelName);
+}
+
+export function isOpenAIGpt6AstraModel(modelName: string): boolean {
+  return /^gpt-6-astra(?:$|[-.])/.test(normalizeModelName(modelName));
 }
 
 function capabilityFromCatalog(
@@ -217,6 +238,7 @@ export function getGoogleGenAIModelCapability(modelName: string): ModelCapabilit
 
 export function usesOpenAIResponsesDeveloperRole(modelName: string): boolean {
   const normalized = normalizeModelName(modelName);
+  if (isOpenAIGpt6AstraModel(normalized)) return true;
   if (OPENAI_RESPONSES_DEVELOPER_ROLE_MODELS.has(normalized)) return true;
   for (const cataloguedModel of OPENAI_RESPONSES_DEVELOPER_ROLE_MODELS) {
     if (normalized.startsWith(cataloguedModel + '-')) return true;

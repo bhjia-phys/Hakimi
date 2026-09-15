@@ -38,6 +38,10 @@ const webClient = readFileSync(
   fileURLToPath(new URL('../src/composables/useKimiWebClient.ts', import.meta.url)),
   'utf-8',
 );
+const composer = readFileSync(
+  fileURLToPath(new URL('../src/components/chat/Composer.vue', import.meta.url)),
+  'utf-8',
+);
 
 describe('index.html CSP hygiene', () => {
   it('has no <script> tag without a src attribute', () => {
@@ -120,6 +124,14 @@ describe('ChatHeader Preset selector', () => {
     expect(appView).toContain(':auto-subagent-preset-status="client.autoSubagentPresetStatus.value"');
     expect(conversationPane).toContain(':auto-subagent-preset-status="autoSubagentPresetStatus"');
     expect(chatHeader).toContain('autoSubagentPresetStatus?: AutoSubagentPresetStatus');
+  });
+
+  it('keeps the model picker open while streaming auto-scrolls the transcript', () => {
+    expect(composer).toContain('function onScrollOrResize(e: Event): void');
+    expect(composer).toContain("if (e.type === 'scroll') return;");
+    expect(composer).toContain("window.addEventListener('resize', onScrollOrResize)");
+    expect(composer).toContain("window.addEventListener('scroll', onScrollOrResize, true)");
+    expect(composer).toContain('removeToolbarDismissListeners();');
   });
 });
 

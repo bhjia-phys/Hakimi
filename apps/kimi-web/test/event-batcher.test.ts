@@ -18,7 +18,7 @@ import type {
   KimiEventConnection,
   KimiEventHandlers,
   KimiWebApi,
-  ResearchStatusSnapshot,
+  ResearchModeSnapshot,
 } from '../src/api/types';
 import {
   coalesceAppRenderEvents,
@@ -633,28 +633,16 @@ describe('useKimiWebClient (resync integration)', () => {
     });
     const initialSnapshot = snapshot('seed', 10, 'epoch-1');
     const authoritativeSnapshot = snapshot('snapshot', 20, 'epoch-2');
-    const researchSnapshot = (revision: number): ResearchStatusSnapshot => ({
-      mode: 'ready',
-      loopStatus: 'active',
-      planningPolicy: 'collaborative',
-      lineWorkstreamBindings: [],
-      phase: 'idle',
-      currentLineSlug: 'line-a',
-      questions: [],
-      lines: [],
-      openQuestionCount: 0,
-      activeQuestionCount: 0,
-      blockedQuestionCount: 0,
-      alerts: [],
-      aitpHealth: { phase: 'ready' },
-      revision,
+    const researchSnapshot = (marker: number): ResearchModeSnapshot => ({
+      enabled: marker % 2 === 1,
+      skillsAvailable: marker % 3 !== 0,
     });
     const initialResearch = researchSnapshot(1);
     const recoveredResearch = researchSnapshot(2);
     const getSessionResearch = vi.fn(async () => initialResearch);
-    let resolveResearchCommand!: (value: ResearchStatusSnapshot) => void;
+    let resolveResearchCommand!: (value: ResearchModeSnapshot) => void;
     const commandSessionResearch = vi.fn(
-      () => new Promise<ResearchStatusSnapshot>((resolve) => {
+      () => new Promise<ResearchModeSnapshot>((resolve) => {
         resolveResearchCommand = resolve;
       }),
     );

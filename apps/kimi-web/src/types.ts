@@ -86,7 +86,18 @@ export interface WorkspaceGroup {
 /** Sidebar session-list scope: only the active workspace, or all workspaces. */
 export type WorkspaceScope = 'current' | 'all';
 
-export type ToolStatus = 'ok' | 'running' | 'error';
+/**
+ * Display status of a tool card.
+ *
+ * - `running` / `ok` / `error` come straight from the message stream (a tool
+ *   starts `running`, its toolResult settles it to `ok` / `error`).
+ * - `unknown`: the turn ended (or the session went idle) without a result —
+ *   the card must not guess success or failure (see messagesToTurns flushGroup).
+ * - `cancelled`: a linked live task was explicitly cancelled (Agent cards).
+ * - `suspended` / `queued`: live subagent phases, resolved from the task store
+ *   (Agent cards); a suspended/queued subagent is NOT running.
+ */
+export type ToolStatus = 'ok' | 'running' | 'error' | 'cancelled' | 'unknown' | 'suspended' | 'queued';
 
 export interface ToolCall {
   id: string;
@@ -121,7 +132,7 @@ export interface ToolMedia {
   fileId?: string;
 }
 
-export type AgentPhase = 'queued' | 'working' | 'suspended' | 'completed' | 'failed';
+export type AgentPhase = 'queued' | 'working' | 'suspended' | 'completed' | 'failed' | 'cancelled';
 
 export interface AgentMember {
   id: string;
@@ -332,13 +343,16 @@ export interface TodoView {
   status: 'pending' | 'in_progress' | 'done';
 }
 
-export type TaskState = 'run' | 'done' | 'fail';
+export type TaskState = 'run' | 'done' | 'fail' | 'cancelled';
 
 export interface TaskItem {
   id: string;
   name: string;
   kind: string; // 'subagent' | 'task'
   state: TaskState;
+  /** Live subagent phase (queued/working/suspended/…), carried so an Agent card
+   *  can tell a suspended or queued subagent apart from a genuinely running one. */
+  phase?: AgentPhase;
   timing: string;
   meta?: string;
   output?: string[];

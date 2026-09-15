@@ -210,6 +210,14 @@ export {
 export type { DeepSeekModelInfo, DeepSeekProviderView } from './deepseek';
 
 export {
+  DEEPSEEK_BALANCE_URL,
+  fetchDeepSeekBalance,
+  officialDeepSeekBalanceUrl,
+  parseDeepSeekBalancePayload,
+} from './deepseek-usage';
+export type { DeepSeekBalance, FetchDeepSeekBalanceOptions, FetchDeepSeekBalanceResult } from './deepseek-usage';
+
+export {
   applyCustomRegistryEntries,
   applyCustomRegistryProvider,
   capabilitiesFromCustomEntry,

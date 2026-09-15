@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import {
   researchAlertSchema,
   researchCommandRequestSchema,
+  researchCommandResponseSchema,
+  getSessionResearchResponseSchema,
   researchStatusSnapshotSchema,
 } from '../research';
 import {
@@ -1180,5 +1182,15 @@ describe('researchCommandRequestSchema', () => {
         expectedRevision: 4,
       },
     })).toThrow();
+  });
+
+  it('uses a separate live memory-mode snapshot without legacy health or phase claims', () => {
+    const snapshot = { enabled: true, skillsAvailable: false };
+    expect(getSessionResearchResponseSchema.parse(snapshot)).toEqual(snapshot);
+    expect(researchCommandResponseSchema.parse({ snapshot })).toEqual({ snapshot });
+    expect(agentEventSchema.parse({ type: 'research_mode.updated', snapshot })).toEqual({ type: 'research_mode.updated', snapshot });
+    expect(() => getSessionResearchResponseSchema.parse(validSnapshot)).toThrow();
+    expect(() => getSessionResearchResponseSchema.parse({ ...snapshot, phase: 'ready' })).toThrow();
+    expect(researchUpdatedEventSchema.parse({ type: 'research.updated', snapshot: validSnapshot }).type).toBe('research.updated');
   });
 });

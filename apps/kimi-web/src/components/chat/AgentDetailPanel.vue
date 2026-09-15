@@ -80,13 +80,9 @@ function foldCount(group: ProgressGroup): number {
 }
 
 function phaseLabel(phase: AgentMember['phase']): string {
-  switch (phase) {
-    case 'queued': return 'Queued';
-    case 'working': return 'Working';
-    case 'suspended': return 'Suspended';
-    case 'completed': return 'Completed';
-    case 'failed': return 'Failed';
-  }
+  // Shares the swarm card's phase vocabulary (tools.swarm.phase*), which
+  // includes 'cancelled'.
+  return t(`tools.swarm.phase${phase[0]!.toUpperCase()}${phase.slice(1)}`);
 }
 
 const bodyEl = ref<HTMLElement | null>(null);

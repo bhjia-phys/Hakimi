@@ -78,15 +78,18 @@ function makeHost() {
 }
 
 describe('SessionEventHandler research events', () => {
-  it('research.updated directly updates the board with the event snapshot', () => {
+  it('research_mode.updated directly updates the board and refreshes skills', () => {
     const { host, researchController } = makeHost();
     const handler = new SessionEventHandler(host);
-    const snapshot = { mode: 'ready', loopStatus: 'active', revision: 3 } as any;
+    const snapshot = { enabled: true, skillsAvailable: true };
     handler.handleEvent(
-      { type: 'research.updated', sessionId: 's1', agentId: 'main', snapshot } as any,
+      { type: 'research_mode.updated', sessionId: 's1', agentId: 'main', snapshot },
       vi.fn(),
     );
     expect(researchController.setSnapshot).toHaveBeenCalledWith(snapshot);
+    // Skill visibility follows the toggle, so the dynamic skill commands
+    // refresh alongside the board without an extra getResearch round-trip.
+    expect(host.refreshSkillCommands).toHaveBeenCalledWith(host.session);
     expect(researchController.hydrate).not.toHaveBeenCalled();
   });
 
@@ -97,7 +100,7 @@ describe('SessionEventHandler research events', () => {
       { type: 'aitp_mode.updated', sessionId: 's1', agentId: 'main' } as any,
       vi.fn(),
     );
-    // The live board is only driven by research.updated full snapshots — the
+    // The live board is only driven by research_mode.updated snapshots — the
     // mode-toggle event refreshes slash commands, not an async getResearch hydrate.
     expect(host.refreshSkillCommands).toHaveBeenCalledWith(host.session);
     expect(researchController.hydrate).not.toHaveBeenCalled();

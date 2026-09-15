@@ -19,6 +19,7 @@ import {
 import { workspaceSchema, type Workspace } from './workspace';
 import {
   researchStatusSnapshotSchema,
+  researchModeSnapshotSchema,
   type ResearchStatusSnapshot,
 } from './research';
 
@@ -682,6 +683,11 @@ export interface ResearchUpdatedEvent {
   readonly snapshot: ResearchStatusSnapshot;
 }
 
+export interface ResearchModeUpdatedEvent {
+  readonly type: 'research_mode.updated';
+  readonly snapshot: import('./research').ResearchModeSnapshot;
+}
+
 export interface AitpModeUpdatedEvent {
   readonly type: 'aitp_mode.updated';
 }
@@ -1041,6 +1047,7 @@ export type AgentEvent =
   | CapabilityChangedEvent
   | GoalUpdatedEvent
   | ResearchUpdatedEvent
+  | ResearchModeUpdatedEvent
   | AitpModeUpdatedEvent
   | SkillActivatedEvent
   | PluginCommandActivatedEvent
@@ -1707,6 +1714,11 @@ export const researchUpdatedEventSchema = z.object({
   snapshot: researchStatusSnapshotSchema,
 }) satisfies z.ZodType<ResearchUpdatedEvent>;
 
+export const researchModeUpdatedEventSchema = z.object({
+  type: z.literal('research_mode.updated'),
+  snapshot: researchModeSnapshotSchema,
+}) satisfies z.ZodType<ResearchModeUpdatedEvent>;
+
 export const aitpModeUpdatedEventSchema = z.object({
   type: z.literal('aitp_mode.updated'),
 }) satisfies z.ZodType<AitpModeUpdatedEvent>;
@@ -2033,6 +2045,7 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   capabilityChangedEventSchema,
   goalUpdatedEventSchema,
   researchUpdatedEventSchema,
+  researchModeUpdatedEventSchema,
   aitpModeUpdatedEventSchema,
   skillActivatedEventSchema,
   pluginCommandActivatedEventSchema,

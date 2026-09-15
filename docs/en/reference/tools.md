@@ -133,7 +133,7 @@ To prevent all users from firing at the same time on the hour, the scheduler app
 
 ## Provider usage and subagent routing
 
-These two main-agent-only tools report provider quota and steer subagent model routing. Neither is available to `coder` and `explore` subagents.
+These two main-agent-only tools report provider usage and steer subagent model routing. Neither is available to `coder` and `explore` subagents.
 
 | Tool | Default Approval | Description |
 | --- | --- | --- |
@@ -141,6 +141,8 @@ These two main-agent-only tools report provider quota and steer subagent model r
 | `SetSubagentPreset` | Requires approval | Activate a `[subagent]` routing preset for subsequent subagent spawns |
 
 **`GetProviderUsage`** queries usage across the configured supported usage providers — the managed Kimi OAuth provider, the official `api.kimi.com/coding` API-key provider, the managed OpenAI Codex provider (OAuth), and the exact-base OpenCode Go provider. The Kimi routes also report the Extra Usage balance (remaining cents and currency); Codex and OpenCode Go report rate-limit or subscription-quota windows instead. The optional `provider` argument queries a single provider; omitting it queries every configured supported usage provider. Providers without a usage endpoint report `unsupported` instead of guessing an endpoint, and failed queries return a redacted error — credentials never appear in the output. Read-only and automatically allowed, but only the main agent can call it.
+
+With the experimental `deepseek_usage` flag enabled, `GetProviderUsage` also includes official DeepSeek providers. Their `meteredUsage` reports locally recorded daily/monthly tokens and estimated CNY spend, with the official account balance queried separately. These figures are not remaining quota percentages or a complete account bill; records start after the feature is enabled, and missing usage or prices are marked incomplete. A failed balance query does not discard the local statistics. See [DeepSeek configuration](../configuration/providers.md#deepseek).
 
 **`SetSubagentPreset`** activates a configured routing preset so the next [subagent model/effort resolution](../configuration/config-files.md#subagent) uses its routes immediately. It accepts `preset` (a name from `[subagent.presets]`), validates that the preset exists and that every route model it references resolves, then persists `[subagent].preset`. It never changes the main or default model or the thinking mode, never reloads the session, and reports `main_model_changed: false` on success. The change affects subsequent fresh `Agent`, `AgentSwarm`, and Tower spawns, plus rebindable `Agent` and `AgentSwarm` resumes; profiles that preserve their binding remain unchanged. Requires approval by default — add a permission rule to allow this tool itself automatically, see [Approval rules](../configuration/config-files.md#permission). The engine's experimental automatic preset switching (see [Automatic preset switching](../configuration/config-files.md#automatic-preset-switching)) is a separate mechanism: it evaluates those same Agent, AgentSwarm, and Tower routes, activates a preset without this tool, and never requests approval.
 

@@ -14,16 +14,27 @@ interface WinHandle {
   opener: unknown;
 }
 
+interface AnchorHandle {
+  href: string;
+  download: string;
+  click: ReturnType<typeof vi.fn>;
+}
+
 describe('openFileAttachment', () => {
   let win: WinHandle;
+  let anchor: AnchorHandle;
   let windowOpen: ReturnType<typeof vi.fn>;
   let createObjectURL: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     win = { location: { href: '' }, close: vi.fn(), opener: {} };
+    anchor = { href: '', download: '', click: vi.fn() };
     windowOpen = vi.fn().mockReturnValue(win);
     createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
     (globalThis as { window?: unknown }).window = { open: windowOpen };
+    (globalThis as { document?: unknown }).document = {
+      createElement: vi.fn().mockReturnValue(anchor),
+    };
     (globalThis.URL as unknown as { createObjectURL: unknown }).createObjectURL = createObjectURL;
     (globalThis.URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = vi.fn();
     mocks.getFileBlob.mockResolvedValue(new Blob(['<h1>x</h1>'], { type: 'text/html' }));
@@ -32,6 +43,7 @@ describe('openFileAttachment', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete (globalThis as { window?: unknown }).window;
+    delete (globalThis as { document?: unknown }).document;
   });
 
   /** The MIME of the blob handed to createObjectURL most recently. */
@@ -40,21 +52,24 @@ describe('openFileAttachment', () => {
     return blob.type;
   }
 
-  it('refuses to preview text/html — an active document would run same-origin', async () => {
+  it('downloads text/html instead of previewing — an active document would run same-origin', async () => {
     const result = await openFileAttachment('f_1', 'page.html', 'text/html');
-    expect(result).toBe('unsupported');
+    expect(result).toBe('downloaded');
     expect(windowOpen).not.toHaveBeenCalled();
+    expect(anchor.download).toBe('page.html');
+    expect(anchor.href).toBe('blob:mock-url');
+    expect(anchor.click).toHaveBeenCalled();
   });
 
-  it('refuses to preview image/svg+xml — SVG carries script when navigated', async () => {
+  it('downloads image/svg+xml instead of previewing — SVG carries script when navigated', async () => {
     const result = await openFileAttachment('f_1', 'vector.svg', 'image/svg+xml');
-    expect(result).toBe('unsupported');
+    expect(result).toBe('downloaded');
     expect(windowOpen).not.toHaveBeenCalled();
   });
 
-  it('refuses a .html extension even with an empty recorded MIME', async () => {
+  it('downloads a .html extension even with an empty recorded MIME', async () => {
     const result = await openFileAttachment('f_1', 'page.html', '');
-    expect(result).toBe('unsupported');
+    expect(result).toBe('downloaded');
   });
 
   it('renders script source inert: text/* is pinned to text/plain, never executed', async () => {
@@ -63,13 +78,13 @@ describe('openFileAttachment', () => {
     expect(previewedBlobType()).toBe('text/plain;charset=utf-8');
   });
 
-  it('refuses non-text xml types outright', async () => {
-    expect(await openFileAttachment('f_1', 'a.xml', 'application/xml')).toBe('unsupported');
-    expect(await openFileAttachment('f_1', 'a.xhtml', 'application/xhtml+xml')).toBe('unsupported');
+  it('downloads non-text xml types instead of previewing them', async () => {
+    expect(await openFileAttachment('f_1', 'a.xml', 'application/xml')).toBe('downloaded');
+    expect(await openFileAttachment('f_1', 'a.xhtml', 'application/xhtml+xml')).toBe('downloaded');
   });
 
-  it('refuses an extensionless file with no usable MIME', async () => {
-    expect(await openFileAttachment('f_1', 'Makefile', '')).toBe('unsupported');
+  it('downloads an extensionless file with no usable MIME', async () => {
+    expect(await openFileAttachment('f_1', 'Makefile', '')).toBe('downloaded');
   });
 
   it('previews pdf / safe images / media with their whitelisted MIME', async () => {
@@ -106,5 +121,27 @@ describe('openFileAttachment', () => {
     const result = await openFileAttachment('f_1', 'a.pdf', 'application/pdf');
     expect(result).toBe('failed');
     expect(win.close).toHaveBeenCalled();
+  });
+
+  it('reports failure when the download-fallback byte fetch fails', async () => {
+    mocks.getFileBlob.mockRejectedValue(new Error('401'));
+    const result = await openFileAttachment('f_1', 'page.html', 'text/html');
+    expect(result).toBe('failed');
+    expect(windowOpen).not.toHaveBeenCalled();
+    expect(anchor.click).not.toHaveBeenCalled();
+  });
+
+  it('downloads without a name fall back to the file id as filename', async () => {
+    const result = await openFileAttachment('f_1', undefined, 'text/html');
+    expect(result).toBe('downloaded');
+    expect(anchor.download).toBe('f_1');
+  });
+
+  it('reports downloaded (not previewed) when the popup is blocked and it saves instead', async () => {
+    windowOpen.mockReturnValue(null);
+    const result = await openFileAttachment('f_1', 'a.pdf', 'application/pdf');
+    expect(result).toBe('downloaded');
+    expect(anchor.download).toBe('a.pdf');
+    expect(anchor.click).toHaveBeenCalled();
   });
 });

@@ -853,7 +853,13 @@ export type ResearchStatusSnapshot = z.infer<typeof researchStatusSnapshotSchema
 
 // ── REST: GET /sessions/{id}/research ───────────────────────────────────────
 
-export const getSessionResearchResponseSchema = researchStatusSnapshotSchema;
+export const researchModeSnapshotSchema = z.object({
+  enabled: z.boolean(),
+  skillsAvailable: z.boolean(),
+}).strict();
+export type ResearchModeSnapshot = z.infer<typeof researchModeSnapshotSchema>;
+
+export const getSessionResearchResponseSchema = researchModeSnapshotSchema;
 export type GetSessionResearchResponse = z.infer<typeof getSessionResearchResponseSchema>;
 
 // ── REST: POST /sessions/{id}/research/command ──────────────────────────────
@@ -1101,6 +1107,6 @@ export const researchCommandRequestSchema = z.object({
 export type ResearchCommandRequest = z.infer<typeof researchCommandRequestSchema>;
 
 export const researchCommandResponseSchema = z.object({
-  snapshot: researchStatusSnapshotSchema,
+  snapshot: researchModeSnapshotSchema,
 });
 export type ResearchCommandResponse = z.infer<typeof researchCommandResponseSchema>;

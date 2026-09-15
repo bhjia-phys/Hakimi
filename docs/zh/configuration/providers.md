@@ -10,7 +10,8 @@ Hakimi 支持同时接入多家 LLM 平台——用 Kimi Code 托管服务一键
 | --- | --- | --- |
 | `kimi` | OpenAI 兼容 | Kimi Code 托管服务、Kimi Platform API 密钥 |
 | `anthropic` | Anthropic Messages | Claude 系列模型 |
-| `openai` | OpenAI Chat Completions | OpenAI 及兼容服务、DeepSeek、Qwen 等 |
+| `openai` | OpenAI Chat Completions | OpenAI 及通用兼容服务、Qwen 等 |
+| `deepseek` | OpenAI Chat Completions | DeepSeek V4.1 Flash，支持原生思考控制和图片 |
 | `openai_responses` | OpenAI Responses API | OpenAI 较新的 Responses 接口 |
 | `google-genai` | Google GenAI | Gemini API |
 | `vertexai` | Google GenAI on Vertex | Google Cloud Vertex AI |
@@ -95,39 +96,46 @@ api_key = "YOUR_API_KEY"
 
 ### DeepSeek
 
-DeepSeek 使用同一条 `openai` provider 路径。添加 provider 时保留 `source.kind = "deepseek"` 标记，Hakimi 就能从 provider 的 `/models` endpoint 刷新官方模型列表。`/model` 选择器和启动时刷新都会使用这份列表，因此上游发布新模型后无需手动重写 `config.toml`。
+DeepSeek V4.1 Flash 使用 `type = "deepseek"`。它仍通过 OpenAI Chat Completions 通信，并应用 DeepSeek 专用的思考控制和模型能力。官方模型 ID 为 `deepseek-flash`；兼容名称 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp` 也会被识别为支持图片、思考和工具调用。未知模型名不会自动视为支持图片。
 
 ```toml
 [providers.deepseek]
-type = "openai"
-base_url = "https://api.deepseek.com"
+type = "deepseek"
+base_url = "https://api.deepseek.com/v1"
 api_key = "YOUR_API_KEY"
 source = { kind = "deepseek" }
 
-[models."deepseek/deepseek-v4-pro"]
+[models."deepseek/deepseek-flash"]
 provider = "deepseek"
-model = "deepseek-v4-pro"
+model = "deepseek-flash"
 max_context_size = 1000000
-max_output_size = 384000
-capabilities = ["thinking", "tool_use"]
-display_name = "DeepSeek V4 Pro"
+overrides = { max_output_size = 65536 }
+capabilities = ["image_in", "thinking", "tool_use"]
+display_name = "DeepSeek V4.1 Flash"
+support_efforts = ["low", "high", "max"]
+default_effort = "low"
 ```
 
-`deepseek-v4-flash-vision-exp` 会被识别为视觉模型。当官方 `/models` 响应包含它时，Hakimi 会自动加入该模型；也可以直接配置：
+`source.kind = "deepseek"` 标记保留从供应商 `/models` 端点刷新模型列表的功能。它不决定请求适配器，适配器由 `type` 字段选择。现有 `type = "openai"` 供应商保持通用行为；仅将供应商命名为 `deepseek` 不会启用专用适配器。升级 Hakimi 后，将该供应商的 `type` 改为 `deepseek` 即可启用，保留原有 API 密钥、模型别名和其他设置。如显式设置了模型 `protocol`，需使用 `openai` 才会应用此适配器。
+
+示例通过 `overrides.max_output_size` 将输出预算固定为 65,536 token，包含思考内容。这样，模型列表刷新上游元数据时仍保留选定预算；若只在自动生成的别名上设置顶层 `max_output_size`，刷新可能覆盖它。该预算不是模型上限。
+
+`low`、`high`、`max` 会作为 `reasoning_effort` 原样发送，同时开启思考。选择 `off` 会显式关闭思考。在 Hakimi 会话中，`on` 会解析为模型默认档位（本例为 `low`），而不是强制使用 API 默认的 `high`。若需关闭思考，模型能力应使用 `thinking`，不要使用 `always_thinking`。已有全局或会话思考设置仍优先于模型的 `default_effort`。
+
+选择 Flash 后，Hakimi 使用 DeepSeek 的 OpenAI 兼容 `image_url` 内容块发送图片，可以粘贴图片或使用媒体工具。适配器支持 base64 和公开 URL 图片形式，基础流程不要求使用 Files API。仍需遵守 DeepSeek 的图片限制，包括 48 MiB 请求体上限，以及内联或公开 URL 图片的 32 MiB 单图上限。
+
+DeepSeek 的推理响应使用 `reasoning_content`，带工具调用的 Assistant 历史回传时会保留该内容。如果网关改用了其他推理字段名，请在模型别名上设置 `reasoning_key`。专用适配器覆盖 Chat Completions，不会为 Responses 或 Anthropic 协议启用 DeepSeek 专用行为。
+
+官方 DeepSeek 端点支持实验性的用量统计。在 `config.toml` 中启用后，重启 Hakimi 服务：
 
 ```toml
-[models."deepseek/deepseek-v4-flash-vision-exp"]
-provider = "deepseek"
-model = "deepseek-v4-flash-vision-exp"
-max_context_size = 1000000
-max_output_size = 384000
-capabilities = ["image_in", "thinking", "tool_use"]
-display_name = "DeepSeek V4 Flash Vision Exp"
+[experimental]
+deepseek_usage = true
 ```
 
-选择视觉模型后，Hakimi 使用 DeepSeek 的 OpenAI 兼容 `image_url` 内容块发送图片。你可以粘贴图片或使用媒体工具。现有 OpenAI adapter 已支持基础流程所需的 base64 和公开 URL 图片形式，不要求使用 Files API；同时仍需遵守 DeepSeek 的图片限制，包括 48 MiB 请求体上限，以及内联或公开 URL 图片的 32 MiB 单图上限。
+打开 Hakimi Web 的 **供应商用量**，可查看今日、本月已记录的 token 和人民币估算费用，以及 DeepSeek 返回的账户余额。自然日和自然月均按北京时间（`Asia/Shanghai`）计算。输入包含缓存命中和未命中的 token；输出已包含思考 token，不会重复计费。估算依据请求使用的模型、高峰或空闲时段，以及内置的[官方价格表](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)快照，不是实时账单数据。供应商改价后，估算可能与最终官方账单不同。
 
-DeepSeek 的推理响应使用 `reasoning_content`，Thinking effort 会通过 OpenAI 兼容 provider 转发。如果网关改用了其他推理字段名，请在模型别名上设置 `reasoning_key`。
+这些数据是 **本机 Hakimi 的记录，不是官方账户账单**。启用后才开始记录，覆盖通过当前 Hakimi 数据目录发出的请求，包括 subagent 和上下文压缩。关闭后停止记录 token 和费用；对于此前已跟踪的供应商，只保留按日的缺口标记，避免重启后把漏记周期误认为完整。不会回填旧会话，也不包含其他程序的 API 调用。面板显示统计起点，并标明不完整周期、未结束请求、缺失用量和无法估价的情况，不会将未知金额显示为零。记录可在正常重启后恢复，但崩溃或存储故障可能导致统计不完整。记账失败不会重试或阻止模型请求；官方余额查询失败时，本地统计仍可单独显示。
 
 ## `openai_responses`
 
@@ -198,7 +206,7 @@ Hakimi 也可以通过 OpenAI Codex OAuth 供应商使用 ChatGPT 订阅。在 T
 hakimi login --provider openai-codex
 ```
 
-该命令会打开设备授权页面，并生成 `openai-codex/gpt-5.6-sol`、`openai-codex/gpt-5.6-terra` 和 `openai-codex/gpt-5.6-luna` 这些 Codex 模型别名。在无法启动浏览器的无头机器或 WSL 环境中，加上 `--no-open`；Hakimi 只打印验证地址和用户码，不尝试打开浏览器。
+该命令会打开设备授权页面，并生成 `openai-codex/gpt-5.6-sol`、`openai-codex/gpt-5.6-terra`、`openai-codex/gpt-5.6-luna` 和 `openai-codex/gpt-6-astra` 这些 Codex 模型别名。在无法启动浏览器的无头机器或 WSL 环境中，加上 `--no-open`；Hakimi 只打印验证地址和用户码，不尝试打开浏览器。
 
 ```sh
 hakimi login --provider openai-codex --no-open
